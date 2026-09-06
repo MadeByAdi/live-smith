@@ -8,13 +8,14 @@ import { templateMessages } from "./template-messages.js";
 import { timelineMessages } from "./timeline-messages.js";
 import { profileMessages } from "./profile-messages.js";
 import { mainMessages } from "./main-messages.js";
+import { actionMessages } from "./action-messages.js";
 import { UI_LANGUAGES, DEFAULT_UI_LOCALE } from "../../i18n/languages.js";
 const translatedLocales = UI_LANGUAGES.map(language => language.id).filter(id => id !== DEFAULT_UI_LOCALE);
 
 test("message catalogs agree on shared messages and preserve interpolation fields", () => {
   const seen = new Map<string,string>();
   const fields = (text: string) => [...new Set([...text.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)].map(match => match[1]))].sort();
-  for (const catalog of [templateMessages, timelineMessages, profileMessages, mainMessages]) {
+  for (const catalog of [templateMessages, timelineMessages, profileMessages, mainMessages, actionMessages]) {
     for (const [source, translated] of Object.entries(catalog)) {
       assert.ok(translated.trim(), source);
       if (seen.has(source)) assert.equal(translated, seen.get(source), source);
@@ -33,6 +34,7 @@ test("message catalogs agree on shared messages and preserve interpolation field
 test("explicit client messages and static template markers all have translations", () => {
   const files = readdirSync(new URL('../client/', import.meta.url))
     .filter(name => name.endsWith('.script.html')).map(name => '../client/' + name);
+  files.push('../action-diff.ts');
   for (const file of files) {
     const source = readFileSync(new URL(file, import.meta.url), 'utf8');
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);

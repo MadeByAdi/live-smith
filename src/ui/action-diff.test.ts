@@ -1,7 +1,38 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { actionDiffGroups } from "./action-diff.js";
+import { actionDiffGroups as boundActionDiffGroups } from "./action-diff.js";
+import { formatUiMessage } from "./i18n/ui-message.js";
+
+// Preserve the existing English semantic assertions against the canonical builder.
+function actionDiffGroups(...args: Parameters<typeof boundActionDiffGroups>) {
+  return boundActionDiffGroups(...args).map((group) => ({
+    title: formatUiMessage(group.title),
+    rows: group.rows.map(formatUiMessage),
+  }));
+}
+
+test("action confirmations bind destructive details separately from raw track names", () => {
+  const name = 'Delete <b data-i18n="Song">{startBeat}</b>';
+  const groups = boundActionDiffGroups([
+    { type: "clear_arrangement_range", trackName: name, startBeat: 4, endBeat: 12 },
+  ]);
+  assert.deepEqual(groups[0]?.title, { source: "Delete", values: {} });
+  assert.deepEqual(groups[0]?.rows[0], {
+    source: "{number}. {description}",
+    values: {
+      number: 1,
+      description: {
+        source: "- Clear arrangement on {track} from beat {startBeat} to {endBeat}; boundary clips truncate",
+        values: {
+          track: { source: 'track "{name}"', values: { name } },
+          startBeat: 4,
+          endBeat: 12,
+        },
+      },
+    },
+  });
+});
 
 test("Session MIDI confirmation distinguishes empty-slot creation from replacement", () => {
   const action = {

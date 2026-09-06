@@ -2344,12 +2344,12 @@
         for (const group of groups) {
           const heading = document.createElement("div");
           heading.className = "confirm-group-title";
-          heading.textContent = group.title;
+          heading.textContent = window.LiveSmithI18n.format(group.title);
           const list = document.createElement("ul");
           list.className = "confirm-rows";
           for (const row of group.rows) {
             const item = document.createElement("li");
-            item.textContent = row;
+            item.textContent = window.LiveSmithI18n.format(row);
             list.append(item);
           }
           card.append(heading, list);

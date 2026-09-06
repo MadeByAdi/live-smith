@@ -2,6 +2,7 @@ import { templateMessages } from "./template-messages.js";
 import { timelineMessages } from "./timeline-messages.js";
 import { profileMessages } from "./profile-messages.js";
 import { mainMessages } from "./main-messages.js";
+import { actionMessages } from "./action-messages.js";
 import { DEFAULT_UI_LOCALE, UI_LANGUAGES, type UiLocale } from "../../i18n/languages.js";
 
 const zhCNMessages: Readonly<Record<string, string>> = Object.freeze({
@@ -9,6 +10,7 @@ const zhCNMessages: Readonly<Record<string, string>> = Object.freeze({
   ...timelineMessages,
   ...profileMessages,
   ...mainMessages,
+  ...actionMessages,
 });
 
 export const uiCatalogs: Readonly<Record<UiLocale, Readonly<Record<string, string>>>> = {

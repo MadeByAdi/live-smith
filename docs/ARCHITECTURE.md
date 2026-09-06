@@ -866,6 +866,11 @@ data. Locale refresh updates presentation without replacing drafts. Confirmation
 copy binds interpolation values when the decision opens and can translate those
 same values again while preserving its pending decision.
 
+Action-confirmation headings and rows carry serializable `{ source, values }`
+messages rather than preformatted English. Nested messages describe application
+copy; string parameters remain raw names, identifiers, or JSON. The client
+validates the message shape before accepting a confirmation and compares replayed
+messages structurally while preserving action order and confirmation identity.
 Language refresh retains Session menu and deletion controls, keyboard focus,
 running status, and command-outcome warnings. Global language values are reapplied
 after Session-causal state merging, and the shared operation state owns the

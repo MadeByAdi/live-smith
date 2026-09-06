@@ -41,6 +41,7 @@ test("an added French catalog supplies locale matching, picker labels, interpola
     const i18n = (dom.window as unknown as { LiveSmithI18n: {
       configure(value: string): void; apply(): void; isLanguage(value: unknown): boolean;
       t(source: string, values?: Record<string, string | number>): string;
+      format(value: unknown): string;
     } }).LiveSmithI18n;
     assert.equal(dom.window.document.documentElement.lang, "fr");
     assert.equal(i18n.isLanguage("fr"), true);
@@ -48,6 +49,7 @@ test("an added French catalog supplies locale matching, picker labels, interpola
     assert.equal(dom.window.document.querySelector("button")?.textContent, "Assistant");
     assert.equal(i18n.t("Beats {start}–{end}", { start: 8, end: 16 }), "Temps 8 à 16");
     assert.equal(i18n.t("Missing French translation"), "Missing French translation");
+    assert.equal(i18n.format("Agent"), "Agent");
     i18n.configure("en"); i18n.apply();
     assert.equal(dom.window.document.querySelector("button")?.textContent, "Agent");
     i18n.configure("fr"); i18n.apply();

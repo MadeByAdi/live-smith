@@ -49,6 +49,11 @@
           return () => t(source, Object.fromEntries(Object.entries(captured).map(([key, value]) =>
             [key, typeof value === "function" ? value() : value])));
         }
+        function format(value) {
+          if (typeof value !== "object" || value === null) return String(value ?? "");
+          return t(value.source, Object.fromEntries(Object.entries(value.values).map(
+            ([key, parameter]) => [key, format(parameter)])));
+        }
         function text(value) { return typeof value === "function" ? value() : String(value ?? ""); }
         function apply() {
           if (staticTargets === null) {
@@ -80,5 +85,5 @@
         }
         configure(window.__LIVE_SMITH_STATE__?.settings?.uiLanguage ?? "system");
         window.addEventListener("DOMContentLoaded", apply, { once: true });
-        return { t, message, text, configure, apply, isLanguage, get locale() { return locale; }, get preference() { return preference; } };
+        return { t, message, text, format, configure, apply, isLanguage, get locale() { return locale; }, get preference() { return preference; } };
       })();

@@ -1596,30 +1596,37 @@
         return byteLength;
       }
 
+      function isWireUiMessage(value, depth = 0) {
+        if (typeof value === "string") return true;
+        return depth < 16 && isWireRecord(value) &&
+          hasOnlyWireKeys(value, ["source", "values"]) &&
+          typeof value.source === "string" && Boolean(value.source) &&
+          isWireRecord(value.values) && Object.keys(value.values).length <= 64 &&
+          Object.values(value.values).every((parameter) =>
+            typeof parameter === "boolean" ||
+            typeof parameter === "number" && Number.isFinite(parameter) ||
+            isWireUiMessage(parameter, depth + 1));
+      }
+
       function isWireActionDiffGroups(value) {
         return Array.isArray(value) &&
           value.length > 0 &&
           value.every((group) =>
             isWireRecord(group) &&
             hasOnlyWireKeys(group, ["title", "rows"]) &&
-            typeof group.title === "string" &&
+            isWireUiMessage(group.title) &&
             Boolean(group.title) &&
             Array.isArray(group.rows) &&
             group.rows.length > 0 &&
             group.rows.every((row) =>
-              typeof row === "string" &&
+              isWireUiMessage(row) &&
               Boolean(row)
             )
           );
       }
 
       function wireActionDiffGroupsEqual(left, right) {
-        return left.length === right.length && left.every((group, groupIndex) => {
-          const candidate = right[groupIndex];
-          return group.title === candidate.title &&
-            group.rows.length === candidate.rows.length &&
-            group.rows.every((row, rowIndex) => row === candidate.rows[rowIndex]);
-        });
+        return sameJsonData(left, right);
       }
 
       function isWireCitation(value) {
