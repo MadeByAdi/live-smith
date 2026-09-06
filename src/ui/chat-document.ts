@@ -206,30 +206,23 @@ export function composeChatDocument(
     injectSkillContract(scripts.skillManager),
     builtInSkillDefinitions(),
   );
-  const document = template
-    .replaceAll("__INSPECTOR_DRAWER_MAX_WIDTH__", String(INSPECTOR_DRAWER_MAX_WIDTH))
-    .replace(
-      "__STATE__",
-      () => JSON.stringify(serializeChatStateForHtml(state)),
-    )
-    .replace("__BRIDGE__", () => JSON.stringify(bridge))
-    .replace("__HOST_ADAPTER_SCRIPT__", () => scripts.hostAdapter)
-    .replace("__PROFILE_EDITOR_SCRIPT__", () => profileEditorScript)
-    .replace("__ATTACHMENTS_SCRIPT__", () => attachmentsScript)
-    .replace("__COMPOSER_INPUT_SCRIPT__", () => scripts.composerInput)
-    .replace("__SKILL_MANAGER_SCRIPT__", () => skillManagerScript)
-    .replace("__BRIDGE_CLIENT_SCRIPT__", () => bridgeClientScript)
-    .replace("__MARKDOWN_RENDERER_SCRIPT__", () => scripts.markdownRenderer)
-    .replace(
-      "__SESSION_TIMELINE_SCRIPT__",
-      () => injectSessionContract(scripts.sessionTimeline),
-    )
-    .replace("__ACTION_PREVIEW_SCRIPT__", () => scripts.actionPreview)
-    .replace("__BOOTSTRAP_SCRIPT__", () => injectEditScopeContract(scripts.bootstrap)
-      .replaceAll("__INSPECTOR_DRAWER_MAX_WIDTH__", String(INSPECTOR_DRAWER_MAX_WIDTH)));
-
-  if (/__(?:STATE|BRIDGE|ACTION_PREVIEW_SCRIPT|HOST_ADAPTER_SCRIPT|PROFILE_EDITOR_SCRIPT|ATTACHMENTS_SCRIPT|COMPOSER_INPUT_SCRIPT|SKILL_MANAGER_SCRIPT|BRIDGE_CLIENT_SCRIPT|MARKDOWN_RENDERER_SCRIPT|SESSION_TIMELINE_SCRIPT|BOOTSTRAP_SCRIPT)__/.test(document)) {
-    throw new Error("Chat document composition left an unresolved placeholder.");
-  }
-  return document;
+  const substitutions: Record<string, string> = {
+    __INSPECTOR_DRAWER_MAX_WIDTH__: String(INSPECTOR_DRAWER_MAX_WIDTH),
+    __STATE__: JSON.stringify(serializeChatStateForHtml(state)),
+    __BRIDGE__: JSON.stringify(bridge),
+    __HOST_ADAPTER_SCRIPT__: scripts.hostAdapter,
+    __PROFILE_EDITOR_SCRIPT__: profileEditorScript,
+    __ATTACHMENTS_SCRIPT__: attachmentsScript,
+    __COMPOSER_INPUT_SCRIPT__: scripts.composerInput,
+    __SKILL_MANAGER_SCRIPT__: skillManagerScript,
+    __BRIDGE_CLIENT_SCRIPT__: bridgeClientScript,
+    __MARKDOWN_RENDERER_SCRIPT__: scripts.markdownRenderer,
+    __SESSION_TIMELINE_SCRIPT__: injectSessionContract(scripts.sessionTimeline),
+    __ACTION_PREVIEW_SCRIPT__: scripts.actionPreview,
+    __BOOTSTRAP_SCRIPT__: injectEditScopeContract(scripts.bootstrap)
+      .replaceAll("__INSPECTOR_DRAWER_MAX_WIDTH__", String(INSPECTOR_DRAWER_MAX_WIDTH)),
+  };
+  // Substitute the authored template once; inserted Session data and scripts are not templates.
+  return template.replace(/__[A-Z0-9_]+__/g, (placeholder) =>
+    Object.hasOwn(substitutions, placeholder) ? substitutions[placeholder]! : placeholder);
 }

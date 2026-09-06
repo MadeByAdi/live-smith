@@ -152,3 +152,23 @@ test("Inspector CSS and client receive the same breakpoint without rewriting Ses
     dom.window.close();
   }
 });
+
+
+test("template placeholders inside Session content never consume client script slots", () => {
+  const state = stateFixture();
+  state.contextSummary = "__HOST_ADAPTER_SCRIPT__ __BOOTSTRAP_SCRIPT__ __BRIDGE__ __STATE__";
+  state.sessions[0]!.title = "__HOST_ADAPTER_SCRIPT__";
+  const html = composeChatDocument(
+    '<script>window.state = JSON.parse(__STATE__); __HOST_ADAPTER_SCRIPT__ __BOOTSTRAP_SCRIPT__</script>',
+    state,
+    { baseUrl: "http://127.0.0.1:12345", token: "test-token" },
+    { ...scripts, hostAdapter: 'window.translatorLoaded = true;', bootstrap: 'window.clientLoaded = true;' },
+  );
+  const dom = new JSDOM(html, { runScripts: "dangerously" });
+  try {
+    assert.equal(Reflect.get(dom.window, "translatorLoaded"), true);
+    assert.equal(Reflect.get(dom.window, "clientLoaded"), true);
+    assert.equal(Reflect.get(dom.window, "state").contextSummary, state.contextSummary);
+    assert.equal(Reflect.get(dom.window, "state").sessions[0].title, "__HOST_ADAPTER_SCRIPT__");
+  } finally { dom.window.close(); }
+});
