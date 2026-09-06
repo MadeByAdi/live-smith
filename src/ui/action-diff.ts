@@ -305,6 +305,8 @@ function sourceLabel(source: import("../agent/action-schema.js").SampleSource): 
       return m("selected Live object");
     case "request_audio_attachment":
       return m("current request audio input {number}", { number: source.audioIndex + 1 });
+    case "audio_asset":
+      return m("processed audio asset {assetRef}", { assetRef: source.assetRef });
     case "arrangement_audio_clip":
       return m("arrangement clip{name} at beat {startBeat} on {trackName}", {
         name: nameSuffix(source.clipName), startBeat: source.startBeat, trackName: source.trackName,

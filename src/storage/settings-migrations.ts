@@ -1,3 +1,4 @@
+import { LEGACY_AUDIO_SERVICE_ID } from "../audio-services/contracts.js";
 import {
   CURRENT_AGENT_SETTINGS_SCHEMA_VERSION,
   isApprovalMode,
@@ -8,6 +9,7 @@ import {
   isDefaultFollowUpBehaviorRevision,
   isNetworkProxyRevision,
   normalizeNetworkProxySettings,
+  normalizeAudioServicesSettings,
   ProfileValidationError,
   validateDraftProfileForSave,
   type AgentSettings,
@@ -474,6 +476,8 @@ function validateSettingsV8(value: unknown): AgentSettings {
       "networkProxyRevision",
       "uiLanguage",
       "uiLanguageRevision",
+      "audioService",
+      "audioServices",
     ],
     "settings",
   );
@@ -482,6 +486,8 @@ function validateSettingsV8(value: unknown): AgentSettings {
     networkProxyRevision: networkProxyRevisionValue,
     uiLanguage = "system",
     uiLanguageRevision = "0",
+    audioService,
+    audioServices,
     ...settingsV7
   } = record;
   if (!isUiLanguage(uiLanguage)) {
@@ -489,6 +495,9 @@ function validateSettingsV8(value: unknown): AgentSettings {
   }
   if (!isUiLanguageRevision(uiLanguageRevision)) {
     throw new ProfileValidationError("uiLanguageRevision", "UI language revision must be a canonical decimal string.");
+  }
+  if (Object.hasOwn(record, "audioServices") && Object.hasOwn(record, "audioService")) {
+    throw new ProfileValidationError("audioServices", "Saved audio settings cannot contain both current and legacy configuration.");
   }
   const validated = validateSettingsV7({ ...settingsV7, schemaVersion: 7 });
   return {
@@ -498,7 +507,25 @@ function validateSettingsV8(value: unknown): AgentSettings {
     networkProxyRevision: networkProxyRevision(networkProxyRevisionValue),
     uiLanguage,
     uiLanguageRevision,
+    ...(audioServices === undefined && audioService === undefined ? {} : {
+      audioServices: audioServices === undefined
+        ? migrateLegacyAudioService(audioService)
+        : normalizeAudioServicesSettings(audioServices),
+    }),
   };
+}
+
+/** Read-only compatibility for the historical single LALAL.AI connection. */
+function migrateLegacyAudioService(value: unknown) {
+  const record = settingsRecord(value);
+  assertOnlyKeys(record, ["provider", "enabled", "apiKey", "revision"], "audioServices");
+  if (record.provider !== "lalal") {
+    throw new ProfileValidationError("audioServices", "The legacy audio provider must be LALAL.AI.");
+  }
+  return normalizeAudioServicesSettings({ revision: record.revision, connections: [{
+    id: LEGACY_AUDIO_SERVICE_ID, name: "LALAL.AI", provider: record.provider,
+    enabled: record.enabled, apiKey: record.apiKey,
+  }] });
 }
 
 function validatedSharedSettings(

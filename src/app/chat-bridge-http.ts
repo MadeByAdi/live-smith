@@ -13,7 +13,8 @@ import {
   isSafeSkillId,
   MAX_SKILL_FILE_BYTES,
 } from "../skills/format.js";
-import { requireSafeStorageId } from "../storage/id.js";
+import { requireSafeStorageId, isSafeStorageId } from "../storage/id.js";
+import { normalizeAudioServicesSettingsPatch, type AudioServicesSettingsPatch } from "../storage/settings.js";
 import {
   MAX_SESSION_TITLE_CODE_POINTS,
   isSessionTitle,
@@ -140,6 +141,7 @@ export type ChatBridgeCommandInput =
       kind: "save_global_settings";
       uiLanguage?: never;
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
+      audioServices?: never;
       showContextUsage?: never;
       networkProxy?: never;
     }
@@ -148,6 +150,7 @@ export type ChatBridgeCommandInput =
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage: boolean;
+      audioServices?: never;
       networkProxy?: never;
     }
   | {
@@ -156,14 +159,25 @@ export type ChatBridgeCommandInput =
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
+      audioServices?: never;
     }
   | {
       kind: "save_global_settings";
       uiLanguage: UiLanguage;
+      audioServices?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy?: never;
     }
+  | {
+      kind: "save_global_settings";
+      audioServices: AudioServicesSettingsPatch;
+      uiLanguage?: never;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
+    }
+  | { kind: "resume_audio_job"; sessionId: string; jobId: string }
   | {
       kind: "set_session_approval_mode";
       sessionId: string;
@@ -874,7 +888,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   if (kind === "save_global_settings") {
     assertOnlyInputKeys(
       input,
-      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage"],
+      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage", "audioServices"],
       `${kind} command`,
     );
     const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
@@ -886,6 +900,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       "showContextUsage",
     );
     const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
+    const hasAudioService = Object.prototype.hasOwnProperty.call(input, "audioServices");
     const hasNetworkProxy = Object.prototype.hasOwnProperty.call(
       input,
       "networkProxy",
@@ -894,7 +909,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       Number(hasFollowUpBehavior) +
         Number(hasContextUsage) +
         Number(hasNetworkProxy) +
-        Number(hasUiLanguage) !== 1
+        Number(hasUiLanguage) + Number(hasAudioService) !== 1
     ) {
       throw new ChatBridgeRequestValidationError(
         "save_global_settings must contain exactly one setting.",
@@ -928,6 +943,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       return { kind, showContextUsage: input.showContextUsage as boolean };
     }
     try {
+      if (hasAudioService) return { kind, audioServices: normalizeAudioServicesSettingsPatch(input.audioServices) };
       return {
         kind,
         networkProxy: normalizeNetworkProxySettings(input.networkProxy),
@@ -940,6 +956,13 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       }
       throw error;
     }
+  }
+  if (kind === "resume_audio_job") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "jobId"], "resume_audio_job command");
+    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.jobId)) {
+      throw new ChatBridgeRequestValidationError("Audio job and Session IDs must be safe storage IDs.");
+    }
+    return { kind, sessionId: input.sessionId, jobId: input.jobId };
   }
   if (kind === "save_profile") {
     assertOnlyInputKeys(

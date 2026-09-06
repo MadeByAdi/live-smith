@@ -2372,6 +2372,39 @@
         margin-bottom: 12px;
       }
 
+      .audio-job {
+        border-top: 1px solid var(--line-soft);
+        padding-block: 10px;
+        overflow-wrap: anywhere;
+      }
+      .audio-job h4, .audio-job p { margin: 0 0 8px; }
+      .audio-job audio { display: block; width: 100%; margin-bottom: 10px; }
+      .audio-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+      .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .audio-section-heading h3 { margin: 0; }
+      .audio-service-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; overscroll-behavior: contain; }
+      .audio-service-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 10px; text-align: left; color: var(--text); background: var(--field); border: 1px solid var(--line-soft); border-left: 3px solid transparent; border-radius: 5px; cursor: pointer; }
+      .audio-service-row[aria-pressed="true"] { border-left-color: var(--accent); background: var(--accent-soft); }
+      .audio-service-row:not(:disabled):hover { border-color: var(--quiet); }
+      .audio-service-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+      .audio-service-row:disabled { cursor: default; opacity: 0.65; }
+      .audio-service-label { flex: 1; min-width: 0; }
+      .audio-service-label strong { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .audio-service-label small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+      .audio-service-status { flex: 0 0 auto; max-width: 95px; font-size: 10px; color: var(--muted); text-align: right; }
+      .audio-service-status[data-pending="true"] { color: var(--warn); }
+      .audio-connection-editor { margin-top: 12px; border: 1px solid var(--line-soft); border-radius: 5px; }
+      .audio-connection-editor > summary { padding: 10px; cursor: pointer; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+      .audio-connection-editor > summary:focus-visible, .audio-model-options > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+      .audio-editor-body { display: grid; gap: 10px; padding: 0 10px 12px; }
+      .audio-editor-body .field { margin: 0; }
+      .audio-editor-body .field-hint { line-height: 1.5; }
+      .audio-model-options { border-top: 1px solid var(--line-soft); padding-top: 8px; }
+      .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: 11px; padding-block: 5px; }
+      .audio-model-options > .field { margin-top: 8px; }
+      .audio-maintenance { border-top: 1px solid var(--line-soft); padding-top: 8px; margin-top: 4px; }
+      .audio-output-meta { color: var(--quiet); font-size: 10px; font-variant-numeric: tabular-nums; }
+
       .inspector-scope-header h2 {
         margin: 0;
         color: var(--text);
@@ -3033,7 +3066,9 @@
         display: none;
       }
 
-      .profile-actions button {
+      .profile-actions button,
+      .audio-settings-actions button,
+      .audio-job > button {
         min-width: 0;
         padding: 0 5px;
       }
@@ -3222,7 +3257,9 @@
       }
 
       .settings-actions button,
-      .app-confirmation-actions button {
+      .app-confirmation-actions button,
+      .audio-settings-actions button,
+      .audio-job > button {
         height: 32px;
       }
 
@@ -4147,6 +4184,65 @@
                     <span id="networkProxyUrlHint" class="field-hint network-proxy-url-hint" hidden data-i18n="HTTP(S) or SOCKS(5), without credentials.">HTTP(S) or SOCKS(5), without credentials.</span>
                   </div>
                 </div>
+              </section>
+              <section id="audioSettingsSection" class="settings-section" aria-labelledby="audioSettingsHeading">
+                <div class="audio-section-heading">
+                  <h3 id="audioSettingsHeading" data-i18n="Audio tools">Audio tools</h3>
+                  <button id="addAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.addAudioService()" data-i18n="Add service">Add service</button>
+                </div>
+                <div id="audioServiceSelector" class="audio-service-list" role="group" aria-label="Audio connections" data-i18n-aria-label="Audio connections"></div>
+                <p id="audioServiceEmpty" class="field-hint" data-i18n="Add a named connection to separate stems or generate audio. Each connection keeps its own API key.">Add a named connection to separate stems or generate audio. Each connection keeps its own API key.</p>
+                <details id="audioServiceFields" class="audio-connection-editor" hidden>
+                  <summary id="audioServiceEditorSummary" data-i18n="Connection settings">Connection settings</summary>
+                  <div class="audio-editor-body">
+                  <div class="field">
+                    <label for="audioServiceName" data-i18n="Connection name">Connection name</label>
+                    <input id="audioServiceName" name="audioConnectionName" type="text" maxlength="120" autocomplete="off" oninput="LiveSmithUI.handleAudioSettingsInput()" />
+                  </div>
+                  <div class="field">
+                    <label for="audioServiceProvider" data-i18n="Provider">Provider</label>
+                    <select id="audioServiceProvider" onchange="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceOperations"></select>
+                    <span id="audioServiceOperations" class="field-hint"></span>
+                  </div>
+                  <details class="audio-model-options" id="audioServiceModelField">
+                    <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
+                    <div class="field">
+                    <label for="audioServiceModel" data-i18n="Music model (optional)">Music model (optional)</label>
+                    <input id="audioServiceModel" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceModelHint" />
+                    <span id="audioServiceModelHint" class="field-hint"></span>
+                    </div>
+                  </details>
+                  <div class="field" id="audioServiceCallbackField" hidden>
+                    <label for="audioServiceCallback" data-i18n="Public HTTPS callback URL">Public HTTPS callback URL</label>
+                    <input id="audioServiceCallback" name="audioCallbackUrl" type="url" inputmode="url" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceCallbackHint" />
+                    <span id="audioServiceCallbackHint" class="field-hint" data-i18n="Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.">Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.</span>
+                  </div>
+                  <p class="field-hint" id="audioServiceDisclosure"></p>
+                  <label class="context-usage-setting" for="audioServiceEnabled">
+                    <input id="audioServiceEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
+                    <span data-i18n="Enable connection">Enable connection</span>
+                  </label>
+                  <div class="field">
+                    <label for="audioServiceApiKey" data-i18n="API key">API key</label>
+                    <input id="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
+                    <span id="audioServiceKeyStatus" class="field-hint" role="status" aria-live="polite"></span>
+                    <span id="audioServiceKeyHint" class="field-hint" data-i18n="Leave blank to keep this connection's saved key. Clear key disables only this connection.">Leave blank to keep this connection's saved key. Clear key disables only this connection.</span>
+                  </div>
+                  <p id="audioServiceConflict" class="field-hint" role="status" hidden data-i18n="Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.">Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.</p>
+                  <div class="audio-settings-actions">
+                    <button id="saveAudioServiceButton" class="primary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings()" data-i18n="Save audio settings" disabled>Save audio settings</button>
+                    <button id="reloadAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.reloadAudioService()" data-i18n="Reload connection" hidden>Reload connection</button>
+                  </div>
+                  <div class="audio-settings-actions audio-maintenance">
+                    <button id="clearAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" disabled>Clear key</button>
+                    <button id="removeAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
+                  </div>
+                  </div>
+                </details>
+              </section>
+              <section id="audioResultsSection" class="settings-section" aria-labelledby="audioResultsHeading">
+                <h3 id="audioResultsHeading" data-i18n="Session audio results">Session audio results</h3>
+                <div id="audioJobs"></div>
               </section>
               </section>
             </div>

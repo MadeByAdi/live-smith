@@ -13,7 +13,8 @@ import { AgentPlanExecutionError } from "../live/executor.js";
 import type { AgentPlanBindings } from "../live/action-bindings.js";
 import type {
   RequestAudioSampleSource,
-  RequestAudioSampleSources,
+  ManagedSampleSource,
+  ManagedSampleSources,
 } from "../live/sample-source.js";
 import { requestAudioSampleSourceKey } from "../live/sample-source.js";
 
@@ -29,7 +30,7 @@ export function createRequestAudioSampleSources(input: {
   requestId: string;
   refs: readonly AudioSessionAttachmentRef[];
   signal: AbortSignal;
-}): RequestAudioSampleSources {
+}): Map<string, ManagedSampleSource> {
   return new Map(input.refs.map((ref, audioIndex) => [
     requestAudioSampleSourceKey(input.requestId, audioIndex),
     requestAudioSampleSource(input, ref, audioIndex),
@@ -37,14 +38,17 @@ export function createRequestAudioSampleSources(input: {
 }
 
 export function requestAudioSampleSourceInstructions(
-  sources: RequestAudioSampleSources,
+  sources: ManagedSampleSources,
 ): string {
-  if (!sources.size) return "";
+  const attachments = [...sources.values()].filter(
+    (source) => source.kind === "request_audio_attachment",
+  );
+  if (!attachments.length) return "";
   return [
     "The host has made the following current-request audio attachments available as SampleSource values for this send only.",
     "A SampleSource locator identifies input audio only; it does not approve or expand the scope of any Live change.",
     "Each locator corresponds to a user-added audio attachment in the current user message, numbered after filtering out other file types. Historical audio and audio produced by tools are not included. Copy the exact locator for the intended audio; never invent or reuse a locator from history.",
-    ...[...sources.values()].map((source) =>
+    ...attachments.map((source) =>
       `Audio input ${source.audioIndex + 1}: ${JSON.stringify({
         kind: source.kind,
         requestId: source.requestId,
@@ -65,26 +69,28 @@ function requestAudioSampleSource(
   ref: AudioSessionAttachmentRef,
   audioIndex: number,
 ): RequestAudioSampleSource {
-  let importedPath: string | undefined;
+  const expectedRef = { ...ref };
+  const prepared = createManagedSampleImport({
+    ...input,
+    mediaType: expectedRef.mediaType,
+    readBytes: () => readSessionAttachmentBytes(
+      input.storageDirectory,
+      input.sessionId,
+      expectedRef.id,
+      { expectedRef, signal: input.signal },
+    ),
+    failureMessage: importFailureMessage,
+  });
   return {
     kind: "request_audio_attachment",
     requestId: input.requestId,
     audioIndex,
     get filePath() {
-      if (importedPath === undefined) {
-        throw new Error(
-          "The current request audio attachment was not prepared for Live execution.",
-        );
-      }
-      return importedPath;
+      return prepared.filePath;
     },
-    label: ref.fileName,
+    label: expectedRef.fileName,
     identity: `request-audio:${input.requestId}:${audioIndex}`,
-    async prepare(beforeImport) {
-      if (importedPath !== undefined) return false;
-      importedPath = await importRequestAudioAttachment(input, ref, beforeImport);
-      return true;
-    },
+    prepare: prepared.prepare,
   };
 }
 
@@ -98,10 +104,10 @@ export async function prepareRequestAudioSampleSources(
   signal: AbortSignal,
   importBoundary?: () => void,
 ): Promise<RequestAudioImportProgress> {
-  const uniqueSources = new Map<string, RequestAudioSampleSource>();
+  const uniqueSources = new Map<string, ManagedSampleSource>();
   for (const binding of bindings.actionObjects.values()) {
     const source = binding.sampleSource;
-    if (source?.kind === "request_audio_attachment") {
+    if (source && source.kind !== "live") {
       uniqueSources.set(source.identity, source);
     }
   }
@@ -113,10 +119,14 @@ export async function prepareRequestAudioSampleSources(
       throwIfAborted(signal);
       if (!await source.prepare(importBoundary)) continue;
       results.push(
-        `Imported current request audio input ${source.audioIndex + 1} into the Live project.`,
+        source.kind === "request_audio_attachment"
+          ? `Imported current request audio input ${source.audioIndex + 1} into the Live project.`
+          : `Imported audio asset "${source.assetRef}" into the Live project.`,
       );
       keys.push(
-        `live-action-step:request-audio-import:${source.requestId}:${source.audioIndex}`,
+        source.kind === "request_audio_attachment"
+          ? `live-action-step:request-audio-import:${source.requestId}:${source.audioIndex}`
+          : `live-action-step:audio-asset-import:${source.assetRef}`,
       );
       throwIfAborted(signal);
       importBoundary?.();
@@ -132,7 +142,7 @@ export async function prepareRequestAudioSampleSources(
       undefined,
       undefined,
       undefined,
-      [],
+      [keys],
       results.length,
       undefined,
       0,
@@ -153,7 +163,7 @@ export function mergeRequestAudioImportProgress(
       undefined,
       undefined,
       undefined,
-      [],
+      [progress.keys],
       progress.results.length,
       undefined,
       0,
@@ -173,28 +183,47 @@ export function mergeRequestAudioImportProgress(
   );
 }
 
-async function importRequestAudioAttachment(
-  input: {
-    context: Api;
-    storageDirectory: string | undefined;
-    sessionId: string;
-    signal: AbortSignal;
-  },
-  ref: AudioSessionAttachmentRef,
+interface ManagedSampleImportInput {
+  context: Api;
+  storageDirectory: string | undefined;
+  signal: AbortSignal;
+  mediaType: "audio/wav" | "audio/mpeg";
+  readBytes(): Promise<Uint8Array>;
+  failureMessage: string;
+}
+
+/** Lazy staging and import; prepare is called only within the confirmed plan queue. */
+export function createManagedSampleImport(
+  input: ManagedSampleImportInput,
+): Pick<ManagedSampleSource, "filePath" | "prepare"> {
+  let importedPath: string | undefined;
+  return {
+    get filePath() {
+      if (importedPath === undefined) {
+        throw new Error("The managed audio source was not prepared for Live execution.");
+      }
+      return importedPath;
+    },
+    async prepare(beforeImport) {
+      throwIfAborted(input.signal);
+      if (importedPath !== undefined) return false;
+      importedPath = await importManagedSample(input, beforeImport);
+      return true;
+    },
+  };
+}
+
+async function importManagedSample(
+  input: ManagedSampleImportInput,
   beforeImport?: () => void,
 ): Promise<string> {
-  const bytes = await readSessionAttachmentBytes(
-    input.storageDirectory,
-    input.sessionId,
-    ref.id,
-    { expectedRef: ref, signal: input.signal },
-  );
+  const bytes = await input.readBytes();
   throwIfAborted(input.signal);
 
   const temporaryRoot = input.context.environment.tempDirectory ??
     input.storageDirectory;
   if (!temporaryRoot || !path.isAbsolute(temporaryRoot)) {
-    throw new Error(importFailureMessage);
+    throw new Error(input.failureMessage);
   }
 
   let stagingDirectory: string | undefined;
@@ -208,22 +237,23 @@ async function importRequestAudioAttachment(
       stagingPath = path.join(
         stagingDirectory,
         `${createStorageId("sample")}${
-          ref.mediaType === "audio/wav" ? ".wav" : ".mp3"
+          input.mediaType === "audio/wav" ? ".wav" : ".mp3"
         }`,
       );
       await fs.writeFile(stagingPath, bytes, { flag: "wx", mode: 0o600 });
     } catch {
       throwIfAborted(input.signal);
-      throw new Error(importFailureMessage);
+      throw new Error(input.failureMessage);
     }
     throwIfAborted(input.signal);
     beforeImport?.();
+    throwIfAborted(input.signal);
     let managedPath: string;
     try {
       managedPath = await input.context.resources.importIntoProject(stagingPath);
     } catch {
       throwIfAborted(input.signal);
-      throw new Error(importFailureMessage);
+      throw new Error(input.failureMessage);
     }
     // The caller records this irreversible import before honoring cancellation.
     return managedPath;

@@ -119,6 +119,12 @@ The data directory is private, not disposable build output. It contains saved
 Profiles, Session metadata and events, attachments, imported Skills, and model
 metadata. `live-smith-settings.json` contains Direct API keys as plain text;
 `oauth/credentials.json` contains private provider OAuth credentials.
+Audio-service connection keys also live in private settings. Audio-processing
+jobs and input/output assets are stored under `live-smith-audio/<sessionId>/`.
+Processing tests use injected services and local audio fixtures; they do not
+upload user audio or consume generation credits or processing minutes. Real-service validation requires
+an explicitly configured account. Verify separated-stem timing, Warp settings,
+playback, Stop, and import behavior separately in the Ableton host.
 Built-in Skills are bundled and do not create imported Skill files.
 
 Do not commit, share, cloud-sync, or delete private development data without the

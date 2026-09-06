@@ -37,6 +37,10 @@ import { EDIT_SCOPES, EDIT_SCOPE_LABELS } from "../agent/edit-scopes.js";
 import { MAX_RECOVERY_ACTION_DIGESTS } from "../agent/recovery-contract.js";
 import { MAX_SESSION_TITLE_CODE_POINTS } from "../storage/sessions.js";
 import { MAX_MIDI_PREVIEW_NOTES, MAX_PARAMETER_PREVIEW_VALUE_ITEMS } from "../agent/action-preview.js";
+import { SEPARATION_STEMS, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_DURATION_SECONDS,
+  MAX_AUDIO_SESSION_JOBS, MAX_AUDIO_JOB_OUTPUTS, MAX_AUDIO_SERVICES } from "../audio-services/contracts.js";
+
+import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
 
 // Shared by the CSS media query and the client's drawer focus boundary.
 export const INSPECTOR_DRAWER_MAX_WIDTH = 1038;
@@ -179,6 +183,13 @@ function injectEditScopeContract(script: string): string {
 
 function injectSessionContract(script: string): string {
   return script
+    .replaceAll("__AUDIO_SERVICE_CAPABILITIES__", () => JSON.stringify(AUDIO_SERVICE_CAPABILITIES))
+    .replaceAll("__MAX_AUDIO_SERVICES__", String(MAX_AUDIO_SERVICES))
+    .replaceAll("__SEPARATION_STEMS__", () => JSON.stringify(SEPARATION_STEMS))
+    .replaceAll("__MAX_AUDIO_ASSET_BYTES__", String(MAX_AUDIO_ASSET_BYTES))
+    .replaceAll("__MAX_AUDIO_ASSET_DURATION_SECONDS__", String(MAX_AUDIO_ASSET_DURATION_SECONDS))
+    .replaceAll("__MAX_AUDIO_SESSION_JOBS__", String(MAX_AUDIO_SESSION_JOBS))
+    .replaceAll("__MAX_AUDIO_JOB_OUTPUTS__", String(MAX_AUDIO_JOB_OUTPUTS))
     .replaceAll("__MAX_MIDI_PREVIEW_NOTES__", String(MAX_MIDI_PREVIEW_NOTES))
     .replaceAll("__MAX_PARAMETER_PREVIEW_VALUE_ITEMS__", String(MAX_PARAMETER_PREVIEW_VALUE_ITEMS))
     .replaceAll(
@@ -197,7 +208,7 @@ export function composeChatDocument(
   bridge: { baseUrl: string; token: string },
   scripts: ChatClientScripts,
 ): string {
-  const attachmentsScript = injectAttachmentContract(scripts.attachments);
+  const attachmentsScript = injectSessionContract(injectAttachmentContract(scripts.attachments));
   const bridgeClientScript = injectSessionContract(injectEditScopeContract(
     injectModelContract(injectSkillContract(
       injectAttachmentContract(scripts.bridgeClient),

@@ -1104,6 +1104,7 @@
           renderComposerContextUsage();
           bridgeClient.renderDefaultFollowUpBehavior();
           bridgeClient.renderNetworkProxySettings();
+          bridgeClient.renderAudioTools();
           profileEditor.renderApprovalMode();
           renderEditScopes();
           sessionTimeline.renderSessions();
@@ -1245,6 +1246,9 @@
           event_stream_refresh: {},
           save_global_settings: {
             status: t("Saving settings…"),
+          },
+          resume_audio_job: {
+            status: t("Resuming audio job…"),
           },
           start_oauth_login: {
             controlId: "oauthSignInButton",
@@ -1456,6 +1460,7 @@
           syncProfileSettingsLock(settingsBusy);
           const sessionSettingDisabled = Boolean(commandKind) || attachmentInProgress ||
             skillInProgress;
+          bridgeClient.setAudioToolsBusy(sessionSettingDisabled, operationBusy);
           setPropertyIfChanged(document.getElementById("uiLanguage"), "disabled",
             sessionSettingDisabled || uiLanguageSaving);
           if (approvalMode.disabled !== sessionSettingDisabled) {
@@ -1541,6 +1546,11 @@
           setOperationState,
           setConfirmationState: sessionTimeline.setConfirmationState,
           showFieldError: (field, message) => {
+            if (field === "audioServices") {
+              openInspector("app");
+              document.getElementById("audioServiceApiKey").focus({ preventScroll: true });
+              return false;
+            }
             openInspector(profileEditor.inspectorTabForField(field));
             return profileEditor.showFieldError(field, message);
           },
@@ -1551,6 +1561,12 @@
         delete window.LiveSmithFactories;
 
         window.LiveSmithUI = {
+          handleAudioSettingsInput: bridgeClient.handleAudioSettingsInput,
+          handleAudioServiceSelection: bridgeClient.handleAudioServiceSelection,
+          addAudioService: bridgeClient.addAudioService,
+          removeAudioService: bridgeClient.removeAudioService,
+          reloadAudioService: bridgeClient.reloadAudioService,
+          saveAudioServiceSettings: bridgeClient.saveAudioServiceSettings,
           addProfile: profileEditor.addProfile,
           deleteProfile: profileEditor.deleteProfile,
           discardProfileChanges: profileEditor.discardProfileChanges,

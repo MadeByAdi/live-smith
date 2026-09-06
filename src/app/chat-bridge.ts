@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+import { sendAudioAssetResponse } from "./audio-asset-response.js";
+import type { AudioServicesView } from "../audio-services/contracts.js";
 import {
   createServer,
   type IncomingMessage,
@@ -237,8 +239,8 @@ export class ChatBridgeCommandOutcomeUnknownError extends Error {
   }
 }
 
-class ChatBridgeCommandStoppedError extends ChatBridgeConflictError {
-  constructor() {
+export class ChatBridgeCommandStoppedError extends ChatBridgeConflictError {
+  constructor(public readonly authoritativeState?: ChatDialogState) {
     super("Command stopped by user.");
     this.name = "ChatBridgeCommandStoppedError";
   }
@@ -319,6 +321,9 @@ export interface ChatBridge {
 }
 
 interface ChatBridgeOptions {
+  readAudioAsset?(sessionId: string, assetId: string, signal: AbortSignal): Promise<{
+    bytes: Uint8Array; mediaType: "audio/wav" | "audio/mpeg";
+  }>;
   buildState(signal?: AbortSignal): Promise<ChatDialogState>;
   buildInvalidatedSessionState?(
     sessionId: string,
@@ -475,6 +480,7 @@ type StateChangeSsePayloadBase =
     }
   | {
       type: "global_settings_changed";
+      audioServices?: AudioServicesView;
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
       defaultFollowUpBehaviorRevision: DefaultFollowUpBehaviorRevision;
       showContextUsage: boolean;
@@ -867,6 +873,7 @@ export async function createChatBridge(
     ) return state;
     if (latestGlobalSettingsChange === undefined) {
       latestGlobalSettingsChange = {
+        ...(state.audioServices ? { audioServices: state.audioServices } : {}),
         defaultFollowUpBehavior: settings.defaultFollowUpBehavior,
         defaultFollowUpBehaviorRevision:
           settings.defaultFollowUpBehaviorRevision,
@@ -899,14 +906,18 @@ export async function createChatBridge(
       settings.networkProxyRevision,
       latestGlobalSettingsChange.networkProxyRevision,
     ) > 0;
+    const audioFromState = state.audioServices !== undefined && compareNetworkProxyRevisions(
+      state.audioServices.revision, latestGlobalSettingsChange.audioServices?.revision ?? "0",
+    ) > 0;
     if (
       behaviorFromState ||
       contextVisibilityFromState ||
       networkProxyFromState ||
-      uiLanguageFromState
+      uiLanguageFromState || audioFromState
     ) {
       latestGlobalSettingsChange = {
         ...latestGlobalSettingsChange,
+        ...(audioFromState ? { audioServices: state.audioServices! } : {}),
         ...(behaviorFromState
           ? {
               defaultFollowUpBehavior: settings.defaultFollowUpBehavior,
@@ -938,6 +949,7 @@ export async function createChatBridge(
 
     return {
       ...state,
+      ...(latestGlobalSettingsChange.audioServices ? { audioServices: latestGlobalSettingsChange.audioServices } : {}),
       settings: {
         ...settings,
         defaultFollowUpBehavior:
@@ -1311,6 +1323,21 @@ export async function createChatBridge(
         } else {
           response.writeHead(403).end("Forbidden");
         }
+        return;
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/audio-assets/")) {
+        assertExactQueryParameters(url, ["token", "sessionId"], "Audio asset request");
+        if (!options.readAudioAsset) { response.writeHead(404).end("Not found"); return; }
+        const assetId = url.pathname.slice("/audio-assets/".length);
+        const sessionIds = url.searchParams.getAll("sessionId");
+        if (!isSafeStorageId(assetId) || sessionIds.length !== 1 || !isSafeStorageId(sessionIds[0])) {
+          throw new ChatBridgeRequestValidationError("Audio asset reference is invalid.");
+        }
+        const signal = beginReadOnlyBuild(response, handlerTerminal);
+        const audio = await options.readAudioAsset(sessionIds[0], assetId, signal);
+        if (closing || response.destroyed) return;
+        sendAudioAssetResponse(response, audio, request.headers.range, request.method === "HEAD");
         return;
       }
 
@@ -2201,6 +2228,10 @@ export async function createChatBridge(
       let commandState: ChatBridgeState | undefined;
       let sendErrorState: ChatBridgeState | undefined;
       let reconciliationRequired: true | undefined;
+      if (commandOutcome === "stopped" && reportedError instanceof ChatBridgeCommandStoppedError &&
+          reportedError.authoritativeState !== undefined) {
+        commandState = finalizeBridgeState(reportedError.authoritativeState, stateSnapshotCutRevision);
+      }
       if (commandOutcome === "unknown") {
         if (
           reportedError instanceof ChatBridgeCommandOutcomeUnknownError &&
@@ -2438,6 +2469,9 @@ export async function createChatBridge(
           change.networkProxyRevision,
           latestGlobalSettingsChange.networkProxyRevision,
         );
+        const audioOrder = compareNetworkProxyRevisions(
+          change.audioServices?.revision ?? "0", latestGlobalSettingsChange.audioServices?.revision ?? "0",
+        );
         if (
           (
             uiLanguageOrder === 0 &&
@@ -2466,17 +2500,21 @@ export async function createChatBridge(
             behaviorOrder <= 0 &&
             contextVisibilityOrder <= 0 &&
             networkProxyOrder <= 0 &&
+            audioOrder <= 0 &&
             uiLanguageOrder <= 0 &&
             !(
               latestGlobalSettingsFromState &&
               behaviorOrder === 0 &&
               contextVisibilityOrder === 0 &&
               networkProxyOrder === 0 &&
+              audioOrder === 0 &&
               uiLanguageOrder === 0
             )
           )
         ) return;
         latestGlobalSettingsChange = {
+          ...((audioOrder > 0 ? change.audioServices : latestGlobalSettingsChange.audioServices)
+            ? { audioServices: (audioOrder > 0 ? change.audioServices : latestGlobalSettingsChange.audioServices)! } : {}),
           defaultFollowUpBehavior: behaviorOrder > 0
             ? change.defaultFollowUpBehavior
             : latestGlobalSettingsChange.defaultFollowUpBehavior,

@@ -1404,6 +1404,7 @@ async function createDialogHarness(
                 showContextUsage?: boolean;
                 uiLanguage?: UiLanguage;
                 networkProxy?: NetworkProxySettings;
+                audioServices?: import("../audio-services/contracts.js").AudioServicesSettingsPatch;
                 profile?: SavedProfile;
                 profileId?: string;
                 provider?: "openai" | "anthropic" | "google";
@@ -1419,7 +1420,27 @@ async function createDialogHarness(
               if (
                 command.kind === "save_global_settings"
               ) {
-                if (command.uiLanguage) {
+                if (command.audioServices) {
+                  const patch = command.audioServices;
+                  const current = serverState.audioServices ?? { connections: [], revision: "0" };
+                  if (patch.expectedRevision !== current.revision) {
+                    return failedResponse({ commandId, error: "Audio settings changed in another window.", field: "audioServices" }, 409, "Conflict");
+                  }
+                  const connections = [...current.connections];
+                  if (patch.action === "remove") {
+                    const index = connections.findIndex((service) => service.id === patch.serviceId);
+                    if (index >= 0) connections.splice(index, 1);
+                  } else {
+                    const { apiKey, ...fields } = patch.connection;
+                    const index = connections.findIndex((service) => service.id === fields.id);
+                    const previous = connections[index];
+                    const service = { ...fields, apiKeyConfigured: apiKey === undefined
+                      ? previous?.provider === fields.provider && previous.apiKeyConfigured : Boolean(apiKey) };
+                    if (index < 0) connections.push(service);
+                    else connections[index] = service;
+                  }
+                  serverState.audioServices = { connections, revision: incrementNetworkProxyRevision(current.revision) };
+                } else if (command.uiLanguage) {
                   serverState.settings.uiLanguage = command.uiLanguage;
                   serverState.settings.uiLanguageRevision = String(BigInt(serverState.settings.uiLanguageRevision) + 1n);
                 } else if (typeof command.defaultFollowUpBehavior === "string") {

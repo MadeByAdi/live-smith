@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
+import type { AudioServicesSettings, AudioServicesView, AudioServicesSettingsPatch } from "../audio-services/contracts.js";
 
 import {
   activeSavedProfile,
@@ -14,6 +15,11 @@ import {
   type UiLanguage,
   isDefaultFollowUpBehavior,
   normalizeNetworkProxySettings,
+  normalizeAudioServicesSettings,
+  normalizeAudioServiceConnection,
+  isProfileId,
+  isNetworkProxyRevision,
+  ProfileValidationError,
   validateDraftProfileForSave,
   type AgentSettings,
   type DefaultFollowUpBehavior,
@@ -66,25 +72,73 @@ export type GlobalSettingsPatch =
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
       showContextUsage?: never;
       networkProxy?: never;
+      audioServices?: never;
     }
   | {
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage: boolean;
       networkProxy?: never;
+      audioServices?: never;
     }
   | {
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
+      audioServices?: never;
     }
   | {
       uiLanguage: UiLanguage;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy?: never;
+      audioServices?: never;
+    }
+  | {
+      uiLanguage?: never;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
+      audioServices: AudioServicesSettingsPatch;
     };
+
+export type { AudioServicesSettingsPatch } from "../audio-services/contracts.js";
+
+export function normalizeAudioServicesSettingsPatch(value: unknown): AudioServicesSettingsPatch {
+  const fail = (): never => {
+    throw new ProfileValidationError("audioServices", "Audio settings require an upsert or remove action, a valid revision, and only the action's fields.");
+  };
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return fail();
+  const record = value as Record<string, unknown>;
+  if (!isNetworkProxyRevision(record.expectedRevision)) return fail();
+  if (record.action === "remove") {
+    if (Object.keys(record).some((key) => !["action", "expectedRevision", "serviceId"].includes(key)) ||
+      !isProfileId(record.serviceId)) return fail();
+    return { action: "remove", expectedRevision: record.expectedRevision, serviceId: record.serviceId };
+  }
+  if (record.action !== "upsert" ||
+    Object.keys(record).some((key) => !["action", "expectedRevision", "connection"].includes(key)) ||
+    typeof record.connection !== "object" || record.connection === null || Array.isArray(record.connection)) return fail();
+  const input = record.connection as Record<string, unknown>;
+  // A write-only omitted key is resolved under the transaction, never from another connection.
+  const connection = normalizeAudioServiceConnection({
+    ...input, apiKey: Object.hasOwn(input, "apiKey") ? input.apiKey : "",
+    enabled: false,
+  });
+  if (typeof input.enabled !== "boolean") return fail();
+  const { apiKey, ...fields } = connection;
+  return { action: "upsert", expectedRevision: record.expectedRevision,
+    connection: { ...fields, enabled: input.enabled, ...(Object.hasOwn(input, "apiKey") ? { apiKey } : {}) } };
+}
+
+export function audioServicesView(settings: AudioServicesSettings | undefined): AudioServicesView {
+  return { connections: (settings?.connections ?? []).map(({ id, name, provider, enabled, apiKey, modelId, callbackUrl }) => ({
+    id, name, provider, enabled, apiKeyConfigured: Boolean(apiKey),
+    ...(modelId === undefined ? {} : { modelId }),
+    ...(callbackUrl === undefined ? {} : { callbackUrl }),
+  })), revision: settings?.revision ?? "0" };
+}
 
 export function savedProfileRevision(profile: SavedProfile): string {
   return createHash("sha256").update(JSON.stringify(profile), "utf8").digest("hex");
@@ -223,6 +277,7 @@ export async function saveGlobalSettings(
     "showContextUsage",
   );
   const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
+  const hasAudioService = Object.prototype.hasOwnProperty.call(input, "audioServices");
   const hasNetworkProxy = Object.prototype.hasOwnProperty.call(
     input,
     "networkProxy",
@@ -230,7 +285,7 @@ export async function saveGlobalSettings(
   if (
     Number(hasFollowUpBehavior) +
       Number(hasContextUsage) +
-      Number(hasNetworkProxy) + Number(hasUiLanguage) !== 1 ||
+      Number(hasNetworkProxy) + Number(hasUiLanguage) + Number(hasAudioService) !== 1 ||
     Object.keys(input).length !== 1
   ) {
     throw new Error("Global settings update must contain exactly one setting.");
@@ -250,8 +305,37 @@ export async function saveGlobalSettings(
   const networkProxy = hasNetworkProxy
     ? normalizeNetworkProxySettings(input.networkProxy)
     : undefined;
+  const audioPatch = hasAudioService ? normalizeAudioServicesSettingsPatch(input.audioServices) : undefined;
+  if (audioPatch && !storageDirectory) {
+    throw new ProfileValidationError("audioServices", "Audio tools require persistent private storage.");
+  }
   return withStorageTransaction(storageDirectory, async () => {
     const settings = await loadAgentSettingsUnlocked(storageDirectory);
+    if (audioPatch) {
+      const revision = settings.audioServices?.revision ?? "0";
+      if (audioPatch.expectedRevision !== revision) {
+        throw new ProfileValidationError("audioServices", "Audio tools settings changed in another window. Reload before saving.");
+      }
+      const connections = [...(settings.audioServices?.connections ?? [])];
+      const serviceId = audioPatch.action === "remove" ? audioPatch.serviceId : audioPatch.connection.id;
+      const index = connections.findIndex((connection) => connection.id === serviceId);
+      if (audioPatch.action === "remove") {
+        if (index < 0) throw new ProfileValidationError("audioServices", "This audio connection no longer exists.");
+        connections.splice(index, 1);
+      } else {
+        const previous = connections[index];
+        const replacement = audioPatch.connection;
+        const connection = normalizeAudioServiceConnection({
+          ...replacement,
+          apiKey: replacement.apiKey ?? (previous?.provider === replacement.provider ? previous.apiKey : ""),
+        });
+        if (index < 0) connections.push(connection);
+        else connections[index] = connection;
+      }
+      return persistSettings(storageDirectory, { ...settings,
+        audioServices: normalizeAudioServicesSettings({ connections,
+          revision: incrementNetworkProxyRevision(revision) }) });
+    }
     return persistSettings(storageDirectory, {
       ...settings,
       ...(hasFollowUpBehavior

@@ -14,6 +14,16 @@ export interface AudioAttachmentInspection {
   channels: number;
 }
 
+export interface AudioInspectionLimits {
+  maxBytes: number;
+  maxDurationSeconds: number;
+}
+
+const defaultAudioInspectionLimits: AudioInspectionLimits = {
+  maxBytes: MAX_AUDIO_ATTACHMENT_BYTES,
+  maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS,
+};
+
 const scanYieldBytes = 256 * 1024;
 const minimumWaveSampleRate = 8_000;
 const maximumWaveSampleRate = 192_000;
@@ -22,7 +32,9 @@ export const MAX_AUDIO_ID3V2_PAYLOAD_BYTES = 1024 * 1024;
 
 export function isAudioAttachmentInspection(
   value: unknown,
+  limits: AudioInspectionLimits = defaultAudioInspectionLimits,
 ): value is AudioAttachmentInspection {
+  if (!validInspectionLimits(limits)) return false;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
@@ -33,7 +45,7 @@ export function isAudioAttachmentInspection(
     typeof record.durationSeconds === "number" &&
     Number.isFinite(record.durationSeconds) &&
     record.durationSeconds > 0 &&
-    record.durationSeconds <= MAX_AUDIO_DURATION_SECONDS &&
+    record.durationSeconds <= limits.maxDurationSeconds &&
     Number.isInteger(record.sampleRate) &&
     (
       record.mediaType === "audio/mpeg"
@@ -75,15 +87,18 @@ export function isAudioAttachmentCandidate(bytes: Uint8Array): boolean {
 export async function inspectAudioAttachment(input: {
   bytes: Uint8Array;
   signal?: AbortSignal;
+  limits?: AudioInspectionLimits;
 }): Promise<AudioAttachmentInspection> {
   throwIfAborted(input.signal);
+  const limits = input.limits ?? defaultAudioInspectionLimits;
+  if (!validInspectionLimits(limits)) throw new TypeError("Audio inspection limits are invalid.");
   if (!(input.bytes instanceof Uint8Array) || input.bytes.byteLength === 0) {
     throw invalidAudio();
   }
-  if (input.bytes.byteLength > MAX_AUDIO_ATTACHMENT_BYTES) {
+  if (input.bytes.byteLength > limits.maxBytes) {
     throw new AttachmentProcessingError(
       "archive_limit",
-      "Audio attachments may not exceed 20 MiB.",
+      `Audio attachments may not exceed ${limits.maxBytes / (1024 * 1024)} MiB.`,
     );
   }
 
@@ -100,10 +115,10 @@ export async function inspectAudioAttachment(input: {
       ? await inspectWave(bytes, input.signal)
       : await inspectMp3(bytes, input.signal);
     throwIfAborted(input.signal);
-    if (inspection.durationSeconds > MAX_AUDIO_DURATION_SECONDS) {
+    if (inspection.durationSeconds > limits.maxDurationSeconds) {
       throw new AttachmentProcessingError(
         "audio_duration_limit",
-        "Audio attachments may not exceed 120 seconds.",
+        `Audio attachments may not exceed ${limits.maxDurationSeconds} seconds.`,
       );
     }
     return inspection;
@@ -112,6 +127,11 @@ export async function inspectAudioAttachment(input: {
     if (error instanceof AttachmentProcessingError) throw error;
     throw invalidAudio();
   }
+}
+
+function validInspectionLimits(limits: AudioInspectionLimits): boolean {
+  return Number.isSafeInteger(limits.maxBytes) && limits.maxBytes > 0 &&
+    Number.isFinite(limits.maxDurationSeconds) && limits.maxDurationSeconds > 0;
 }
 
 function isWave(bytes: Uint8Array): boolean {

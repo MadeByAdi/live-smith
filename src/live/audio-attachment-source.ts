@@ -15,12 +15,16 @@ const readChunkBytes = 256 * 1024;
 export async function copyAudioFileSafely(
   filePath: string,
   signal: AbortSignal,
+  maxBytes = MAX_AUDIO_ATTACHMENT_BYTES,
 ): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new TypeError("Audio file byte limit is invalid.");
+  }
   let handle: FileHandle | undefined;
   try {
     const beforeOpen = await lstat(filePath, { bigint: true });
     throwIfAborted(signal);
-    assertSafeRegularFile(beforeOpen);
+    assertSafeRegularFile(beforeOpen, maxBytes);
 
     handle = await open(
       filePath,
@@ -28,7 +32,7 @@ export async function copyAudioFileSafely(
     );
     const beforeRead = await handle.stat({ bigint: true });
     assertSameFileSnapshot(beforeOpen, beforeRead);
-    assertSafeRegularFile(beforeRead);
+    assertSafeRegularFile(beforeRead, maxBytes);
 
     const size = Number(beforeRead.size);
     const owned = new Uint8Array(size);
@@ -49,7 +53,7 @@ export async function copyAudioFileSafely(
     const afterRead = await handle.stat({ bigint: true });
     assertSameFileSnapshot(beforeRead, afterRead);
     const afterPath = await lstat(filePath, { bigint: true });
-    assertSafeRegularFile(afterPath);
+    assertSafeRegularFile(afterPath, maxBytes);
     assertSameFileSnapshot(afterRead, afterPath);
     throwIfAborted(signal);
     return owned;
@@ -78,14 +82,14 @@ interface BigIntFileSnapshot {
   isSymbolicLink(): boolean;
 }
 
-function assertSafeRegularFile(snapshot: BigIntFileSnapshot): void {
+function assertSafeRegularFile(snapshot: BigIntFileSnapshot, maxBytes: number): void {
   if (snapshot.isSymbolicLink() || !snapshot.isFile() || snapshot.size <= 0n) {
     throw unavailableAudioSource();
   }
-  if (snapshot.size > BigInt(MAX_AUDIO_ATTACHMENT_BYTES)) {
+  if (snapshot.size > BigInt(maxBytes)) {
     throw new AttachmentProcessingError(
       "archive_limit",
-      "Audio attachments may not exceed 20 MiB.",
+      `Audio attachments may not exceed ${maxBytes / (1024 * 1024)} MiB.`,
     );
   }
 }

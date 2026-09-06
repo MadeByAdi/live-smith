@@ -87,6 +87,25 @@ src/
     image.ts, pdf.ts, ooxml*.ts, docx.ts, xlsx.ts, pptx.ts
       Type-specific inspection and bounded local document extraction.
 
+  audio-services/
+    contracts.ts
+      Typed audio operations, named service connections, private remote locators, audio
+      job records, and immutable audio asset contracts.
+    lalal.ts, lalal-http.ts
+      LALAL.AI Public API v1 upload, multistem submission, task checks and
+      cancellation, bounded protocol decoding and credential-free downloads.
+    elevenlabs.ts, elevenlabs-http.ts
+      Official music and sound-effect requests, bounded MP3 responses, and
+      cancellation without automatic regeneration.
+    sunoapi.ts, sunoapi-http.ts
+      Explicit third-party SunoAPI.org submission, polling, and allowed-CDN
+      downloads; no official Suno subscription credentials.
+    response-bytes.ts
+      Shared bounded decoded-body reads with periodic cancellation yields and
+      exact Content-Length checks only for unencoded responses.
+    capabilities.ts
+      Implemented operation availability consumed by settings and tool routing.
+
   skills/
     builtins.ts
       Bundled, read-only arrangement Skill registry and merged availability
@@ -821,6 +840,84 @@ not the Live Project copy. The beta SDK exposes neither rollback nor deletion
 for imported files, so a failed later step may leave an unused project copy.
 
 ## Configuration boundaries
+
+### External audio processing
+
+`agent/audio-tools.ts` describes and validates the processing tools exposed to
+the chat model. `app/request-audio-tools.ts` binds input references to the current
+request's attachments, same-Session saved results, or an isolated Arrangement
+Audio Clip range. `app/audio-processing.ts` owns the asynchronous lifecycle and
+calls the configured adapter through the existing proxy-aware Fetch boundary.
+`app/audio-generation.ts` owns generation responses and saved-result recovery;
+`audio-service-connections.ts` resolves the exact named connection and credential
+owner. Tool admission captures immutable private connection snapshots; public
+tool choices are derived from those same snapshots. Initial operations reject
+changes to the selected connection before uploading input or submitting paid
+work, and adapters retain the admitted connection rather than reloading a new
+account. Changes to unrelated connections do not invalidate the request.
+`audio-job-runtime.ts` shares active-job exclusion and verified local recovery
+across operations.
+This is an external-effect tool category, separate from Live observations and
+Live mutation recovery. Chat transports continue to exchange ordinary function
+calls and textual results. When an enabled processing service can consume the
+audio but the chat model cannot, the host validates and retains the attachment
+without adding its bytes to the model request.
+
+An audio job stores its operation, exact service ID, optional model ID, input asset
+when applicable, requested stems, credential-owner
+fingerprint, accepted remote IDs, status, and collected output records. The key
+itself is stored only in private settings. A job exists before submission;
+accepted remote IDs are committed before honoring cancellation of the local wait.
+A missing submit reply leaves an explicit unknown outcome and is never replayed
+automatically. Resume first reconciles and verifies complete local results,
+even if the connection has been disabled, removed, or replaced. Only an
+incomplete local result proceeds to saved-connection authorization and the
+original credential fingerprint check before querying the existing task.
+Task-based generation acknowledges its final output roles before collection, so one- and two-track
+results can finish local bookkeeping even when the remote service is offline.
+One failed download or invalid audio output does not prevent collecting other
+available outputs; systemic storage failures end the current collection attempt.
+One process-local owner excludes concurrent execution of the
+same job. Remote processing does not acquire the Live mutation queue.
+
+`storage/audio-jobs.ts` and `storage/audio-assets.ts` own bounded, private,
+Session-scoped metadata and create-only audio files. An input snapshot and each
+output are immutable and integrity-checked. The asset metadata receipt commits
+before its audio blob; a metadata-only receipt is not listed as an available
+result. A deterministic job/role asset ID allows a complete blob committed before
+its job-record update to be recovered and hash-verified without redownloading or
+creating another copy. Permission normalization and the complete bounded file
+read are coordinated by inode, so parallel readers cannot invalidate each
+other's ctime snapshots. Only pending reads retain coordination entries.
+Callers that need both jobs and recoverable assets reuse one verified metadata
+snapshot; there is no persistent asset cache. Per-file and per-Session limits are
+independent of chat attachment limits. A completed remote job is not locally
+complete until all required outputs are stored; partial results remain usable.
+The job record is authoritative for the UI; conversational tool results describe
+the state observed at that turn and are not rewritten on later recovery.
+
+`audio-asset-sources.ts` populates the send-scoped managed SampleSource registry
+from saved results belonging to the current Session. `audio_asset` references
+carry only an opaque asset reference. Preparation verifies the exact expected
+asset, stages owned bytes and imports them through the shared lazy sample-import
+helper. The existing preflight, complete-plan Scope check, approval policy,
+mutation queue and post-import revalidation remain in force. Processing tools
+never create or modify Live objects themselves. Timing metadata records the
+input snapshot and is not a promise of sample-accurate separation alignment.
+
+Authenticated local audio-result routes validate Session and asset ownership,
+serve verified bytes with byte-range support, and never redirect a WebView to a
+provider download URL. The top-level `audioServices` view is the sole browser
+projection of audio settings; the private settings collection is omitted.
+Saved service keys are omitted from full-state and
+incremental UI projections. Stop or window closure ends local processing and
+attempts bounded remote cancellation where available; retained remote tasks may
+be resumed explicitly, without replaying a stopped Live plan. Session deletion
+and orphan cleanup remove private audio data alongside other Session data, while
+Live-managed imported copies remain owned by Live.
+
+User settings, limits, and provider-specific behavior are documented under
+[external audio tools](MODEL_PROVIDERS.md#external-audio-tools).
 
 ### Write ownership and Profile revisions
 

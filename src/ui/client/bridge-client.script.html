@@ -27,6 +27,7 @@
         __MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES__;
       const maximumSessionTitleCodePoints = __MAX_SESSION_TITLE_CODE_POINTS__;
       const maximumRecoveryActionDigests = __MAX_RECOVERY_ACTION_DIGESTS__;
+      const audioServiceCapabilities = __AUDIO_SERVICE_CAPABILITIES__;
       const editScopeIds = __EDIT_SCOPES__;
       const maximumMidiPreviewNotes = __MAX_MIDI_PREVIEW_NOTES__;
       const maximumParameterPreviewValueItems = __MAX_PARAMETER_PREVIEW_VALUE_ITEMS__;
@@ -119,7 +120,15 @@
         "set_session_model_selection",
         "load_session_model_capabilities",
         "compact_session",
+        "resume_audio_job",
       ]);
+      let confirmedAudioServices = getState().audioServices || null;
+      const audioSettingsDrafts = new Map();
+      let selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
+      let audioSettingsSubmitting = false;
+      let audioSettingsBusy = false;
+      let audioResumeBusy = false;
+      let renderedAudioJobs = null;
       let confirmedDefaultFollowUpBehavior = isDefaultFollowUpBehavior(
         getState().settings?.defaultFollowUpBehavior,
       )
@@ -391,6 +400,7 @@
             state.bridgeStateCoveredThroughRevision,
           activeSessionId: state.activeSessionId,
           pendingAttachments: state.pendingAttachments,
+          audioJobs: state.audioJobs,
           contextSummary: state.contextSummary,
           liveContext: state.liveContext,
           sessionContinueTarget: state.sessionContinueTarget,
@@ -1102,6 +1112,7 @@
           ) >= 0;
         if (authoritativeOwnsSelection) {
           merged.activeSessionId = state.activeSessionId;
+          merged.audioJobs = state.audioJobs;
           merged.events = state.events;
           merged.pendingAttachments = state.pendingAttachments;
           const contextState = state.activeSessionId !== current.activeSessionId || incomingContextIsCurrent
@@ -1111,6 +1122,7 @@
           merged.sessionContinueTarget = contextState.sessionContinueTarget;
         } else {
           merged.activeSessionId = current.activeSessionId;
+          merged.audioJobs = current.audioJobs;
           merged.events = current.events;
           merged.pendingAttachments = current.pendingAttachments;
           merged.contextSummary = current.contextSummary;
@@ -1145,6 +1157,9 @@
           state.activeSessionId === merged.activeSessionId &&
           current.activeSessionId === merged.activeSessionId
         ) {
+          if (sameJsonValue(current.audioJobs, baseline.audioJobs) || contextCutOrder > 0) {
+            merged.audioJobs = state.audioJobs;
+          }
           if (attempt.ownedActiveSessionContentId === merged.activeSessionId) {
             merged.events = state.events;
             merged.pendingAttachments = state.pendingAttachments;
@@ -2697,11 +2712,107 @@
           range.start >= 0 && range.end >= range.start;
       }
 
+      function isWireAudioModelId(value) {
+        return value === undefined || typeof value === "string" && /^[\x21-\x7e]{1,128}$/.test(value);
+      }
+
+      // Keep the public-address policy aligned with model/profile.ts; no network probing.
+      function isAudioServiceCallbackUrl(value) {
+        if (typeof value !== "string" || value.length > 2048 || !/^https:\/\//i.test(value) ||
+          /[\s\x00-\x1f\x7f\\?#]/u.test(value) || /%(?![\da-f]{2})/i.test(value)) return false;
+        try {
+          if (/[\s\x00-\x1f\x7f\\]/u.test(decodeURI(value))) return false;
+          const url = new URL(value);
+          const authority = value.split("/")[2];
+          if (url.protocol !== "https:" || url.port || url.username || url.password || !authority || authority.includes("@")) return false;
+          const host = url.hostname.toLowerCase();
+          const labels = host.split(".");
+          return host.length <= 253 && labels.length > 1 && /^[a-z]{2,63}$/.test(labels.at(-1)) && labels.every((label) =>
+            /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
+            !["localhost", "local", "internal", "invalid", "test", "example", "onion", "lan", "corp", "home"].includes(labels.at(-1)) &&
+            host !== "home.arpa" && !host.endsWith(".home.arpa");
+        } catch { return false; }
+      }
+
+      function isWireAudioCallback(service) {
+        return Object.hasOwn(service, "callbackUrl")
+          ? service.provider === "sunoapi" && isAudioServiceCallbackUrl(service.callbackUrl)
+          : service.provider !== "sunoapi" || !service.enabled;
+      }
+
+      function isWireAudioServices(value) {
+        return isWireRecord(value) && hasOnlyWireKeys(value, ["connections", "revision"]) &&
+          isDecimalRevision(value.revision) && Array.isArray(value.connections) &&
+          value.connections.length <= __MAX_AUDIO_SERVICES__ &&
+          value.connections.every((service) =>
+            isWireRecord(service) && hasOnlyWireKeys(service, ["id", "name", "provider", "enabled", "modelId", "callbackUrl",
+              "apiKeyConfigured"]) &&
+            isWireStorageId(service.id) && typeof service.name === "string" &&
+            service.name === service.name.trim() && service.name.length > 0 && service.name.length <= 120 &&
+            !/[\x00-\x1f\x7f]/.test(service.name) && Object.hasOwn(audioServiceCapabilities, service.provider) &&
+            typeof service.enabled === "boolean" && isWireAudioModelId(service.modelId) &&
+            (!Object.hasOwn(service, "modelId") || audioServiceCapabilities[service.provider].operations.includes("generate_music")) &&
+            isWireAudioCallback(service) &&
+            (!service.enabled || audioServiceCapabilities[service.provider].operations.length > 0) &&
+            typeof service.apiKeyConfigured === "boolean" && (!service.enabled || service.apiKeyConfigured)) &&
+          new Set(value.connections.map((service) => service.id)).size === value.connections.length &&
+          new Set(value.connections.map((service) => service.name.toLowerCase())).size === value.connections.length;
+      }
+
+      function isWireAudioAsset(value, sessionId, jobId) {
+        if (!isWireRecord(value) || !hasOnlyWireKeys(value, ["id", "sessionId", "jobId", "label", "role",
+          "mediaType", "byteLength", "sha256", "durationSeconds", "sampleRate", "channels", "origin"]) ||
+          !isWireStorageId(value.id) || value.sessionId !== sessionId || value.jobId !== jobId ||
+          typeof value.label !== "string" || value.label.length > 1024 ||
+          ![...__SEPARATION_STEMS__, "residual", "music", "music_alternative", "sound_effect"].includes(value.role) ||
+          !["audio/wav", "audio/mpeg"].includes(value.mediaType) ||
+          !Number.isSafeInteger(value.byteLength) || value.byteLength <= 0 || value.byteLength > __MAX_AUDIO_ASSET_BYTES__ ||
+          typeof value.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(value.sha256) ||
+          !Number.isFinite(value.durationSeconds) || value.durationSeconds <= 0 || value.durationSeconds > __MAX_AUDIO_ASSET_DURATION_SECONDS__ ||
+          !Number.isSafeInteger(value.sampleRate) || value.sampleRate <= 0 ||
+          !Number.isSafeInteger(value.channels) || value.channels <= 0) return false;
+        const origin = value.origin;
+        return isWireRecord(origin) && hasOnlyWireKeys(origin, ["kind", "startBeat", "endBeat", "tempo", "sourceAssetId"]) &&
+          ["attachment", "arrangement", "asset", "generated"].includes(origin.kind) &&
+          (origin.kind !== "generated" || hasOnlyWireKeys(origin, ["kind"])) &&
+          ["startBeat", "endBeat", "tempo"].every((key) => origin[key] === undefined || Number.isFinite(origin[key]) && origin[key] >= 0) &&
+          (origin.sourceAssetId === undefined || isWireStorageId(origin.sourceAssetId));
+      }
+
+      function isWireAudioJobs(jobs, sessionId) {
+        return Array.isArray(jobs) && jobs.length <= __MAX_AUDIO_SESSION_JOBS__ &&
+          new Set(jobs.map((job) => job?.id)).size === jobs.length && jobs.every((job) =>
+            isWireRecord(job) && hasOnlyWireKeys(job, ["id", "provider", "serviceId", "operation", "modelId", "status", "stems", "createdAt", "outputs", "message", "resumable"]) &&
+            isWireStorageId(job.id) && isWireStorageId(job.serviceId) &&
+            Object.hasOwn(audioServiceCapabilities, job.provider) &&
+            audioServiceCapabilities[job.provider].operations.includes(job.operation) &&
+            isWireAudioModelId(job.modelId) && ["preparing", "submitting", "running", "collecting", "completed", "partial",
+              "failed", "interrupted", "unknown", "cancelled"].includes(job.status) &&
+            Array.isArray(job.stems) && (job.operation === "separate_stems" ? job.stems.length > 0 : job.stems.length === 0) && new Set(job.stems).size === job.stems.length &&
+            job.stems.every((stem) => __SEPARATION_STEMS__.includes(stem)) &&
+            typeof job.createdAt === "string" && Number.isFinite(Date.parse(job.createdAt)) &&
+            (job.message === undefined || typeof job.message === "string" && job.message.length <= 4096) &&
+            typeof job.resumable === "boolean" &&
+            (!job.resumable || !["completed", "cancelled"].includes(job.status)) &&
+            Array.isArray(job.outputs) && job.outputs.length <= __MAX_AUDIO_JOB_OUTPUTS__ &&
+            (job.operation === "separate_stems" || job.outputs.length <= audioServiceCapabilities[job.provider].generationOutputCount) &&
+            new Set(job.outputs.map((asset) => asset?.id)).size === job.outputs.length &&
+            new Set(job.outputs.map((asset) => asset?.role)).size === job.outputs.length &&
+            job.outputs.every((asset) => isWireAudioAsset(asset, sessionId, job.id) &&
+              (job.operation === "separate_stems"
+                ? (job.stems.includes(asset.role) || asset.role === "residual") && asset.origin.kind !== "generated"
+                : asset.origin.kind === "generated" && (job.operation === "generate_music"
+                  ? asset.role === "music" || asset.role === "music_alternative" && audioServiceCapabilities[job.provider].generationOutputCount > 1
+                  : asset.role === "sound_effect"))));
+      }
+
       function isWireChatBridgeState(value) {
         if (
           !isWireRecord(value) ||
           !hasOnlyWireKeys(value, [
             "contextSummary",
+            "audioServices",
+            "audioJobs",
             "liveContext",
             "sessionContinueTarget",
             "sessions",
@@ -2734,6 +2845,8 @@
             "bridgeStateCoveredThroughRevision",
           ]) ||
           typeof value.contextSummary !== "string" ||
+          (value.audioServices !== undefined && !isWireAudioServices(value.audioServices)) ||
+          (value.audioJobs !== undefined && !isWireAudioJobs(value.audioJobs, value.activeSessionId)) ||
           !isWireLiveContext(value.liveContext) ||
           !isWireRecord(value.sessionContinueTarget) ||
           !hasOnlyWireKeys(value.sessionContinueTarget, ["kind", "label"]) ||
@@ -2956,10 +3069,7 @@
               (payload.state === undefined) ===
                 (payload.reconciliationRequired === undefined)
             ) return null;
-          } else if (
-            payload.state !== undefined ||
-            payload.reconciliationRequired !== undefined
-          ) return null;
+          } else if (payload.reconciliationRequired !== undefined) return null;
           return "command";
         }
         return hasOnlyWireKeys(payload, ["type", "message", "field"])
@@ -3125,10 +3235,7 @@
               (value.state === undefined) ===
                 (value.reconciliationRequired === undefined)
             ) throw invalidBridgeHttpResponse(path);
-          } else if (
-            value.state !== undefined ||
-            value.reconciliationRequired !== undefined
-          ) throw invalidBridgeHttpResponse(path);
+          } else if (value.reconciliationRequired !== undefined) throw invalidBridgeHttpResponse(path);
           return value;
         }
         if (path === "/send") {
@@ -3275,7 +3382,31 @@
         state.settings.networkProxyRevision = confirmedNetworkProxyRevision;
         state.settings.uiLanguage = optimisticUiLanguage?.language ?? confirmedUiLanguage;
         state.settings.uiLanguageRevision = confirmedUiLanguageRevision;
+        if (confirmedAudioServices) state.audioServices = { ...confirmedAudioServices };
         return state;
+      }
+
+      function adoptAudioServices(value) {
+        if (!isWireAudioServices(value) || confirmedAudioServices &&
+          compareDecimalRevisions(value.revision, confirmedAudioServices.revision) <= 0) return false;
+        for (const [id, draft] of audioSettingsDrafts) {
+          const next = value.connections.find((service) => service.id === id) || null;
+          // A key-only change is invisible in the view. Existing drafts keep their
+          // original collection revision; presence flags cannot prove credential identity.
+          if (draft.baseConnection || next) {
+            draft.conflict = true;
+            if (id === selectedAudioServiceId) document.getElementById("audioServiceApiKey").value = "";
+          } else if (!draft.conflict) {
+            draft.expectedRevision = value.revision;
+          }
+        }
+        confirmedAudioServices = { revision: value.revision, connections: value.connections.map((service) => ({ ...service })) };
+        if (!audioSettingsDrafts.has(selectedAudioServiceId) &&
+          !value.connections.some((service) => service.id === selectedAudioServiceId)) {
+          selectedAudioServiceId = value.connections[0]?.id || null;
+          document.getElementById("audioServiceApiKey").value = "";
+        }
+        return true;
       }
 
       function adoptUiLanguage(language, revision, commandId) {
@@ -3293,6 +3424,7 @@
       }
 
       function adoptGlobalSettingsFromState(state) {
+        adoptAudioServices(state.audioServices);
         adoptUiLanguage(state?.settings?.uiLanguage, state?.settings?.uiLanguageRevision);
         const behavior = state?.settings?.defaultFollowUpBehavior;
         const behaviorRevision =
@@ -3390,7 +3522,8 @@
           !isDecimalRevision(payload.uiLanguageRevision) ||
           !isDecimalRevision(networkProxyRevision)
         ) return false;
-        let adopted = adoptUiLanguage(payload.uiLanguage, payload.uiLanguageRevision, payload.commandId);
+        const audioAdopted = adoptAudioServices(payload.audioServices);
+        let adopted = adoptUiLanguage(payload.uiLanguage, payload.uiLanguageRevision, payload.commandId) || audioAdopted;
         if (
           compareDecimalRevisions(
             behaviorRevision,
@@ -4076,16 +4209,19 @@
               commandWarning = outcome.error.message || String(outcome.error);
             }
           } else if (outcome.error.commandOutcome === "stopped") {
+            if (isWireChatBridgeState(outcome.error.state)) {
+              if (await applyOutcomeState(outcome.error.state, false)) syncActiveSessionUi();
+            }
             commandOutcomeKnown = true;
             commandStopped = true;
           } else {
             commandError = outcome.error;
             if (
-              kind === "save_profile" &&
-              outcome.error.httpStatus === 409
+              kind === "save_profile" && outcome.error.httpStatus === 409 ||
+              kind === "save_global_settings" && payload.audioServices && outcome.error.field === "audioServices"
             ) {
               try {
-                await refreshState(attempt, "save_profile_conflict");
+                await refreshState(attempt, kind === "save_profile" ? "save_profile_conflict" : "save_global_settings");
               } catch {
                 // The conflict remains explicit; reopening Settings can refresh it.
               }
@@ -5334,6 +5470,378 @@
         };
         renderNetworkProxySettings();
         return true;
+      }
+
+      function savedAudioConnection(id = selectedAudioServiceId) {
+        return confirmedAudioServices?.connections.find((service) => service.id === id) || null;
+      }
+
+      function audioConnectionFields(service) {
+        const { id, name, provider, enabled, modelId, callbackUrl } = service;
+        return { id, name, provider, enabled, ...(modelId ? { modelId } : {}), ...(callbackUrl ? { callbackUrl } : {}) };
+      }
+
+      function audioOperationLabel(operation) {
+        return t({ separate_stems: "Stem separation", generate_music: "Music generation",
+          generate_sound_effect: "Sound effect generation" }[operation] || operation);
+      }
+
+      function handleAudioServiceSelection(id) {
+        if (audioSettingsBusy || audioSettingsSubmitting) return;
+        if (!savedAudioConnection(id) && !audioSettingsDrafts.has(id)) return;
+        if (id !== selectedAudioServiceId) document.getElementById("audioServiceApiKey").value = "";
+        selectedAudioServiceId = id;
+        document.getElementById("audioServiceFields").open = true;
+        renderAudioTools();
+      }
+
+      function addAudioService() {
+        if (audioSettingsBusy || audioSettingsSubmitting) return;
+        const count = new Set([...(confirmedAudioServices?.connections || []).map((service) => service.id),
+          ...audioSettingsDrafts.keys()]).size;
+        if (count >= __MAX_AUDIO_SERVICES__) return;
+        const id = createCorrelationId("audio-service");
+        const provider = Object.keys(audioServiceCapabilities).find((provider) =>
+          audioServiceCapabilities[provider].operations.length > 0);
+        if (!provider) return;
+        document.getElementById("audioServiceApiKey").value = "";
+        audioSettingsDrafts.set(id, { connection: { id, name: "", provider, enabled: false },
+          baseConnection: null, expectedRevision: confirmedAudioServices?.revision || "0", conflict: false });
+        selectedAudioServiceId = id;
+        document.getElementById("audioServiceFields").open = true;
+        renderAudioTools();
+        document.getElementById("audioServiceName").focus();
+      }
+
+      function reloadAudioService() {
+        if (audioSettingsBusy || audioSettingsSubmitting) return;
+        audioSettingsDrafts.delete(selectedAudioServiceId);
+        document.getElementById("audioServiceApiKey").value = "";
+        if (!savedAudioConnection()) selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
+        renderAudioTools();
+      }
+
+      function handleAudioSettingsInput() {
+        if (audioSettingsBusy || audioSettingsSubmitting || !selectedAudioServiceId) return;
+        const saved = savedAudioConnection();
+        const previous = audioSettingsDrafts.get(selectedAudioServiceId);
+        const provider = document.getElementById("audioServiceProvider").value;
+        const providerChanged = provider !== (previous?.connection.provider || saved?.provider);
+        if (providerChanged) {
+          document.getElementById("audioServiceApiKey").value = "";
+          document.getElementById("audioServiceEnabled").checked = false;
+          document.getElementById("audioServiceModel").value = "";
+          document.getElementById("audioServiceCallback").value = "";
+        }
+        const modelId = document.getElementById("audioServiceModel").value.trim();
+        const callbackUrl = document.getElementById("audioServiceCallback").value;
+        audioSettingsDrafts.set(selectedAudioServiceId, {
+          connection: { id: selectedAudioServiceId, name: document.getElementById("audioServiceName").value,
+            provider, enabled: document.getElementById("audioServiceEnabled").checked,
+            ...(modelId ? { modelId } : {}), ...(provider === "sunoapi" && callbackUrl ? { callbackUrl } : {}) },
+          baseConnection: previous ? previous.baseConnection : saved,
+          expectedRevision: previous?.expectedRevision || confirmedAudioServices?.revision || "0",
+          conflict: previous?.conflict || false,
+        });
+        renderAudioTools();
+      }
+
+      async function saveAudioServiceSettings(clear = false) {
+        if (audioSettingsBusy || audioSettingsSubmitting || !selectedAudioServiceId) return false;
+        const id = selectedAudioServiceId;
+        const saved = savedAudioConnection(id);
+        const draft = audioSettingsDrafts.get(id);
+        if (draft?.conflict || (!clear && !draft) || (clear && !saved)) return false;
+        if (clear && !(await confirmAudioConnectionChange("clear", saved))) return false;
+        // Clear acts on the saved connection, so a provider draft cannot redirect it.
+        const connection = clear ? { ...audioConnectionFields(saved), enabled: false }
+          : { ...draft.connection, name: draft.connection.name.trim() };
+        const key = document.getElementById("audioServiceApiKey");
+        if (!connection.name || (confirmedAudioServices?.connections || []).some((service) =>
+          service.id !== id && service.name.toLowerCase() === connection.name.toLowerCase())) {
+          showStatus(t("Enter a unique connection name."), true);
+          document.getElementById("audioServiceName").focus();
+          return false;
+        }
+        if (connection.enabled && !key.value &&
+          !(saved?.provider === connection.provider && saved.apiKeyConfigured)) {
+          showStatus(t("Enter an API key before enabling this connection."), true);
+          key.focus();
+          return false;
+        }
+        if (!isWireAudioCallback(connection)) {
+          showStatus(t("Enter a public HTTPS callback URL you own, using a domain name, valid encoding and no custom port, credentials, query, fragment, or whitespace (maximum 2048 characters)."), true);
+          document.getElementById("audioServiceCallback").focus();
+          return false;
+        }
+        if (connection.callbackUrl && key.value &&
+          decodeURIComponent(connection.callbackUrl).toLowerCase().includes(key.value.toLowerCase())) {
+          showStatus(t("The callback URL must not contain API credentials."), true);
+          document.getElementById("audioServiceCallback").focus();
+          return false;
+        }
+        const patch = { action: "upsert", expectedRevision: draft?.expectedRevision || confirmedAudioServices?.revision || "0",
+          connection: { ...connection, ...(clear ? { apiKey: "" } : key.value ? { apiKey: key.value } : {}) } };
+        // Only this command owns the secret; client state and connection drafts never receive it.
+        key.value = "";
+        audioSettingsSubmitting = true;
+        renderAudioTools();
+        try {
+          const result = await runCommand("save_global_settings", { audioServices: patch }, {
+            onOutcome: (outcome) => {
+              const current = savedAudioConnection(id);
+              if (outcome.known && outcome.succeeded && current &&
+                compareDecimalRevisions(confirmedAudioServices.revision, patch.expectedRevision) > 0 &&
+                sameJsonValue(audioConnectionFields(current), connection) &&
+                current.apiKeyConfigured === (clear ? false : Boolean(patch.connection.apiKey ||
+                  saved?.provider === connection.provider && saved.apiKeyConfigured))) audioSettingsDrafts.delete(id);
+            },
+          });
+          return result;
+        } finally {
+          audioSettingsSubmitting = false;
+          renderAudioTools();
+        }
+      }
+
+      async function removeAudioService() {
+        if (audioSettingsBusy || audioSettingsSubmitting || !selectedAudioServiceId) return false;
+        const id = selectedAudioServiceId;
+        const draft = audioSettingsDrafts.get(id);
+        if (draft?.conflict) return false;
+        if (!savedAudioConnection(id)) {
+          reloadAudioService();
+          return true;
+        }
+        if (!(await confirmAudioConnectionChange("remove", savedAudioConnection(id)))) return false;
+        document.getElementById("audioServiceApiKey").value = "";
+        audioSettingsSubmitting = true;
+        renderAudioTools();
+        try {
+          const result = await runCommand("save_global_settings", { audioServices: {
+            action: "remove", serviceId: id, expectedRevision: draft?.expectedRevision || confirmedAudioServices?.revision || "0",
+          } }, { onOutcome: (outcome) => {
+            if (outcome.known && outcome.succeeded && !savedAudioConnection(id)) {
+              audioSettingsDrafts.delete(id);
+              selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
+            }
+          } });
+          return result;
+        } finally {
+          audioSettingsSubmitting = false;
+          renderAudioTools();
+        }
+      }
+
+      async function confirmAudioConnectionChange(action, service) {
+        const revision = confirmedAudioServices?.revision;
+        const accepted = await confirmAction({
+          title: window.LiveSmithI18n.message(action === "clear" ? "Clear this connection's key?" : "Remove this audio connection?"),
+          message: window.LiveSmithI18n.message(action === "clear"
+            ? "Clear the saved key for “{name}” and disable this connection? Downloaded audio stays available."
+            : "Remove “{name}”? Downloaded audio stays available, but remote jobs will lose this saved connection.", { name: service.name }),
+          acceptLabel: window.LiveSmithI18n.message(action === "clear" ? "Clear key" : "Remove service"), danger: true,
+        });
+        return accepted && !audioSettingsBusy && !audioSettingsSubmitting &&
+          selectedAudioServiceId === service.id && confirmedAudioServices?.revision === revision;
+      }
+
+      function setAudioToolsBusy(settingsBusy, resumeBusy) {
+        audioSettingsBusy = settingsBusy;
+        audioResumeBusy = resumeBusy;
+        renderAudioTools();
+      }
+
+      function renderAudioTools() {
+        const saved = savedAudioConnection();
+        const draft = audioSettingsDrafts.get(selectedAudioServiceId);
+        const service = draft?.connection || saved;
+        const busy = audioSettingsBusy || audioSettingsSubmitting;
+        const picker = document.getElementById("audioServiceSelector");
+        const choices = new Map((confirmedAudioServices?.connections || []).map((connection) => [connection.id, connection]));
+        for (const [id, value] of audioSettingsDrafts) choices.set(id, value.connection);
+        const existingRows = new Map([...picker.children].map((row) => [row.dataset.audioServiceId, row]));
+        for (const [id, row] of existingRows) if (!choices.has(id)) row.remove();
+        for (const [id, value] of choices) {
+          let row = existingRows.get(id);
+          if (!row) {
+            row = document.createElement("button"); row.type = "button";
+            row.className = "audio-service-row"; row.dataset.audioServiceId = id;
+            const label = document.createElement("span"); label.className = "audio-service-label";
+            label.append(document.createElement("strong"), document.createElement("small"));
+            const status = document.createElement("span"); status.className = "audio-service-status";
+            row.append(label, status);
+            row.addEventListener("click", () => handleAudioServiceSelection(id));
+            picker.append(row);
+          }
+          const pending = audioSettingsDrafts.has(id);
+          const configured = savedAudioConnection(id);
+          row.children[0].children[0].textContent = value.name || t("New audio connection");
+          row.children[0].children[1].textContent = audioServiceCapabilities[value.provider].label;
+          row.children[1].textContent = pending ? t("Unsaved changes") : !configured?.apiKeyConfigured
+            ? t("Needs setup") : configured.enabled ? t("Enabled") : t("Disabled");
+          row.children[1].dataset.pending = String(pending);
+          row.title = (value.name || t("New audio connection")) + " · " + audioServiceCapabilities[value.provider].label;
+          row.disabled = busy;
+          row.setAttribute("aria-pressed", String(id === selectedAudioServiceId));
+        }
+        picker.hidden = !choices.size;
+        document.getElementById("addAudioServiceButton").disabled = busy || choices.size >= __MAX_AUDIO_SERVICES__;
+        document.getElementById("audioServiceFields").hidden = !service;
+        document.getElementById("audioServiceEmpty").hidden = Boolean(service);
+        const provider = document.getElementById("audioServiceProvider");
+        provider.replaceChildren();
+        for (const [id, capability] of Object.entries(audioServiceCapabilities)) {
+          const option = new Option(capability.label + (capability.operations.length ? "" : " · " + t("Unavailable")), id);
+          option.disabled = !capability.operations.length;
+          provider.add(option);
+        }
+        if (service) {
+          document.getElementById("audioServiceEditorSummary").textContent = t("Connection settings") + " · " + (service.name || t("New audio connection"));
+          const modelOptions = document.getElementById("audioServiceModelField");
+          const editorIdentity = service.id + ":" + service.provider;
+          if (modelOptions.dataset.connection !== editorIdentity) {
+            modelOptions.dataset.connection = editorIdentity;
+            modelOptions.open = Boolean(service.modelId);
+          }
+          const supported = audioServiceCapabilities[service.provider].operations;
+          const enabled = document.getElementById("audioServiceEnabled");
+          const key = document.getElementById("audioServiceApiKey");
+          document.getElementById("audioServiceName").value = service.name;
+          provider.value = service.provider;
+          document.getElementById("audioServiceModel").value = service.modelId || "";
+          const callback = document.getElementById("audioServiceCallback");
+          callback.value = service.callbackUrl || "";
+          callback.required = service.provider === "sunoapi" && service.enabled;
+          enabled.checked = service.enabled;
+          for (const id of ["audioServiceName", "audioServiceProvider", "audioServiceModel", "audioServiceCallback", "audioServiceApiKey"]) {
+            document.getElementById(id).disabled = busy || Boolean(draft?.conflict);
+          }
+          document.getElementById("audioServiceModelField").hidden = !supported.includes("generate_music");
+          document.getElementById("audioServiceCallbackField").hidden = service.provider !== "sunoapi";
+          document.getElementById("audioServiceModelHint").textContent = service.provider === "sunoapi"
+            ? t("Leave blank to use V4_5ALL. This integration uses prompt-based generation without custom mode or a duration setting.")
+            : t("Leave blank to use the integration default. Sound effects use a dedicated model.");
+          enabled.disabled = busy || Boolean(draft?.conflict) || !supported.length;
+          document.getElementById("audioServiceOperations").textContent = supported.length
+            ? supported.map(audioOperationLabel).join(" · ")
+            : t("Unavailable: no verified public API protocol is configured for this provider.");
+          document.getElementById("audioServiceDisclosure").textContent = service.provider === "sunoapi"
+            ? t("SunoAPI.org is a third-party API service with its own key and billing. It is not Suno's official API or a Suno website subscription. Your prompt is sent to SunoAPI.org.")
+            : supported.includes("separate_stems")
+            ? t("Selected audio is sent to this external service. Stem separation uses processing minutes for each requested stem.")
+            : t("Generation sends your prompt to this external service and may incur separate API charges. A website subscription may not include API access.");
+          document.getElementById("audioServiceKeyStatus").textContent =
+            saved?.provider === service.provider && saved.apiKeyConfigured ? t("API key configured") : t("No API key configured");
+          key.placeholder = saved?.provider === service.provider && saved.apiKeyConfigured ? t("Leave blank to keep the saved key") : "";
+        }
+        const conflict = Boolean(draft?.conflict);
+        document.getElementById("audioServiceConflict").hidden = !conflict;
+        document.getElementById("reloadAudioServiceButton").hidden = !conflict;
+        document.getElementById("reloadAudioServiceButton").disabled = busy;
+        document.getElementById("saveAudioServiceButton").disabled = busy || conflict || !draft;
+        document.getElementById("clearAudioServiceButton").disabled = busy || conflict || !saved?.apiKeyConfigured;
+        document.getElementById("removeAudioServiceButton").disabled = busy || conflict || !service;
+        renderAudioJobs();
+      }
+
+      function renderAudioJobs() {
+        const state = getState();
+        const jobs = state.audioJobs || [];
+        const signature = JSON.stringify([state.activeSessionId, jobs, confirmedAudioServices, window.LiveSmithI18n.locale]);
+        const container = document.getElementById("audioJobs");
+        if (signature !== renderedAudioJobs) {
+          renderedAudioJobs = signature;
+          if (container.dataset.sessionId !== state.activeSessionId) {
+            container.replaceChildren();
+            container.dataset.sessionId = state.activeSessionId;
+          }
+          const ids = new Set(jobs.map((job) => job.id));
+          for (const card of container.querySelectorAll("[data-audio-job-id]")) {
+            if (!ids.has(card.dataset.audioJobId)) card.remove();
+          }
+          container.querySelector("[data-audio-empty]")?.remove();
+          if (!jobs.length) {
+            const empty = document.createElement("p");
+            empty.className = "field-hint";
+            empty.dataset.audioEmpty = "";
+            empty.textContent = t("No audio processing jobs in this Session.");
+            container.append(empty);
+          }
+          const statuses = { preparing: t("Preparing audio"), submitting: t("Submitting audio"),
+            running: t("Processing audio"), collecting: t("Collecting audio"), completed: t("Audio ready"),
+            partial: t("Partial audio results"), failed: t("Audio processing failed"),
+            interrupted: t("Audio processing interrupted"), unknown: t("Audio submission outcome unknown"),
+            cancelled: t("Audio processing cancelled") };
+          for (const [jobIndex, job] of jobs.entries()) {
+            let card = Array.from(container.children).find((node) => node.dataset.audioJobId === job.id);
+            if (!card) {
+              card = document.createElement("article");
+              card.className = "audio-job";
+              card.dataset.audioJobId = job.id;
+              card.append(document.createElement("h4"), document.createElement("p"), document.createElement("p"));
+              container.append(card);
+            }
+            if (container.children[jobIndex] !== card) container.insertBefore(card, container.children[jobIndex] || null);
+            card.children[0].textContent = statuses[job.status];
+            const service = savedAudioConnection(job.serviceId);
+            card.children[1].className = "field-hint";
+            card.children[1].textContent = (service?.provider === job.provider ? service.name : job.serviceId) +
+              " · " + audioServiceCapabilities[job.provider].label + " · " + audioOperationLabel(job.operation) +
+              (job.modelId ? " · " + job.modelId : "");
+            card.children[2].textContent = job.message || "";
+            card.children[2].hidden = !job.message;
+            const assetIds = new Set(job.outputs.map((asset) => asset.id));
+            for (const output of card.querySelectorAll("[data-audio-output]")) {
+              if (!assetIds.has(output.dataset.audioOutput)) output.remove();
+            }
+            for (const asset of job.outputs) {
+              let output = Array.from(card.children).find((node) => node.dataset.audioOutput === asset.id);
+              if (!output) {
+                output = document.createElement("div");
+                output.dataset.audioOutput = asset.id;
+                const player = document.createElement("audio");
+                player.controls = true;
+                player.preload = "none";
+                player.dataset.audioAssetId = asset.id;
+                player.src = bridgeConfig.baseUrl + "/audio-assets/" + encodeURIComponent(asset.id) +
+                  "?token=" + encodeURIComponent(bridgeConfig.token) + "&sessionId=" + encodeURIComponent(state.activeSessionId);
+                const metadata = document.createElement("p"); metadata.className = "audio-output-meta";
+                output.append(document.createElement("p"), player, metadata);
+                card.append(output);
+              }
+              output.children[0].textContent = asset.label;
+              output.children[1].setAttribute("aria-label", asset.label + " · " + audioOperationLabel(job.operation));
+              const seconds = Math.round(asset.durationSeconds);
+              output.children[2].textContent = Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0") +
+                " · " + (asset.mediaType === "audio/wav" ? "WAV" : "MP3") + " · " +
+                new Intl.NumberFormat(window.LiveSmithI18n.locale, { maximumFractionDigits: 1 }).format(asset.sampleRate / 1000) + " kHz";
+            }
+            let resume = card.querySelector("[data-resume-audio-job]");
+            if (!job.resumable) resume?.remove();
+            else if (!resume) {
+              resume = document.createElement("button");
+              resume.type = "button";
+              resume.className = "secondary";
+              resume.dataset.resumeAudioJob = job.id;
+              const sessionId = state.activeSessionId;
+              resume.addEventListener("click", () => {
+                if (audioResumeBusy || activeSessionId() !== sessionId || !resume.isConnected || resume.disabled) return;
+                void runCommand("resume_audio_job", { sessionId, jobId: job.id }, { cancellable: true });
+              });
+              card.append(resume);
+            }
+            if (resume) {
+              resume.textContent = t("Resume audio job");
+              if (resume.isConnected && card.lastElementChild !== resume) card.append(resume);
+            }
+          }
+        }
+        container.querySelectorAll("[data-resume-audio-job]").forEach((button) => {
+          // The host owns resumability, including recovery with only local files.
+          // Remote credentials are checked only if recovery needs provider access.
+          button.disabled = audioResumeBusy;
+        });
       }
 
       function handleNetworkProxyUrlInput() {
@@ -7337,6 +7845,7 @@
                 "networkProxyRevision",
                 "uiLanguage",
                 "uiLanguageRevision",
+                "audioServices",
                 "commandId",
                 "bridgeStateRevision",
               ]) ||
@@ -7348,6 +7857,7 @@
               !isDecimalRevision(payload.networkProxyRevision) ||
               !isUiLanguage(payload.uiLanguage) ||
               !isDecimalRevision(payload.uiLanguageRevision) ||
+              (payload.audioServices !== undefined && !isWireAudioServices(payload.audioServices)) ||
               !isWireCorrelationId(payload.commandId)
             ) return;
             const received = receiveStateChangeRevision(payload);
@@ -8120,6 +8630,14 @@
 
       return {
         connectView,
+        renderAudioTools,
+        setAudioToolsBusy,
+        handleAudioSettingsInput,
+        handleAudioServiceSelection,
+        addAudioService,
+        removeAudioService,
+        reloadAudioService,
+        saveAudioServiceSettings,
         createCommandId: () => createCorrelationId("command"),
         deleteAttachment,
         deleteSkill,

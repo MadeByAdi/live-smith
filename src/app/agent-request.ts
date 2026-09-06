@@ -19,6 +19,9 @@ import {
   type AgentPlan,
 } from "../agent/actions.js";
 import { liveSmithTools } from "../agent/tool-definitions.js";
+import { createRequestAudioTools } from "./request-audio-tools.js";
+import { audioProcessingAvailable, type AudioProcessingContext } from "./audio-processing.js";
+import { addAudioAssetSampleSources, audioAssetSampleSourceInstructions } from "./audio-asset-sources.js";
 import {
   assertEditScopesAllow,
   EditScopeDeniedError,
@@ -174,6 +177,8 @@ export async function handleAgentRequest(
   }
   const supportsArrangementAudioInput = runtimeProfile.capabilities.tools &&
     supportsAudioInputDelivery(runtimeProfile);
+  const audioProcessingOnly = runtimeProfile.capabilities.tools &&
+    !supportsAudioInputDelivery(runtimeProfile) && await audioProcessingAvailable(storageDirectory);
   let activeEditScopes: EditScope[] | undefined = resolveEditScopes(session.editScopes);
   let editScopesGeneration = 0;
   const currentEditScopes = () => {
@@ -217,6 +222,7 @@ export async function handleAgentRequest(
       sessionId: session.id,
       refs: attachmentRefs,
       runtimeProfile,
+      audioProcessingOnly,
       signal: callbacks.signal,
     });
     const history = await resolveConversationHistory({
@@ -250,6 +256,9 @@ export async function handleAgentRequest(
       }
       throw error;
     }
+    // Publish the durable receipt before later initialization can fail or honor
+    // Stop; the bridge uses this event to classify prompt persistence.
+    await callbacks.onSessionEvent(userEvent);
     return {
       attachmentRefs,
       attachmentParts: resolvedAttachments.parts,
@@ -269,7 +278,7 @@ export async function handleAgentRequest(
   let latestAcceptedContextUsage: ModelContextUsage | undefined;
   let latestAcceptedProjectionTokens: number | undefined;
   let pendingAcceptedProjectionTokens: number | undefined;
-  const requestAudioSources = createRequestAudioSampleSources({
+  const requestAudioSources = new Map(createRequestAudioSampleSources({
     context,
     storageDirectory,
     sessionId: session.id,
@@ -278,10 +287,21 @@ export async function handleAgentRequest(
       (ref): ref is AudioSessionAttachmentRef => ref.kind === "audio",
     ),
     signal: callbacks.signal,
+  }));
+  let audioSampleSourceInstructions = requestAudioSampleSourceInstructions(requestAudioSources);
+  const audioTools = await createRequestAudioTools({
+    context, storageDirectory, sessionId: session.id, requestId: prepared.userEvent.id,
+    attachmentRefs: prepared.attachmentRefs.filter((ref): ref is AudioSessionAttachmentRef => ref.kind === "audio"),
+    target: interaction.target, signal: callbacks.signal, onProgress: callbacks.onProgress,
+    ...(callbacks.audioProcessing ? { processing: callbacks.audioProcessing } : {}),
+    onAssets: async (assets) => {
+      await addAudioAssetSampleSources({ context, storageDirectory, sessionId: session.id, signal: callbacks.signal }, requestAudioSources, assets);
+      audioSampleSourceInstructions = [
+        requestAudioSampleSourceInstructions(requestAudioSources),
+        audioAssetSampleSourceInstructions(requestAudioSources),
+      ].filter(Boolean).join("\n\n");
+    },
   });
-  const audioSampleSourceInstructions = requestAudioSampleSourceInstructions(
-    requestAudioSources,
-  );
   let requestAttachmentQuota = binaryQuotaItems(
     prepared.history,
     prepared.attachmentParts,
@@ -345,7 +365,6 @@ export async function handleAgentRequest(
       throw error;
     }
   };
-  await callbacks.onSessionEvent(prepared.userEvent);
   if (!session.title.trim()) {
     await updateSession(storageDirectory, session.id, {
       title: sessionTitleForPrompt(prompt, session.scope.label),
@@ -456,6 +475,10 @@ export async function handleAgentRequest(
   try {
     await callbacks.onProgress("Starting agent loop");
     const loopResult = await runAgentLoop({
+      externalTools: {
+        names: audioTools.tools.map((tool) => tool.function.name),
+        execute: audioTools.execute,
+      },
       maxConsecutiveFailures: maxConsecutiveInvalidToolCalls,
       maxIterations: 12,
       maxToolCallsPerTurn: 32,
@@ -539,9 +562,9 @@ export async function handleAgentRequest(
         const editScopes = await readEditScopes();
         const toolsForCurrentState = () => modelToolsForProfile(
           runtimeProfile,
-          liveSmithTools({
+          [...liveSmithTools({
             readArrangementAudio: canReadArrangementAudio(),
-          }),
+          }), ...audioTools.tools],
           Math.min(
             HOSTED_WEB_SEARCH_REQUEST_MAX_USES,
             Math.max(
@@ -1104,6 +1127,8 @@ async function captureAgentPlanPreflightSnapshots(
 }
 
 interface AgentRequestCallbacks {
+  /** Test seam for the external service; no service config is accepted in /send. */
+  audioProcessing?: Pick<AudioProcessingContext, "adapter" | "generationAdapter" | "wait">;
   signal: AbortSignal;
   /** Configuration snapshot captured atomically with the selected Profile. */
   skillContextSnapshot?: ResolvedSkillContext;

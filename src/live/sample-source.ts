@@ -14,20 +14,28 @@ import type { LiveTarget } from "./target.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
-export interface RequestAudioSampleSource {
-  readonly kind: "request_audio_attachment";
-  readonly requestId: string;
-  readonly audioIndex: number;
+interface ManagedSampleImport {
   readonly filePath: string;
   readonly label: string;
   readonly identity: string;
   prepare(beforeImport?: () => void): Promise<boolean>;
 }
 
-export type RequestAudioSampleSources = ReadonlyMap<
-  string,
-  RequestAudioSampleSource
->;
+export interface RequestAudioSampleSource extends ManagedSampleImport {
+  readonly kind: "request_audio_attachment";
+  readonly requestId: string;
+  readonly audioIndex: number;
+}
+
+export interface AudioAssetSampleSource extends ManagedSampleImport {
+  readonly kind: "audio_asset";
+  readonly assetRef: string;
+}
+
+export type ManagedSampleSource = RequestAudioSampleSource | AudioAssetSampleSource;
+export type ManagedSampleSources = ReadonlyMap<string, ManagedSampleSource>;
+/** Compatibility name for the send-scoped managed audio registry. */
+export type RequestAudioSampleSources = ManagedSampleSources;
 
 export interface ResolvedLiveSampleSource {
   readonly kind: "live";
@@ -39,31 +47,37 @@ export interface ResolvedLiveSampleSource {
 
 export type ResolvedSampleSource =
   | ResolvedLiveSampleSource
-  | RequestAudioSampleSource;
+  | ManagedSampleSource;
 
 export function resolveSampleSource(
   context: Api,
   source: Extract<SampleSource, { kind: "request_audio_attachment" }>,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
 ): RequestAudioSampleSource;
 export function resolveSampleSource(
   context: Api,
-  source: Exclude<SampleSource, { kind: "request_audio_attachment" }>,
+  source: Extract<SampleSource, { kind: "audio_asset" }>,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
+): AudioAssetSampleSource;
+export function resolveSampleSource(
+  context: Api,
+  source: Exclude<SampleSource, { kind: ManagedSampleSource["kind"] }>,
+  target: LiveTarget,
+  requestAudioSources?: ManagedSampleSources,
 ): ResolvedLiveSampleSource;
 export function resolveSampleSource(
   context: Api,
   source: SampleSource,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
 ): ResolvedSampleSource;
 export function resolveSampleSource(
   context: Api,
   source: SampleSource,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
 ): ResolvedSampleSource {
   switch (source.kind) {
     case "selected":
@@ -72,9 +86,19 @@ export function resolveSampleSource(
       const resolved = requestAudioSources?.get(
         requestAudioSampleSourceKey(source.requestId, source.audioIndex),
       );
-      if (!resolved) {
+      if (resolved?.kind !== "request_audio_attachment" ||
+        resolved.requestId !== source.requestId || resolved.audioIndex !== source.audioIndex) {
         throw new Error(
           "The requested audio attachment is not available as a SampleSource in this request. Use an exact current-request locator from the supplied context.",
+        );
+      }
+      return resolved;
+    }
+    case "audio_asset": {
+      const resolved = requestAudioSources?.get(source.assetRef);
+      if (resolved?.kind !== "audio_asset" || resolved.assetRef !== source.assetRef) {
+        throw new Error(
+          "The requested audio asset is not available as a SampleSource in this request. Use an exact audio asset reference supplied by the host for this send.",
         );
       }
       return resolved;

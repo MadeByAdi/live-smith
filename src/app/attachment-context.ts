@@ -52,6 +52,8 @@ export async function resolveCurrentAttachmentParts(input: {
   sessionId: string;
   refs: readonly SessionAttachmentRef[];
   runtimeProfile: RuntimeProfile;
+  /** Keep audio at the host for enabled processing tools when the chat model cannot receive it. */
+  audioProcessingOnly?: boolean;
   signal?: AbortSignal;
 }): Promise<ResolvedCurrentAttachmentContext> {
   throwIfAborted(input.signal);
@@ -59,13 +61,22 @@ export async function resolveCurrentAttachmentParts(input: {
     return { parts: [], documentTextCharacters: 0 };
   }
   assertAttachmentRequestBudget(input.refs);
-  assertCurrentProfileCompatibility(input.refs, input.runtimeProfile);
+  assertCurrentProfileCompatibility(
+    input.audioProcessingOnly ? input.refs.filter((ref) => ref.kind !== "audio") : input.refs,
+    input.runtimeProfile,
+  );
 
   const parts: ModelInputPart[] = [];
   let documentTextCharacters = 0;
   let wireBinaryBytes = 0;
   for (const ref of input.refs) {
     throwIfAborted(input.signal);
+    if (input.audioProcessingOnly && ref.kind === "audio") {
+      await readSessionAttachmentBytes(input.storageDirectory, input.sessionId, ref.id, {
+        expectedRef: ref, ...(input.signal ? { signal: input.signal } : {}),
+      });
+      continue;
+    }
     const part = await resolveCurrentAttachmentPart(
       input.storageDirectory,
       input.sessionId,

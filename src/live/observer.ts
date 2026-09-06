@@ -257,6 +257,7 @@ export async function readArrangementAudio(
   request: Extract<AgentObservationRequest, { type: "read_arrangement_audio" }>,
   target: LiveTarget,
   signal: AbortSignal,
+  limits?: { maxBytes: number; maxDurationSeconds: number },
 ): Promise<RenderedArrangementAudio> {
   const result = await consumeArrangementAudioRender(
     context,
@@ -264,8 +265,8 @@ export async function readArrangementAudio(
     target,
     signal,
     async (filePath) => {
-      const bytes = await copyAudioFileSafely(filePath, signal);
-      const inspection = await inspectAudioAttachment({ bytes, signal });
+      const bytes = await copyAudioFileSafely(filePath, signal, limits?.maxBytes);
+      const inspection = await inspectAudioAttachment({ bytes, signal, ...(limits ? { limits } : {}) });
       return { bytes, inspection };
     },
     (snapshot, error) => {

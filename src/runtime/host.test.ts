@@ -6,6 +6,7 @@ import {
   resolveFetchImplementation,
   throwIfAborted,
   yieldToHost,
+  waitForPromiseWithSignal,
 } from "./host.js";
 
 test("fetch resolution accepts injection and reports a missing host capability", () => {
@@ -69,4 +70,13 @@ test("host yielding rechecks cancellation after the cooperative boundary", async
   const pending = yieldToHost(controller.signal);
   controller.abort(reason);
   await assert.rejects(pending, (error: unknown) => error === reason);
+});
+
+test("an already cancelled waiter still owns a late operation rejection", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("stop waiting"));
+  const operation = Promise.withResolvers<void>();
+  await assert.rejects(waitForPromiseWithSignal(operation.promise, controller.signal), /stop waiting/);
+  operation.reject(new Error("late body read failed"));
+  await yieldToHost();
 });

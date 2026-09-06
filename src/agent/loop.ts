@@ -101,6 +101,11 @@ export interface AgentActionPreflightGuard<ExecutionBindings = undefined> {
 }
 
 export interface AgentLoopOptions<ExecutionBindings = undefined> {
+  /** Host-registered tools with external effects, independent of Live recovery. */
+  externalTools?: {
+    names: readonly string[];
+    execute(call: ModelToolCall): Promise<AgentExternalToolResult>;
+  };
   /** Stops the same repeated model argument/protocol violation; distinct repairs do not count. */
   maxConsecutiveFailures: number;
   /** Rolling number of planning steps allowed without new Live information or mutation. */
@@ -255,7 +260,23 @@ interface ToolCallExecutionResult {
   failed: boolean;
   mutationProgress: boolean;
   progressKey?: string;
-  failureKind?: "arguments" | "observation" | "host" | "internal";
+  failureKind?: "arguments" | "observation" | "host" | "internal" | "external";
+}
+
+export interface AgentExternalToolResult {
+  content: string;
+  failed?: boolean;
+  invalidArguments?: boolean;
+  /** Ends this send without retrying an operation with external side effects. */
+  stop?: boolean;
+  progressKey?: string;
+}
+
+export class AgentExternalToolReportingError extends Error {
+  constructor(public readonly outcome?: AgentExternalToolResult) {
+    super("An external tool could not finish reporting its outcome. It will not be executed again automatically; check its saved job before continuing.");
+    this.name = "AgentExternalToolReportingError";
+  }
 }
 
 class AgentRecoveryPlanError extends Error {
@@ -623,6 +644,13 @@ export async function runAgentLoop(
           : {}),
       });
 
+      // New guidance cannot reopen a paid operation whose outcome is unknown.
+      // Leave unconsumed steering with its owner instead of issuing another turn.
+      if (result.cancelled && options.externalTools?.names.includes(toolCall.name)) {
+        skipRemainingToolCalls(messages, turn.toolCalls, toolCallIndex + 1);
+        return { message: result.userMessage };
+      }
+
       if (options.hasPendingSteering?.()) {
         skipRemainingToolCalls(
           messages,
@@ -822,6 +850,30 @@ async function executeToolCall(
   let applyPlan: AgentPlan | undefined;
   let applyActionKeys: readonly (readonly string[])[] | undefined;
   try {
+    if (options.externalTools?.names.includes(toolCall.name)) {
+      throwIfAborted(options.signal);
+      let result: AgentExternalToolResult;
+      try {
+        result = await options.externalTools.execute(toolCall);
+      } catch {
+        throwIfAborted(options.signal);
+        throw new AgentExternalToolReportingError();
+      }
+      try {
+        await emitTraceEvent(options, {
+          kind: "tool_result", name: toolCall.name, content: result.content,
+        });
+      } catch {
+        throw new AgentExternalToolReportingError(result);
+      }
+      return {
+        toolContent: result.content, userMessage: result.content,
+        cancelled: result.stop ?? false, failed: result.failed ?? false,
+        mutationProgress: false,
+        ...(result.progressKey === undefined ? {} : { progressKey: result.progressKey }),
+        ...(result.failed ? { failureKind: result.invalidArguments ? "arguments" as const : "external" as const } : {}),
+      };
+    }
     if (isObservationTool(toolCall.name)) {
       let request: AgentObservationRequest;
       try {
@@ -1398,6 +1450,7 @@ async function executeToolCall(
       };
     }
     if (
+      error instanceof AgentExternalToolReportingError ||
       (error instanceof AgentActionPreflightError && !error.recoverable) ||
       error instanceof AgentApplyResultReportingError ||
       error instanceof AgentRecoveryResolutionReportingError

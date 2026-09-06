@@ -116,6 +116,7 @@ test("composed confirmation localizes nested refs, sample locators and lane scop
     { type: "create_arrangement_audio_clip", trackName: "Song", laneIndex: 1, laneName: "Take Lane", startBeat: 8, source: { kind: "selected" }, isWarped: false, loopSettings: { loopStart: 0, loopEnd: 2, startMarker: 0, endMarker: 4, looping: false } },
     { type: "set_audio_clip_warp", trackName: "Song", slotIndex: 0, clipName: "Untitled", warpMode: "complex_pro", warping: false },
     { type: "scale_midi_velocity", trackName: "Song", startBeat: 8, clipName: "Delete", factor: 0.5 },
+    { type: "replace_simpler_sample", trackName: "Song", simplerName: "Delete", source: { kind: "audio_asset", assetRef: "audio-result-opaque-1" } },
   ], {
     return: { trackRole: "return", trackIndex: 0, trackName: "Delete" },
     main: { trackRole: "main", trackName: "Song" },
@@ -136,6 +137,7 @@ test("composed confirmation localizes nested refs, sample locators and lane scop
   assert.match(rendered[7]!, /原始时长.*选中的 Live 对象.*Warp 启用=false.*循环范围=0-2.*标记=0-4.*循环=false.*要求分轨的目标范围为空/);
   assert.match(rendered[8]!, /会话槽位 0 中的片段 "Untitled".*Warp 启用=false.*complex_pro/);
   assert.match(rendered[9]!, /编曲中第 8 拍的片段 "Delete".*所有音符力度乘以 0\.5/);
+  assert.match(rendered[10]!, /已处理的音频资源 audio-result-opaque-1/);
   await language(harness, "en", "2");
   assert.deepEqual(rows(harness), groups.flatMap((group) => group.rows).map(formatUiMessage));
   harness.click("[data-confirm-cancel]");

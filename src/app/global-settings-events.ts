@@ -8,8 +8,10 @@ import type {
   NetworkProxySettings,
 } from "../model/profile.js";
 import { storageScopeKey } from "../storage/scope.js";
+import type { AudioServicesView } from "../audio-services/contracts.js";
 
 export interface GlobalSettingsChange {
+  audioServices?: AudioServicesView;
   defaultFollowUpBehavior: DefaultFollowUpBehavior;
   defaultFollowUpBehaviorRevision: DefaultFollowUpBehaviorRevision;
   showContextUsage: boolean;

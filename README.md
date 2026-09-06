@@ -66,6 +66,17 @@ names, and raw provider/SDK output stay in their original language.
   into one expandable timeline item so the conversation stays readable.
 - **Search when needed.** Compatible Direct API connections can enable hosted
   Web Search, with search activity and citations visible in the conversation.
+- **Generate music and sound effects.** Add an ElevenLabs connection under
+  **Inspector → App → Audio tools**, then describe the music or sound you want.
+  Multiple named audio connections, including separate accounts at the same
+  provider, can be enabled together.
+- **Generate with a Suno service.** The explicitly labeled SunoAPI.org
+  third-party connection supports prompt-based music generation with its own
+  API key and your public callback URL. It is not Suno subscription access.
+- **Separate audio into stems.** Add a LALAL.AI connection, then ask to extract vocals, drums, bass, piano, or guitars from
+  an audio attachment or an isolated Arrangement Audio Clip range. Saved results
+  can be previewed, reused in later requests, and imported through ordinary Live
+  edits. The chat model needs tool support but does not need audio-input support.
 
 Try requests such as:
 
@@ -74,6 +85,18 @@ Try requests such as:
 > “Help the chorus stand out using the parts already in this Set.”
 >
 > “Inspect this device and explain what its current settings are doing.”
+>
+> “Separate this Clip into vocals and drums, then place the results on new audio tracks.”
+>
+> “Use my ElevenLabs connection to generate ten seconds of instrumental ambient piano.”
+
+Audio processing is disabled by default. Each connection has its own saved key
+and uses that provider's allowance, separately from chat-model usage. Generation
+sends the requested description to the selected service; separation uploads the
+chosen audio and consumes LALAL.AI processing minutes for each requested stem,
+also returning the residual mix. Saved results can be previewed and imported
+through ordinary scoped Live edits. See [audio tools](docs/MODEL_PROVIDERS.md#external-audio-tools)
+for supported inputs, limits, and recovery.
 
 Composer commands are recognized only at the start of a message:
 

@@ -1,5 +1,6 @@
 /** Action confirmation copy only. Names, enum values and JSON paths stay raw. */
 export const actionMessages = {
+  "processed audio asset {assetRef}": "已处理的音频资源 {assetRef}",
   "Create": "创建",
   "Insert Devices": "插入设备",
   "Rack & Samples": "机架与采样",

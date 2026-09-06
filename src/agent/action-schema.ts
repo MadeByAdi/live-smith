@@ -3,6 +3,7 @@ import type { DevicePath } from "../live/device-tree.js";
 
 export type SampleSource =
   | { kind: "selected" }
+  | { kind: "audio_asset"; assetRef: string }
   | {
       kind: "request_audio_attachment";
       requestId: string;
@@ -929,6 +930,19 @@ function requiredSampleSource(): ActionField<SampleSource, true> {
         {
           type: "object",
           properties: {
+            kind: { type: "string", enum: ["audio_asset"] },
+            assetRef: {
+              type: "string",
+              minLength: 1,
+              description: "Exact host-supplied audio asset reference available in this send.",
+            },
+          },
+          required: ["kind", "assetRef"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
             kind: { type: "string", enum: ["request_audio_attachment"] },
             requestId: {
               type: "string",
@@ -979,7 +993,7 @@ function requiredSampleSource(): ActionField<SampleSource, true> {
           additionalProperties: false,
         },
       ],
-      description: "Observed Live sample source. Filesystem paths are never accepted.",
+      description: "Observed Live sample or host-supplied send-scoped audio source. Filesystem paths are never accepted.",
     },
     parseSampleSource,
   );
@@ -1104,6 +1118,17 @@ function parseSampleSource(value: unknown, key: string): SampleSource {
     case "selected":
       assertRecordKeys(value, ["kind"], key);
       return { kind: "selected" };
+    case "audio_asset": {
+      assertRecordKeys(value, ["kind", "assetRef"], key);
+      const assetRef = parseInlineString(value.assetRef, `${key}.assetRef`);
+      if (assetRef !== value.assetRef) {
+        throw new Error(`${key}.assetRef must exactly match the host-supplied reference.`);
+      }
+      return {
+        kind: "audio_asset",
+        assetRef,
+      };
+    }
     case "request_audio_attachment":
       assertRecordKeys(value, ["kind", "requestId", "audioIndex"], key);
       return {

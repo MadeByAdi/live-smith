@@ -540,6 +540,159 @@ Completions compatibility endpoint and an API key. This path uses developer API
 billing and is unrelated to the Google OAuth subscription connection, which
 uses the Antigravity product backend.
 
+## External audio tools
+
+Audio tools are configured independently of chat Profiles in **Inspector → App →
+Audio tools**. Add a named connection, select its provider, enter its API key, and
+save it before use. Up to 20 connections can coexist, including multiple accounts
+for the same provider. The connection list shows each provider and its saved or
+draft status. Select a row to expand its editor; model overrides are optional
+disclosure controls. Each connection has its own enable switch and write-only
+key field. An omitted replacement preserves the key only for the same connection
+and provider; changing provider cannot reuse the previous provider's key.
+Clearing a key or removing a saved connection requires confirmation. Clearing
+a key disables only that connection. Removing a connection leaves its
+Session results intact but makes remote recovery through it unavailable.
+
+Saves check the collection revision to prevent another window's changes from
+being overwritten. Configuration requires private persistent extension storage;
+there is no environment-variable fallback. Historical single-service LALAL.AI
+settings are read as one named connection without rewriting the file on read.
+New settings writes persist the connection collection.
+
+Tools expose only enabled, configured connections that support the requested
+operation. Every new processing request selects an exact `serviceId`; the chat
+model never receives a key, endpoint, or generic HTTP execution tool. The chat
+model needs function-tool support, not native audio generation support.
+The connection is bound when these tools are admitted for a chat request.
+Changing that connection before upload or paid submission stops the operation;
+send a new request to use the changed configuration. Editing another connection
+does not invalidate this request.
+
+### Music and sound effects
+
+ElevenLabs supports `generate_music` and `generate_sound_effect` using its official
+[music](https://elevenlabs.io/docs/api-reference/music/compose) and
+[sound-effect](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert)
+REST endpoints. Music accepts a description, an instrumental flag, and an optional
+3–600 second duration. The integration defaults to `music_v2`; an optional saved
+music model ID replaces that value. Sound effects accept a description, a
+0.5–30 second duration, and a loop flag, and use `eleven_text_to_sound_v2`
+independently of the music model setting. Both return MP3 audio that is inspected
+and stored as a Session result. No provider SDK runtime is bundled.
+
+These requests can consume the selected account's paid allowance. API access and
+charges are governed by the provider account, not the selected chat Profile.
+An ElevenLabs request returns audio directly, rather than a resumable task ID.
+Stopping an incomplete response does not confirm service-side cancellation or a
+refund. A lost response is never regenerated automatically; a complete local
+file that outlives a job-record failure can be recovered without another request.
+
+### Suno through a third-party API
+
+**Suno via SunoAPI.org (third-party)** is a separate connection, not Suno's
+official API or a Suno subscription login. It uses a SunoAPI.org API key and
+that service's [published generation protocol](https://docs.sunoapi.org/suno-api/generate-music).
+An enabled connection also requires a user-owned public HTTPS callback URL.
+The provider requires this address when submitting full-song generation even
+when the desktop client retrieves results by polling. Live Smith does not host
+the callback or verify ownership/reachability; do not enter a placeholder or an
+address belonging to someone else. URLs with credentials, query strings,
+fragments, custom ports, IP literals, or local-only hostnames are rejected.
+
+The connection exposes prompt-based `generate_music` in non-custom mode, with an
+instrumental flag and up to 3,000 prompt characters. The integration defaults to
+`V4_5ALL`; a saved supported model ID can select another published version.
+Explicit duration, custom lyric mode, covers and extensions are not part of this
+operation. Returned task IDs are persisted before polling. One or two final
+tracks are saved as music results; Resume uses the original task, not a new
+generation. The published protocol has no cancellation operation, so Stop ends
+the local wait without claiming a refund or remote cancellation.
+
+Downloads accept HTTPS on the documented `file.aiquickdraw.com` audio host,
+without the API key or redirects. An unrecognized CDN is rejected and the job
+remains available for investigation/recovery; the client never follows an
+arbitrary provider-supplied URL to a local or private service.
+
+The [official Suno Platform](https://platform.suno.com/) advertises a REST API,
+but an implementable public protocol and third-party subscription authorization
+flow have not been verified. **Suno** is therefore shown as unavailable rather
+than offering a simulated sign-in. A Suno Pro/Premier subscription is not a
+credential for the SunoAPI.org connector. Website login sessions and cookies
+are not imported into Live Smith.
+
+### Stem separation
+
+LALAL.AI uses its Public API v1 connection for the separation operation.
+
+`separate_stems` accepts a non-empty selection of vocals, drums, bass, piano,
+electric guitar, and acoustic guitar. LALAL.AI processes the selected stems and
+also returns the remaining mix. Its multistem endpoint charges processing minutes
+for each requested stem, rather than once for the input file. The adapter follows
+the [official OpenAPI contract](https://www.lalal.ai/api/v1/openapi.json): octet-stream
+upload, multistem submission, task-state checks, and cancellation of an exact task.
+Requests use the existing global network proxy route. No provider SDK or local
+model runtime is required.
+
+Inputs can be a current audio attachment, a saved result from the same Session,
+or a bounded range inside an isolated Arrangement Audio Clip. Arrangement input
+is rendered before the track's effects. Post-effects mixes, instrument-track
+renders, and Session View rendered ranges are not available through this tool.
+The snapshot is fixed before upload; later Clip edits cannot change an existing
+processing task. A text-only chat model receives source and result references,
+not audio bytes. Existing verified audio-input models retain their normal input
+delivery behavior.
+
+Audio processing files are limited to 128 MiB and 15 minutes each, with a 1 GiB
+total and 40 processing jobs per Session. Composer audio attachments retain
+their separate 20 MiB/120-second input limit. Results are inspected as WAV or MP3,
+stored privately, and exposed through authenticated local playback. Remote
+download links, credentials, and filesystem paths never enter tool results.
+Download links from the documented LALAL.AI output host use HTTPS without API
+credentials; unexpected output hosts or redirects are rejected.
+Before a paid request, the host checks worst-case local output capacity using
+the per-file limit and the operation's output count. This can reject a request
+before the byte quota is completely full; it prevents starting work whose
+bounded results could not all be retained. The existing same-Session operation
+fence protects this budget while processing, and each file save rechecks it.
+
+### Saved results and recovery
+
+`list_audio_jobs` reads local processing records and exposes available result
+references. `resume_audio_job`, also available on a saved job in the interface,
+queries its existing remote task and retrieves missing outputs when the provider
+has a task-based protocol. Fully saved results finish local recovery without a
+provider request or an enabled connection. Local recovery checks the saved
+metadata and exact audio bytes even if the original connection has been removed
+or its key changed. Successful stems or generated variants survive a failure to
+download or validate another output. Submission is never automatically replayed
+after an unknown outcome. A task without a confirmed remote ID can only finish
+recovering already committed local audio; it cannot retrieve a lost provider
+response. Metadata is committed before its audio file, and an incomplete file
+is not presented as an available result. LALAL.AI currently limits status checks
+to 24 hours after task creation, so remote recovery can expire even though downloaded local results
+remain available.
+
+Stop and window closure interrupt local processing. A bounded cancellation
+request is attempted for an accepted remote task; this does not claim that the
+service has stopped until its status confirms cancellation. After restart, a
+recoverable job can be explicitly resumed using its original service connection.
+Each job retains its original service ID and credential-owner fingerprint.
+Changing a service key or selecting another account cannot transfer an old job.
+Recovering a result never restarts a stopped Live edit plan.
+
+If Stop arrives after a separation submission has started, the client allows
+up to three seconds to receive its task receipt before aborting the request.
+This preserves a returned task ID for cancellation and recovery, without
+continuing the separation workflow. An absent receipt remains an unknown outcome.
+
+Neither generation nor separation creates tracks or modifies Clips. Import uses the saved
+audio result as a SampleSource and retains the existing approval policy, complete
+Edit Scope checks, mutation queue, and state revalidation. Creating tracks also
+requires Structure scope. Source timing metadata describes the original snapshot;
+it does not establish sample-accurate alignment or authorize an edit to a changed
+target. Inspect timing and Warp behavior in Live when importing stems.
+
 ## Credential storage
 
 `live-smith-settings.json` contains Direct API keys because a Direct API Profile

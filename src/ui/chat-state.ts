@@ -1,4 +1,5 @@
 import { safeAttachmentDisplayFileName } from "../attachments/contracts.js";
+import type { AudioServicesView, AudioJobView } from "../audio-services/contracts.js";
 import type { LiveContextPresentation } from "../live/context.js";
 import type { ConversationScope } from "../model/contracts.js";
 import type {
@@ -68,6 +69,8 @@ export interface ChatDialogState {
   /** SHA-256 of the normalized active Saved Profile, or null with no active Profile. */
   activeProfileRevision: string | null;
   settings: AgentSettings;
+  audioServices?: AudioServicesView;
+  audioJobs?: AudioJobView[];
   /** Credential-free state for the selected native OAuth provider. */
   oauthAuth?: OAuthAuthState;
   oauthAuthProfileId?: string;
@@ -113,8 +116,18 @@ export function chatSessionEvent(
 export function chatDialogStateForWire<State extends ChatDialogState>(
   state: State,
 ): State {
+  const settings = state.settings && { ...state.settings };
+  if (settings) delete settings.audioServices;
   return {
     ...state,
+    ...(settings ? { settings } : {}),
+    ...(state.audioServices === undefined ? {} : { audioServices: {
+      revision: state.audioServices.revision,
+      connections: state.audioServices.connections.map(({ id, name, provider, enabled, apiKeyConfigured, modelId, callbackUrl }) => ({
+        id, name, provider, enabled, apiKeyConfigured, ...(modelId === undefined ? {} : { modelId }),
+        ...(callbackUrl === undefined ? {} : { callbackUrl }),
+      })),
+    } }),
     ...(Array.isArray(state.events)
       ? { events: state.events.map(chatSessionEvent) }
       : {}),
@@ -241,7 +254,7 @@ export function chatRuntimeSummary(
 }
 
 export function serializeChatStateForHtml(state: ChatBridgeState): string {
-  return JSON.stringify(state)
+  return JSON.stringify(chatDialogStateForWire(state))
     .replaceAll("<", "\\u003C")
     .replaceAll(">", "\\u003E")
     .replaceAll("&", "\\u0026")

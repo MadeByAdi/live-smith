@@ -32,6 +32,9 @@ export function waitForPromiseWithSignal<T>(
 ): Promise<T> {
   if (!signal) return operation;
   if (signal.aborted) {
+    // The operation already exists even when this caller cannot wait for it.
+    // Own its rejection so a late failure cannot escape as an unhandled promise.
+    void operation.catch(() => undefined);
     try {
       throwIfAborted(signal);
     } catch (error) {

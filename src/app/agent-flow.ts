@@ -1,6 +1,10 @@
 import type { ExtensionContext } from "@ableton-extensions/sdk";
 import { createHash } from "node:crypto";
 
+import { audioJobViews, resumeAudioJob } from "./audio-processing.js";
+import { audioServicesView } from "../storage/settings.js";
+import { readAudioAsset, deleteSessionAudio, listSessionAudioDirectoryIds } from "../storage/audio-assets.js";
+import { listAudioJobs } from "../storage/audio-jobs.js";
 import {
   type AgentConfirmationDecision,
 } from "../agent/loop.js";
@@ -139,6 +143,7 @@ import {
 import { shouldOpenSettingsForAgentError } from "./error-routing.js";
 import {
   ChatBridgeCommandOutcomeUnknownError,
+  ChatBridgeCommandStoppedError,
   ChatBridgeAttachmentValidationError,
   ChatBridgeConflictError,
   ChatBridgePayloadTooLargeError,
@@ -1392,6 +1397,8 @@ export async function runAgentFlow(
         approvalMode: activeSession.approvalMode ?? "manual",
         events,
         pendingAttachments,
+        ...(settings.audioServices ? { audioServices: audioServicesView(settings.audioServices) } : {}),
+        audioJobs: await audioJobViews(storageDirectory, activeSession.id),
         availableSkills: storageSnapshot.availableSkills,
         activeSkillIds: [...(activeSession.activeSkillIds ?? [])],
         capabilities: capabilityPreview.capabilities,
@@ -2140,9 +2147,12 @@ export async function runAgentFlow(
                 ? { showContextUsage: commandInput.showContextUsage }
                 : "uiLanguage" in commandInput
                 ? { uiLanguage: commandInput.uiLanguage }
+                : "audioServices" in commandInput
+                ? { audioServices: commandInput.audioServices }
                 : { networkProxy: commandInput.networkProxy },
             );
             publishGlobalSettingsChange(storageDirectory, {
+              ...(settings.audioServices ? { audioServices: audioServicesView(settings.audioServices) } : {}),
               defaultFollowUpBehavior: settings.defaultFollowUpBehavior,
               defaultFollowUpBehaviorRevision:
                 settings.defaultFollowUpBehaviorRevision,
@@ -2156,6 +2166,7 @@ export async function runAgentFlow(
               commandId: commandContext.commandId,
             });
             status = "Global settings saved.";
+            if ("audioServices" in commandInput) notifyGlobalStateChanged();
             return buildStateAfterCommandMutation();
           } catch (cause) {
             if (!isStorageCommitOutcomeUnknownError(cause)) throw cause;
@@ -2165,6 +2176,7 @@ export async function runAgentFlow(
                 storageDirectory,
               );
               publishGlobalSettingsChange(storageDirectory, {
+                ...(settings.audioServices ? { audioServices: audioServicesView(settings.audioServices) } : {}),
                 defaultFollowUpBehavior: settings.defaultFollowUpBehavior,
                 defaultFollowUpBehaviorRevision:
                   settings.defaultFollowUpBehaviorRevision,
@@ -2821,6 +2833,30 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
+    if (commandInput.kind === "resume_audio_job") {
+      return withNamedSessionMutation(commandInput.sessionId, "audio-job", signal, async () => {
+        try {
+          await attachmentSession(commandInput.sessionId);
+          const job = await resumeAudioJob({
+            storageDirectory, sessionId: commandInput.sessionId, signal,
+            onProgress: (message) => commandContext.progress(message),
+          }, commandInput.jobId);
+          status = job.message;
+        } catch (error) {
+          if (!signal.aborted) throw error;
+          const state = await buildStateAfterCommandMutation(undefined, {
+            heldSessionId: commandInput.sessionId, sessionMutationHeld: true,
+          });
+          throw new ChatBridgeCommandStoppedError(state);
+        } finally {
+          notifySessionStateChanged(commandInput.sessionId);
+        }
+        return buildStateAfterCommandMutation(undefined, {
+          heldSessionId: commandInput.sessionId, sessionMutationHeld: true,
+        });
+      });
+    }
+
     if (commandInput.kind === "delete_session") {
       let existed = false;
       await withSessionMutation(commandInput.sessionId, signal, async () => {
@@ -2855,6 +2891,7 @@ export async function runAgentFlow(
             storageDirectory,
             commandInput.sessionId,
           );
+          await deleteSessionAudio(storageDirectory, commandInput.sessionId);
           pendingSessionCleanup.delete(commandInput.sessionId);
         } catch (cause) {
           pendingSessionCleanup.add(commandInput.sessionId);
@@ -3416,6 +3453,7 @@ export async function runAgentFlow(
           storageDirectory,
           sessionId,
         );
+        await deleteSessionAudio(storageDirectory, sessionId);
         pendingSessionCleanup.delete(sessionId);
       });
     }
@@ -3428,6 +3466,7 @@ export async function runAgentFlow(
       ),
     );
     const orphanCandidates = new Set([
+      ...await listSessionAudioDirectoryIds(storageDirectory),
       ...await listSessionAttachmentDirectoryIds(
         storageDirectory,
       ),
@@ -3447,6 +3486,7 @@ export async function runAgentFlow(
           storageDirectory,
           sessionId,
         );
+        await deleteSessionAudio(storageDirectory, sessionId);
       });
     }
   }
@@ -4039,6 +4079,16 @@ export async function runAgentFlow(
     );
     await reconcileStartupSessionOrphans();
     bridge = await createChatBridge({
+      readAudioAsset: async (sessionId, assetId, signal) => {
+        const session = (await listSessions(storageDirectory, projectKey)).find((entry) => entry.id === sessionId);
+        if (!session) throw new ChatBridgeResourceNotFoundError("Audio Session is unavailable in this Live Set.");
+        const jobs = await listAudioJobs(storageDirectory, sessionId);
+        if (!jobs.some((job) => job.outputAssets.some((asset) => asset.id === assetId))) {
+          throw new ChatBridgeResourceNotFoundError("Audio result is unavailable in this Session.");
+        }
+        const value = await readAudioAsset(storageDirectory, sessionId, assetId, signal);
+        return { bytes: value.bytes, mediaType: value.asset.mediaType };
+      },
       buildState: (signal) => buildState(
         undefined,
         signal === undefined ? {} : { signal },

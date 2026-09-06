@@ -47,7 +47,7 @@ import {
 } from "./resolve.js";
 import {
   resolveSampleSource,
-  type RequestAudioSampleSources,
+  type ManagedSampleSources,
   type ResolvedSampleSource,
 } from "./sample-source.js";
 import { findTrackAncestor, type LiveTarget } from "./target.js";
@@ -96,7 +96,7 @@ export function bindAgentPlanTargets(
   context: Api,
   plan: AgentPlan,
   target: LiveTarget = {},
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
 ): AgentPlanBindings {
   const tracks = new Map<string, Track<"1.0.0">>();
   for (const [ref, target] of Object.entries(plan.targets ?? {})) {
@@ -348,7 +348,7 @@ function bindActionObjects(
   target: LiveTarget,
   tracks: ReadonlyMap<string, Track<"1.0.0">>,
   actionTracks: ReadonlyMap<number, Track<"1.0.0">>,
-  requestAudioSources: RequestAudioSampleSources | undefined,
+  requestAudioSources: ManagedSampleSources | undefined,
 ): ReadonlyMap<number, BoundActionObjects> {
   const result = new Map<number, BoundActionObjects>();
   plan.actions.forEach((action, index) => {

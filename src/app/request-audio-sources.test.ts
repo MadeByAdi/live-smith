@@ -183,7 +183,9 @@ test("request audio preparation reports an earlier import when a later source fa
       assert.equal(error.completedMutationCount, 1);
       assert.equal(error.completedActionCount, 0);
       assert.equal(error.completedResults.length, 1);
-      assert.deepEqual(error.completedActionKeys, []);
+      assert.deepEqual(error.completedActionKeys, [[
+        "live-action-step:request-audio-import:event-partial:0",
+      ]]);
       return true;
     },
   );

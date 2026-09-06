@@ -49,7 +49,7 @@ import {
 } from "./resolve.js";
 import {
   resolveSampleSource,
-  type RequestAudioSampleSources,
+  type ManagedSampleSources,
 } from "./sample-source.js";
 import type { LiveTarget } from "./target.js";
 
@@ -64,7 +64,7 @@ export async function captureLiveActionPreflightSnapshot(
   context: Api,
   action: AgentAction,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
 ): Promise<string> {
   return (await captureLiveActionPreflightObservation(
     context, action, target, requestAudioSources, false,
@@ -75,7 +75,7 @@ export async function captureLiveActionPreflightObservation(
   context: Api,
   action: AgentAction,
   target: LiveTarget,
-  requestAudioSources?: RequestAudioSampleSources,
+  requestAudioSources?: ManagedSampleSources,
   includePreview = true,
 ): Promise<LiveActionPreflightObservation> {
   const observed = await observeActionPreflight(context, action, target, requestAudioSources, includePreview);
@@ -86,7 +86,7 @@ async function observeActionPreflight(
   context: Api,
   action: AgentAction,
   target: LiveTarget,
-  requestAudioSources: RequestAudioSampleSources | undefined,
+  requestAudioSources: ManagedSampleSources | undefined,
   includePreview: boolean,
 ): Promise<string | LiveActionPreflightObservation> {
   const song = context.application.song;

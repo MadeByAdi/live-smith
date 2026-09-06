@@ -418,6 +418,12 @@
 
       function audioInputStatus() {
         const runtime = activeSavedRuntime();
+        const services = getState().audioServices?.connections || [];
+        if (services.some((service) => service.enabled && service.apiKeyConfigured &&
+          __AUDIO_SERVICE_CAPABILITIES__[service.provider]?.operations.includes("separate_stems")) &&
+          runtime?.capabilities?.tools === true) {
+          return "supported";
+        }
         const compatible = runtime?.profile?.connectionKind === "direct-api" &&
           runtime?.profile?.apiFamily === "openai" &&
           runtime?.profile?.apiMode === "chat-completions";
