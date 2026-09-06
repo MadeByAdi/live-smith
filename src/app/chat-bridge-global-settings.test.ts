@@ -27,6 +27,8 @@ function globalSettingsState(
       contextUsageVisibilityRevision,
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
     },
   } as unknown as ChatDialogState;
 }
@@ -144,7 +146,18 @@ test("global follow-up settings are strict commands allowed during an active sen
       }),
     });
     assert.equal(proxyResponse.status, 200);
-    assert.deepEqual(received, [
+    for (const uiLanguage of ["system", "en", "zh-CN"]) {
+      const response = await fetch(endpoint("/command"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Live-Smith-Command-Id": `language-${uiLanguage}`,
+        },
+        body: JSON.stringify({ kind: "save_global_settings", uiLanguage }),
+      });
+      assert.equal(response.status, 200);
+    }
+    assert.deepEqual(received.slice(0, 4), [
       { kind: "save_global_settings", defaultFollowUpBehavior: "queue" },
       { kind: "save_global_settings", defaultFollowUpBehavior: "steer" },
       { kind: "save_global_settings", showContextUsage: false },
@@ -156,11 +169,19 @@ test("global follow-up settings are strict commands allowed during an active sen
         },
       },
     ]);
+    assert.deepEqual(received.slice(4), [
+      { kind: "save_global_settings", uiLanguage: "system" },
+      { kind: "save_global_settings", uiLanguage: "en" },
+      { kind: "save_global_settings", uiLanguage: "zh-CN" },
+    ]);
     assert.deepEqual(commandContexts, [
       { commandId: "global-queue", progress: "function" },
       { commandId: "global-steer", progress: "function" },
       { commandId: "global-context-usage", progress: "function" },
       { commandId: "global-network-proxy", progress: "function" },
+      { commandId: "language-system", progress: "function" },
+      { commandId: "language-en", progress: "function" },
+      { commandId: "language-zh-CN", progress: "function" },
     ]);
 
     const invalidProxyResponse = await fetch(endpoint("/command"), {
@@ -182,6 +203,17 @@ test("global follow-up settings are strict commands allowed during an active sen
     });
 
     for (const [index, body] of [
+      ...[null, true, 1, "", "zh", "en-US", "EN", " en", {}, []].map(
+        (uiLanguage) => ({ kind: "save_global_settings", uiLanguage }),
+      ),
+      ...[
+        { defaultFollowUpBehavior: "queue" },
+        { showContextUsage: false },
+        { networkProxy: { mode: "none", url: "" } },
+        { uiLanguageRevision: "1" },
+        { sessionId: "session-1" },
+        { extra: true },
+      ].map((extra) => ({ kind: "save_global_settings", uiLanguage: "en", ...extra })),
       { kind: "save_global_settings", defaultFollowUpBehavior: "unsafe" },
       { kind: "save_global_settings", showContextUsage: "yes" },
       {
@@ -221,7 +253,7 @@ test("global follow-up settings are strict commands allowed during an active sen
       });
       assert.equal(response.status, 400);
     }
-    assert.equal(received.length, 4);
+    assert.equal(received.length, 7);
   } finally {
     releaseSend();
     await activeSend;
@@ -234,6 +266,8 @@ test("global settings reconcile the network proxy by its own revision", async ()
   Object.assign(sourceState.settings, {
     networkProxy: { mode: "system", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
   const bridge = await createChatBridge({
     buildState: async () => sourceState,
@@ -255,6 +289,8 @@ test("global settings reconcile the network proxy by its own revision", async ()
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "manual", url: "http://proxy.example:8080" },
       networkProxyRevision: "1",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "proxy-1",
     });
 
@@ -272,6 +308,8 @@ test("global settings reconcile the network proxy by its own revision", async ()
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "system", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "behavior-1-stale-proxy",
     });
     const independentlyMerged = await (
@@ -324,6 +362,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "7",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "save-steer-2",
     });
 
@@ -342,6 +382,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
         contextUsageVisibilityRevision: "7",
         networkProxy: { mode: "none", url: "" },
         networkProxyRevision: "0",
+        uiLanguage: "system",
+        uiLanguageRevision: "0",
         commandId: "save-steer-2",
     });
 
@@ -352,6 +394,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "8",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "hide-context-8",
     });
     const overlaid = await (await fetch(endpoint("/state"))).json() as ChatDialogState;
@@ -386,6 +430,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "7",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "stale-save",
     });
     mergedEvents = await fetch(endpoint("/events"));
@@ -403,6 +449,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
         contextUsageVisibilityRevision: "8",
         networkProxy: { mode: "none", url: "" },
         networkProxyRevision: "0",
+        uiLanguage: "system",
+        uiLanguageRevision: "0",
         commandId: "bridge-state-snapshot",
     });
     await mergedEvents.body?.cancel();
@@ -415,6 +463,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "8",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "save-queue-3",
     });
     correlatedEvents = await fetch(endpoint("/events"));
@@ -432,6 +482,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "8",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "save-queue-3",
     });
     await correlatedEvents.body?.cancel();
@@ -444,6 +496,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
       contextUsageVisibilityRevision: "9",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "show-context-9",
     });
     reconnectedEvents = await fetch(endpoint("/events"));
@@ -461,6 +515,8 @@ test("global settings replay and reconcile each field by its own revision", asyn
         contextUsageVisibilityRevision: "9",
         networkProxy: { mode: "none", url: "" },
         networkProxyRevision: "0",
+        uiLanguage: "system",
+        uiLanguageRevision: "0",
         commandId: "show-context-9",
     });
   } finally {
@@ -494,6 +550,8 @@ test("global follow-up reconciliation compares canonical revisions by decimal or
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "larger-revision",
     });
 
@@ -511,6 +569,8 @@ test("global follow-up reconciliation compares canonical revisions by decimal or
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "lexically-larger-but-stale",
     });
     const replay = await fetch(endpoint("/events"));
@@ -529,10 +589,65 @@ test("global follow-up reconciliation compares canonical revisions by decimal or
           contextUsageVisibilityRevision: "0",
           networkProxy: { mode: "none", url: "" },
           networkProxyRevision: "0",
+          uiLanguage: "system",
+          uiLanguageRevision: "0",
           commandId: "larger-revision",
       });
     } finally {
       await replay.body?.cancel();
+    }
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("language revisions merge independently across stale publications and state snapshots", async () => {
+  let source = globalSettingsState("queue", "0");
+  const bridge = await createChatBridge({
+    buildState: async () => source,
+    renderHtml: () => "<html></html>",
+    handleCommand: async () => source,
+    handleSend: async () => {},
+  });
+  const url = new URL(bridge.url);
+  const endpoint = (route: string) => `${url.origin}${route}?token=${url.searchParams.get("token")}`;
+  const state = async () => (await (await fetch(endpoint("/state"))).json()) as ChatDialogState;
+  try {
+    await state();
+    bridge.publishGlobalSettings({
+      ...source.settings,
+      uiLanguage: "zh-CN",
+      uiLanguageRevision: "9007199254740992",
+      commandId: "language-new",
+    });
+    bridge.publishGlobalSettings({
+      ...source.settings,
+      showContextUsage: false,
+      contextUsageVisibilityRevision: "1",
+      commandId: "context-with-stale-language",
+    });
+    let merged = await state();
+    assert.equal(merged.settings.uiLanguage, "zh-CN");
+    assert.equal(merged.settings.uiLanguageRevision, "9007199254740992");
+    assert.equal(merged.settings.showContextUsage, false);
+    source = globalSettingsState("queue", "0");
+    source.settings.uiLanguage = "en";
+    source.settings.uiLanguageRevision = "9007199254740993";
+    merged = await state();
+    assert.equal(merged.settings.uiLanguage, "en");
+    assert.equal(merged.settings.contextUsageVisibilityRevision, "1");
+    source = globalSettingsState("queue", "0");
+    assert.equal((await state()).settings.uiLanguage, "en");
+    const abort = new AbortController();
+    const stream = await fetch(endpoint("/events"), { signal: abort.signal });
+    try {
+      const replay = await readSsePayload(stream, "global_settings_changed");
+      assert.equal(replay.uiLanguage, "en");
+      assert.equal(replay.uiLanguageRevision, "9007199254740993");
+      assert.equal(replay.showContextUsage, false);
+      assert.deepEqual(replay.networkProxy, { mode: "none", url: "" });
+    } finally {
+      abort.abort();
     }
   } finally {
     await bridge.close();

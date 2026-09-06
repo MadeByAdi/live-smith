@@ -2,10 +2,11 @@
       window.LiveSmithFactories.createComposerInput = function createComposerInput({
         getState,
       }) {
+      const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const slashCommands = [
         {
           name: "clear",
-          description: "Start a fresh Session and keep this one in history.",
+          get description() { return t("Start a fresh Session and keep this one in history."); },
           argument: "none",
           admission: {
             requiresSavedRuntime: false,
@@ -15,35 +16,35 @@
         },
         {
           name: "compact",
-          description: "Compact this Session with an optional preservation focus.",
+          get description() { return t("Compact this Session with an optional preservation focus."); },
           argument: "optional",
           admission: {
             requiresSavedRuntime: true,
             allowsUnsavedProfileDraft: true,
           },
-          usage: "/compact [instructions]",
+          get usage() { return t("/compact [instructions]"); },
         },
         {
           name: "queue",
-          description: "Queue a follow-up after the current response.",
+          get description() { return t("Queue a follow-up after the current response."); },
           argument: "required",
           admission: {
             requiresSavedRuntime: true,
             allowsUnsavedProfileDraft: false,
             usesActiveSendContext: true,
           },
-          usage: "/queue <message>",
+          get usage() { return t("/queue <message>"); },
         },
         {
           name: "steer",
-          description: "Guide the current response immediately.",
+          get description() { return t("Guide the current response immediately."); },
           argument: "required",
           admission: {
             requiresSavedRuntime: true,
             allowsUnsavedProfileDraft: false,
             usesActiveSendContext: true,
           },
-          usage: "/steer <message>",
+          get usage() { return t("/steer <message>"); },
         },
       ];
       const slashCommandsByName = new Map(
@@ -78,7 +79,7 @@
         if (!match) {
           return {
             kind: "invalid",
-            message: "Unknown command. Type / to see available commands.",
+            message: t("Unknown command. Type / to see available commands."),
           };
         }
         const name = match[1];
@@ -86,15 +87,15 @@
         if (!command) {
           return {
             kind: "invalid",
-            message: `Unknown command /${name}. Type / to see available commands.`,
+            message: t("Unknown command /{name}. Type / to see available commands.", { name }),
           };
         }
         const argument = value.slice(match[0].length).trim();
         if (command.argument === "required" && !argument) {
-          return { kind: "invalid", message: `Usage: ${command.usage}` };
+          return { kind: "invalid", message: t("Usage: {usage}", { usage: command.usage }) };
         }
         if (command.argument === "none" && argument) {
-          return { kind: "invalid", message: `Usage: ${command.usage}` };
+          return { kind: "invalid", message: t("Usage: {usage}", { usage: command.usage }) };
         }
         return {
           kind: "command",
@@ -141,7 +142,7 @@
               .slice(0, 8)
               .map((skill) => ({
                 label: `$${skill.id}`,
-                description: skill.description,
+                description: skill.source === "built-in" ? t(skill.description) : skill.description,
                 replacement: `$${skill.id} `,
               }));
         if (!suggestions.length) {
@@ -336,5 +337,5 @@
         });
       }
 
-      return { closeAutocomplete, initialize, parse, resizePrompt, updateAutocomplete };
+      return { refreshLocale: updateAutocomplete, closeAutocomplete, initialize, parse, resizePrompt, updateAutocomplete };
       };

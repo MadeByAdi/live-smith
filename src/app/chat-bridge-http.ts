@@ -21,12 +21,14 @@ import {
 import {
   isApprovalMode,
   isDefaultFollowUpBehavior,
+  isUiLanguage,
   isProfileId,
   isReasoningEffort,
   normalizeNetworkProxySettings,
   ProfileValidationError,
   type ApprovalMode,
   type DefaultFollowUpBehavior,
+  type UiLanguage,
   type DraftProfile,
   type NetworkProxySettings,
   type OAuthSubscriptionProvider,
@@ -136,21 +138,31 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      uiLanguage?: never;
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
       showContextUsage?: never;
       networkProxy?: never;
     }
   | {
       kind: "save_global_settings";
+      uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage: boolean;
       networkProxy?: never;
     }
   | {
       kind: "save_global_settings";
+      uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
+    }
+  | {
+      kind: "save_global_settings";
+      uiLanguage: UiLanguage;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
     }
   | {
       kind: "set_session_approval_mode";
@@ -862,7 +874,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   if (kind === "save_global_settings") {
     assertOnlyInputKeys(
       input,
-      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy"],
+      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage"],
       `${kind} command`,
     );
     const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
@@ -873,6 +885,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       input,
       "showContextUsage",
     );
+    const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
     const hasNetworkProxy = Object.prototype.hasOwnProperty.call(
       input,
       "networkProxy",
@@ -880,11 +893,20 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     if (
       Number(hasFollowUpBehavior) +
         Number(hasContextUsage) +
-        Number(hasNetworkProxy) !== 1
+        Number(hasNetworkProxy) +
+        Number(hasUiLanguage) !== 1
     ) {
       throw new ChatBridgeRequestValidationError(
         "save_global_settings must contain exactly one setting.",
       );
+    }
+    if (hasUiLanguage) {
+      if (!isUiLanguage(input.uiLanguage)) {
+        throw new ChatBridgeRequestValidationError(
+          "uiLanguage must be system or a registered interface language.",
+        );
+      }
+      return { kind, uiLanguage: input.uiLanguage };
     }
     if (hasFollowUpBehavior) {
       if (!isDefaultFollowUpBehavior(input.defaultFollowUpBehavior)) {

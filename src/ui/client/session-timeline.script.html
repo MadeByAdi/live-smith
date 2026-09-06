@@ -16,8 +16,11 @@
         runCommand,
         showStatus,
       }) {
+      const t = (message, params) => window.LiveSmithI18n.t(message, params);
+      const { message } = window.LiveSmithI18n;
+      const sessionActionLabels = new WeakMap();
       const maximumSessionTitleCodePoints = __MAX_SESSION_TITLE_CODE_POINTS__;
-      const sessionDateFormatter = new Intl.DateTimeFormat(undefined, {
+      const sessionDateFormatter = () => new Intl.DateTimeFormat(window.LiveSmithI18n.locale, {
         day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
@@ -33,6 +36,7 @@
       let renderedTimelineKey = null;
       let renderedTimelineSessionId = null;
       let renderedAssistantDraft = "";
+      let renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
       const messageRenderSnapshots = new WeakMap();
       const scrollbarIdleTimers = new WeakMap();
       let pendingTimelinePosition = null;
@@ -72,8 +76,8 @@
           const selectionStatus = entry.querySelector(".session-selection-status");
           if (selectionStatus) {
             const message = selected
-              ? "Selected for bulk actions."
-              : "Not selected for bulk actions.";
+              ? t("Selected for bulk actions.")
+              : t("Not selected for bulk actions.");
             if (selectionStatus.textContent !== message) {
               selectionStatus.textContent = message;
             }
@@ -83,7 +87,7 @@
         if (!count) return;
         const selectedCount = selectedSessionIds.size;
         const hidden = selectedCount === 0;
-        const message = selectedCount ? `${selectedCount} selected` : "";
+        const message = selectedCount ? t("{count} selected", { count: selectedCount }) : "";
         if (count.hidden !== hidden) count.hidden = hidden;
         if (count.textContent !== message) count.textContent = message;
       }
@@ -214,22 +218,22 @@
         if (typeof isoString !== "string") return "";
         const date = new Date(isoString);
         if (Number.isNaN(date.getTime())) return "";
-        return sessionDateFormatter.format(date);
+        return sessionDateFormatter().format(date);
       }
 
       function formatAttachmentBytes(byteLength) {
-        if (byteLength < 1024) return `${byteLength} B`;
+        if (byteLength < 1024) return t("{value} B", { value: byteLength });
         const kibibytes = byteLength / 1024;
         if (kibibytes < 1024) {
-          return `${formatAttachmentUnit(kibibytes)} KiB`;
+          return t("{value} KiB", { value: formatAttachmentUnit(kibibytes) });
         }
-        return `${formatAttachmentUnit(kibibytes / 1024)} MiB`;
+        return t("{value} MiB", { value: formatAttachmentUnit(kibibytes / 1024) });
       }
 
       function formatAttachmentUnit(value) {
         return value >= 10 || Number.isInteger(value)
           ? String(Math.round(value))
-          : value.toFixed(1);
+          : value.toLocaleString(window.LiveSmithI18n.locale, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 });
       }
 
       function formatAudioDuration(durationSeconds) {
@@ -237,14 +241,14 @@
         const totalTenths = Math.round(durationSeconds * 10);
         if (totalTenths < 600) {
           const seconds = totalTenths / 10;
-          return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} s`;
+          return `${Number.isInteger(seconds) ? seconds : seconds.toLocaleString(window.LiveSmithI18n.locale, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
         }
         const minutes = Math.floor(totalTenths / 600);
         const secondsTenths = totalTenths - minutes * 600;
         const seconds = secondsTenths / 10;
         const value = Number.isInteger(seconds)
           ? String(seconds).padStart(2, "0")
-          : seconds.toFixed(1).padStart(4, "0");
+          : seconds.toLocaleString(window.LiveSmithI18n.locale, { useGrouping: false, minimumFractionDigits: 1, maximumFractionDigits: 1 }).padStart(4, "0");
         return `${minutes}:${value}`;
       }
 
@@ -253,15 +257,15 @@
         if (mediaType === "image/png") return "PNG";
         if (mediaType === "image/jpeg") return "JPEG";
         if (mediaType === "image/webp") return "WebP";
-        if (mediaType === "application/pdf") return "PDF · Native PDF";
+        if (mediaType === "application/pdf") return t("PDF · Native PDF");
         if (mediaType.includes("wordprocessingml")) {
-          return "DOCX · Extracted document";
+          return t("DOCX · Extracted document");
         }
         if (mediaType.includes("spreadsheetml")) {
-          return "XLSX · Extracted document";
+          return t("XLSX · Extracted document");
         }
         if (mediaType.includes("presentationml")) {
-          return "PPTX · Extracted document";
+          return t("PPTX · Extracted document");
         }
         if (mediaType === "audio/wav") {
           return ["WAV", formatAudioDuration(attachment.durationSeconds)]
@@ -273,7 +277,7 @@
             .filter(Boolean)
             .join(" · ");
         }
-        return "File";
+        return t("File");
       }
 
       function appendTimelineAttachments(content, attachments) {
@@ -281,7 +285,7 @@
         const list = document.createElement("div");
         list.className = "timeline-attachments";
         list.setAttribute("role", "list");
-        list.setAttribute("aria-label", "File attachments");
+        list.setAttribute("aria-label", t("File attachments"));
         for (const attachment of attachments) {
           const chip = document.createElement("span");
           chip.className = "timeline-attachment-chip";
@@ -514,7 +518,7 @@
         input.value = draft?.dirty ? draft.value : current;
         input.dataset.originalTitle = current;
         input.disabled = Boolean(draft?.disabled);
-        input.setAttribute("aria-label", "Session Name");
+        input.setAttribute("aria-label", t("Session Name"));
         let settled = false;
         input.addEventListener("input", () => {
           const characters = [...input.value];
@@ -532,7 +536,7 @@
           const newTitle = input.value.trim();
           if ([...newTitle].length > maximumSessionTitleCodePoints) {
             showStatus(
-              `Session names may not exceed ${maximumSessionTitleCodePoints} characters.`,
+              t("Session names may not exceed {count} characters.", { count: maximumSessionTitleCodePoints }),
               true,
             );
             input.focus({ preventScroll: true });
@@ -595,17 +599,24 @@
         confirmation.dataset.deleteSessionId = sessions[0].id;
         confirmation.dataset.deleteSessionCount = String(sessions.length);
         const label = multiple
-          ? `Delete ${sessions.length} sessions`
-          : `Delete session ${sessions[0].title || sessions[0].scope.label}`;
+          ? t("Delete {count} sessions", { count: sessions.length })
+          : t("Delete session {title}", { title: sessions[0].title || sessions[0].scope.label });
         if (confirmation.getAttribute("aria-label") !== label) {
           confirmation.setAttribute("aria-label", label);
         }
         const question = confirmation.querySelector(".session-delete-question");
         const questionText = multiple
-          ? `Delete ${sessions.length} sessions?`
-          : "Delete this session?";
+          ? t("Delete {count} sessions?", { count: sessions.length })
+          : t("Delete this session?");
         if (question && question.textContent !== questionText) {
           question.textContent = questionText;
+        }
+        for (const [selector, label] of [
+          ["[data-delete-cancel]", t("Cancel")],
+          ["[data-delete-confirm]", t("Delete")],
+        ]) {
+          const button = confirmation.querySelector(selector);
+          if (button && button.textContent !== label) button.textContent = label;
         }
         return records;
       }
@@ -626,12 +637,10 @@
         cancel.className = "secondary";
         cancel.type = "button";
         cancel.dataset.deleteCancel = "";
-        cancel.textContent = "Cancel";
         const remove = document.createElement("button");
         remove.className = "danger";
         remove.type = "button";
         remove.dataset.deleteConfirm = "";
-        remove.textContent = "Delete";
         const restoreUi = () => {
           confirmation.remove();
           menu.classList.remove("delete-confirm-mode");
@@ -677,7 +686,7 @@
         menuButton.setAttribute("aria-expanded", "false");
         menuButton.setAttribute(
           "aria-label",
-          `Session actions for ${session.title || session.scope.label}`,
+          t("Session actions for {title}", { title: session.title || session.scope.label }),
         );
         menuButton.textContent = "⋯";
 
@@ -701,7 +710,8 @@
           button.type = "button";
           button.dataset.sessionAction = action;
           button.setAttribute("role", "menuitem");
-          button.textContent = label;
+          sessionActionLabels.set(button, label);
+          button.textContent = label();
           if (danger) button.className = "danger-text";
           button.onclick = (event) => {
             event.stopPropagation();
@@ -717,7 +727,7 @@
           const multiple = records.length > 1;
           if (!multiple) {
             addAction(
-              "Rename",
+              message("Rename"),
               "rename",
               () => startRenameSession(session.id, entry, row, title),
             );
@@ -727,9 +737,9 @@
           if (archiveRecords.length) {
             const label = multiple
               ? archiveRecords.length === records.length
-                ? `Archive ${archiveRecords.length} Sessions`
-                : `Archive ${archiveRecords.length} Selected`
-              : "Archive";
+                ? message("Archive {count} Sessions", { count: archiveRecords.length })
+                : message("Archive {count} Selected", { count: archiveRecords.length })
+              : message("Archive");
             addAction(
               label,
               "archive",
@@ -744,9 +754,9 @@
           if (unarchiveRecords.length) {
             const label = multiple
               ? unarchiveRecords.length === records.length
-                ? `Unarchive ${unarchiveRecords.length} Sessions`
-                : `Unarchive ${unarchiveRecords.length} Selected`
-              : "Unarchive";
+                ? message("Unarchive {count} Sessions", { count: unarchiveRecords.length })
+                : message("Unarchive {count} Selected", { count: unarchiveRecords.length })
+              : message("Unarchive");
             addAction(
               label,
               "unarchive",
@@ -759,7 +769,7 @@
             );
           }
           addAction(
-            multiple ? `Delete ${records.length} Sessions` : "Delete",
+            multiple ? message("Delete {count} Sessions", { count: records.length }) : message("Delete"),
             "delete",
             () => beginDeleteSessions(
               currentMenuRecords(),
@@ -792,18 +802,19 @@
         return { menuButton, menu };
       }
 
-      function scopeKindLabel(kind) {
-        return `${kind.slice(0, 1).toUpperCase()}${kind.slice(1)}`;
+      function scopeKindLabel(kind, lowercase = false) {
+        if (lowercase) return ({ track: t("track"), clip: t("clip"), object: t("object"), selection: t("selection") })[kind] || kind;
+        return ({ object: t("Object"), selection: t("Selection"), set: t("Set"), track: t("Track"), clip: t("Clip"), device: t("Device") })[kind] || `${kind.slice(0, 1).toUpperCase()}${kind.slice(1)}`;
       }
 
       function activityLabel(activity) {
         return activity
           ? {
-              running: "Working",
-              waiting_confirmation: "Needs approval",
-              completed: "Completed",
-              failed: "Failed",
-              stopped: "Stopped",
+              running: t("Working"),
+              waiting_confirmation: t("Needs approval"),
+              completed: t("Completed"),
+              failed: t("Failed"),
+              stopped: t("Stopped"),
             }[activity.status] || ""
           : "";
       }
@@ -814,8 +825,8 @@
           : "";
         const date = formatSessionDate(session.updatedAt || session.createdAt);
         return [
-          archivedDate ? `Archived ${archivedDate}` : "",
-          date ? `Updated ${date}` : "",
+          archivedDate ? t("Archived {date}", { date: archivedDate }) : "",
+          date ? t("Updated {date}", { date }) : "",
         ].filter(Boolean).join(" · ");
       }
 
@@ -856,18 +867,18 @@
         if (meta.title !== timestampTitle) meta.title = timestampTitle;
 
         const menuButton = entry.querySelector(".session-menu-button");
-        const menuLabel = `Session actions for ${displayTitle}`;
+        const menuLabel = t("Session actions for {title}", { title: displayTitle });
         if (menuButton?.getAttribute("aria-label") !== menuLabel) {
           menuButton?.setAttribute("aria-label", menuLabel);
         }
         const continueButton = entry.querySelector(".session-continue-button");
         if (continueButton) {
+          const continueText = t("Continue");
+          if (continueButton.textContent !== continueText) {
+            continueButton.textContent = continueText;
+          }
           const target = getState().sessionContinueTarget;
-          const continueLabel = `Continue ${displayTitle} using the current ${
-            target.kind
-          } ${target.label}. Last context label: ${
-            scopeKindLabel(session.scope.kind)
-          } ${session.scope.label}.`;
+          const continueLabel = t("Continue {title} using the current {kind} {target}. Last context label: {scopeKind} {scope}.", { title: displayTitle, kind: scopeKindLabel(target.kind, true), target: target.label, scopeKind: scopeKindLabel(session.scope.kind), scope: session.scope.label });
           if (continueButton.getAttribute("aria-label") !== continueLabel) {
             continueButton.setAttribute("aria-label", continueLabel);
           }
@@ -875,6 +886,21 @@
         const deleteConfirmation = entry.querySelector(".session-delete-confirm");
         if (deleteConfirmation) {
           syncDeleteConfirmationPresentation(deleteConfirmation);
+        }
+        const renameInput = entry.querySelector(".session-rename-input");
+        if (renameInput) {
+          const renameLabel = t("Session Name");
+          if (renameInput.getAttribute("aria-label") !== renameLabel) {
+            renameInput.setAttribute("aria-label", renameLabel);
+          }
+        }
+        const menu = entry.querySelector(".session-action-menu");
+        if (menu) {
+          for (const button of menu.querySelectorAll("[data-session-action]")) {
+            const label = sessionActionLabels.get(button)();
+            if (button.textContent !== label) button.textContent = label;
+          }
+          if (!menu.hidden) positionSessionMenu(menu, menuButton);
         }
 
         let unread = titleLine.querySelector(".session-unread-dot");
@@ -884,8 +910,8 @@
             titleLine.append(unread);
           }
           const className = `session-unread-dot ${activity.status}`;
-          const ariaLabel = `${label || "Update"} unread`;
-          const unreadTitle = label || "Session updated";
+          const ariaLabel = t("{label} unread", { label: label || t("Update") });
+          const unreadTitle = label || t("Session updated");
           if (unread.className !== className) unread.className = className;
           if (unread.getAttribute("aria-label") !== ariaLabel) {
             unread.setAttribute("aria-label", ariaLabel);
@@ -936,7 +962,10 @@
 
       function sessionSection(key, title, existingSections) {
         const existing = existingSections.get(key);
-        if (existing) return existing;
+        if (existing) {
+          if (existing.textContent !== title) existing.textContent = title;
+          return existing;
+        }
         const heading = document.createElement("div");
         heading.className = "session-section-label";
         heading.dataset.sessionSection = key;
@@ -967,7 +996,7 @@
       function reportRenameConflict(renameState, row) {
         Promise.resolve().then(() => {
           showStatus(
-            "This Session title changed while you were editing it. Review the new title before renaming.",
+            t("This Session title changed while you were editing it. Review the new title before renaming."),
             true,
           );
           if (
@@ -1078,7 +1107,7 @@
           if (!empty.classList.contains("session-empty")) {
             empty.className = "session-empty";
           }
-          const message = "No sessions yet. Use New Session to create one.";
+          const message = t("No sessions yet. Use New Session to create one.");
           if (empty.textContent !== message) empty.textContent = message;
           desiredNodes.push(empty);
         }
@@ -1088,6 +1117,7 @@
             session.scope.kind === state.sessionContinueTarget.kind;
           const activity = activities.get(session.id);
           const isActive = session.id === state.activeSessionId;
+          // Locale changes update presentation without replacing live Session controls.
           const renderKey = JSON.stringify({
             mode,
             canContinue,
@@ -1208,14 +1238,10 @@
             continueButton.type = "button";
             continueButton.disabled = navigationBlocked;
             continueButton.dataset.continueSessionId = session.id;
-            continueButton.textContent = "Continue";
+            continueButton.textContent = t("Continue");
             continueButton.setAttribute(
               "aria-label",
-              `Continue ${session.title || session.scope.label} using the current ${
-                state.sessionContinueTarget.kind
-              } ${state.sessionContinueTarget.label}. Last context label: ${
-                scopeKindLabel(session.scope.kind)
-              } ${session.scope.label}.`,
+              t("Continue {title} using the current {kind} {target}. Last context label: {scopeKind} {scope}.", { title: session.title || session.scope.label, kind: scopeKindLabel(state.sessionContinueTarget.kind, true), target: state.sessionContinueTarget.label, scopeKind: scopeKindLabel(session.scope.kind), scope: session.scope.label }),
             );
             continueButton.onclick = (event) => {
               event.stopPropagation();
@@ -1240,13 +1266,13 @@
         for (const session of currentSessions) appendSession(session, "current");
 
         if (previousSessions.length) {
-          desiredNodes.push(sessionSection("history", "History", existingSections));
+          desiredNodes.push(sessionSection("history", t("History"), existingSections));
           for (const session of previousSessions) appendSession(session, "history");
         }
 
         const archivedSessions = state.archivedSessions || [];
         if (archivedSessions.length) {
-          desiredNodes.push(sessionSection("archived", "Archived", existingSections));
+          desiredNodes.push(sessionSection("archived", t("Archived"), existingSections));
           for (const session of archivedSessions) appendSession(session, "archived");
         }
         reconcileChildNodes(list, desiredNodes);
@@ -1369,7 +1395,7 @@
         const actions = document.createElement("div");
         actions.className = "message-actions";
         actions.setAttribute("role", "group");
-        actions.setAttribute("aria-label", "Message actions");
+        actions.setAttribute("aria-label", t("Message actions"));
         if (copyText) {
           const copy = document.createElement("button");
           copy.type = "button";
@@ -1377,8 +1403,8 @@
           copy.dataset.messageAction = "copy";
           const reset = () => {
             copy.removeAttribute("data-copy-state");
-            copy.setAttribute("aria-label", "Copy message");
-            copy.title = "Copy message";
+            copy.setAttribute("aria-label", t("Copy message"));
+            copy.title = t("Copy message");
             setMessageActionIcon(copy, "copy");
           };
           reset();
@@ -1395,12 +1421,12 @@
             copy.removeAttribute("aria-disabled");
             if (!copy.isConnected) return;
             copy.dataset.copyState = copied ? "copied" : "failed";
-            copy.title = copied ? "Copied" : "Copy failed — try again";
+            copy.title = copied ? t("Copied") : t("Copy failed — try again");
             copy.setAttribute("aria-label", copy.title);
             setMessageActionIcon(copy, copied ? "check" : "copy");
             announceMessageAction(copied
-              ? "Message copied."
-              : "Could not copy. Select the message text and copy it manually.");
+              ? t("Message copied.")
+              : t("Could not copy. Select the message text and copy it manually."));
             feedbackTimer = window.setTimeout(reset, 1600);
           };
           actions.append(copy);
@@ -1410,7 +1436,7 @@
           edit.type = "button";
           edit.className = "message-action";
           edit.dataset.messageAction = "edit";
-          edit.setAttribute("aria-label", editSource.queueId ? "Edit and resend" : "Use as draft");
+          edit.setAttribute("aria-label", editSource.queueId ? t("Edit and resend") : t("Use as draft"));
           edit.title = edit.getAttribute("aria-label");
           setMessageActionIcon(edit, "edit");
           edit.disabled = isMessageEditLocked();
@@ -1430,10 +1456,10 @@
 
       function buildEmptyState() {
         const existing = document.getElementById("timeline").querySelector(".empty");
-        if (existing) return existing;
+        if (existing) { existing.textContent = t("What would you like to work on in Live?"); return existing; }
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "What would you like to work on in Live?";
+        empty.textContent = t("What would you like to work on in Live?");
         return empty;
       }
 
@@ -1446,9 +1472,10 @@
 
       function messageItemForRender(existing, key, snapshot, build, animate) {
         const previous = existing.get(key);
-        if (previous && messageRenderSnapshots.get(previous) === snapshot) return previous;
+        if (previous && messageRenderSnapshots.get(previous) === snapshot && previous.dataset.locale === window.LiveSmithI18n.locale) return previous;
         const item = build();
         item.dataset.messageKey = key;
+        item.dataset.locale = window.LiveSmithI18n.locale;
         messageRenderSnapshots.set(item, snapshot);
         if (!previous && animate) markMessageArrival(item);
         return item;
@@ -1462,7 +1489,7 @@
         const body = document.createElement("div");
         body.className = "timeline-content";
         renderMarkdown(body, content);
-        item.append(buildMessageHeader("Live Smith / streaming"), body);
+        item.append(buildMessageHeader(t("Live Smith / streaming")), body);
         return item;
       }
 
@@ -1475,7 +1502,7 @@
         body.className = "timeline-content";
         body.textContent = followUp.prompt;
         item.append(buildMessageHeader(
-          followUp.failed ? "You / Paused" : "You / Up next",
+          followUp.failed ? t("You / Paused") : t("You / Up next"),
           followUp.prompt,
           followUp.failed ? { sessionId: getState().activeSessionId, queueId: followUp.queueId } : null,
         ), body);
@@ -1488,13 +1515,13 @@
         const body = document.createElement("div");
         body.className = "timeline-content";
         renderMarkdown(body, message.prompt);
-        item.append(buildMessageHeader("You", message.prompt), body);
+        item.append(buildMessageHeader(t("You"), message.prompt), body);
         return item;
       }
 
       function announceAssistantMessage(content) {
         const announcements = document.getElementById("conversationAnnouncements");
-        announcements.textContent = content ? `Live Smith: ${content}` : "";
+        announcements.textContent = content ? t("Live Smith: {content}", { content }) : "";
       }
 
       function setConfirmationState(pending) {
@@ -1524,6 +1551,10 @@
       }
 
       function renderAssistantDraft() {
+        if (renderedAssistantDraftLocale !== window.LiveSmithI18n.locale) {
+          renderTimeline();
+          return;
+        }
         const timeline = document.getElementById("timeline");
         const nearBottom =
           timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 48;
@@ -1555,6 +1586,7 @@
         if (pendingTimelinePosition) schedulePendingTimelinePosition();
         else if (nearBottom) timeline.scrollTop = timeline.scrollHeight;
         renderedAssistantDraft = assistantDraft;
+        renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
       }
 
       function focusedTimelineLinkIdentity(element, timeline) {
@@ -1718,6 +1750,7 @@
         const pendingConfirmation = getPendingConfirmation();
         const pendingUserMessage = getPendingUserMessage?.() || null;
         const renderKey = JSON.stringify({
+          locale: window.LiveSmithI18n.locale,
           sessionId: state.activeSessionId,
           events: state.events || [],
           queuedFollowUps,
@@ -1975,6 +2008,7 @@
         renderedTimelineKey = renderKey;
         renderedTimelineSessionId = state.activeSessionId;
         renderedAssistantDraft = assistantDraft;
+        renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
       }
 
       function restoreTimelineItemDetails(
@@ -2037,9 +2071,9 @@
         );
         summary.setAttribute(
           "aria-label",
-          `${summary.getAttribute("aria-label")}. ${steps.length} activity ${
-            steps.length === 1 ? "step" : "steps"
-          } in history`,
+          steps.length === 1
+            ? t("{summary}. {count} activity step in history", { summary: summary.getAttribute("aria-label"), count: steps.length })
+            : t("{summary}. {count} activity steps in history", { summary: summary.getAttribute("aria-label"), count: steps.length }),
         );
 
         const items = document.createElement("div");
@@ -2162,31 +2196,31 @@
             event.kind === "error",
         );
         if (!call && terminal && isRejectedToolResult(terminal)) {
-          return "Tool input rejected";
+          return t("Tool input rejected");
         }
         const applyLifecycle = call?.name === "apply_live_actions" || (
           !call && step.events.some((event) => event.kind.startsWith("apply_"))
         );
         if (applyLifecycle) {
-          if (status === "failed") return "Apply failed";
-          if (status === "partial") return "Apply partially completed";
-          if (status === "stopped") return "Apply stopped";
+          if (status === "failed") return t("Apply failed");
+          if (status === "partial") return t("Apply partially completed");
+          if (status === "stopped") return t("Apply stopped");
           const count = activityStepChangeCount(step);
           if (status === "complete") {
             return count === undefined
-              ? "Applied changes"
-              : `Applied ${count} ${count === 1 ? "change" : "changes"}`;
+              ? t("Applied changes")
+              : (count === 1 ? t("Applied {count} change", { count: count }) : t("Applied {count} changes", { count: count }));
           }
           if (step.events.some((event) => event.kind === "apply_auto_approved")) {
-            return "Applying changes";
+            return t("Applying changes");
           }
           if (step.events.some((event) => event.kind === "apply_requested")) {
-            return "Needs approval";
+            return t("Needs approval");
           }
-          return "Prepare Live changes";
+          return t("Prepare Live changes");
         }
         const named = call ?? step.events.find((event) => event.name);
-        return named?.name ? humanizeToolName(named.name) : "Tool activity";
+        return named?.name ? humanizeToolName(named.name) : t("Tool activity");
       }
 
       function activityStepExcerpt(step) {
@@ -2238,25 +2272,43 @@
       }
 
       function humanizeToolName(name) {
+        const labels = {
+          "inspect_current_object": t("Inspect current object"),
+          "inspect_live_set": t("Inspect live set"),
+          "inspect_track": t("Inspect track"),
+          "inspect_take_lane": t("Inspect take lane"),
+          "inspect_device": t("Inspect device"),
+          "inspect_device_tree": t("Inspect device tree"),
+          "inspect_rack_chain": t("Inspect rack chain"),
+          "inspect_mixer": t("Inspect mixer"),
+          "inspect_clip": t("Inspect clip"),
+          "inspect_midi_clip": t("Inspect midi clip"),
+          "analyze_audio_clip": t("Analyze audio clip"),
+          "read_arrangement_audio": t("Read arrangement audio"),
+          "inspect_song_info": t("Inspect song info"),
+          "apply_live_actions": t("Apply live actions"),
+          "resolve_live_recovery": t("Resolve live recovery"),
+        };
+        if (labels[name]) return labels[name];
         const words = name.split("_").filter(Boolean).join(" ");
-        return words ? `${words[0].toUpperCase()}${words.slice(1)}` : "Tool";
+        return words ? `${words[0].toUpperCase()}${words.slice(1)}` : t("Tool");
       }
 
       function activityStatusLabel(status) {
-        if (status === "pending") return "In progress";
-        if (status === "stopped") return "Stopped";
-        if (status === "failed") return "Failed";
-        if (status === "partial") return "Partially completed";
-        return "Completed";
+        if (status === "pending") return t("In progress");
+        if (status === "stopped") return t("Stopped");
+        if (status === "failed") return t("Failed");
+        if (status === "partial") return t("Partially completed");
+        return t("Completed");
       }
 
       function activityEventLabel(event) {
-        if (event.kind === "tool_call") return "Input";
-        if (event.kind === "tool_result") return "Result";
-        if (event.kind === "apply_requested") return "Approval request";
-        if (event.kind === "apply_auto_approved") return "Approval";
-        if (event.kind === "apply_result") return "Apply result";
-        if (event.kind === "error") return "Error";
+        if (event.kind === "tool_call") return t("Input");
+        if (event.kind === "tool_result") return t("Result");
+        if (event.kind === "apply_requested") return t("Approval request");
+        if (event.kind === "apply_auto_approved") return t("Approval");
+        if (event.kind === "apply_result") return t("Apply result");
+        if (event.kind === "error") return t("Error");
         return event.kind;
       }
 
@@ -2277,8 +2329,8 @@
         title.className = "confirm-title";
         const resolvesRecovery = confirm.kind === "resolve_recovery";
         title.textContent = resolvesRecovery
-          ? "Close this unfinished operation?"
-          : `Apply ${actionCount} ${actionCount === 1 ? "change" : "changes"} to the Live Set?`;
+          ? t("Close this unfinished operation?")
+          : (actionCount === 1 ? t("Apply {count} change to the Live Set?", { count: actionCount }) : t("Apply {count} changes to the Live Set?", { count: actionCount }));
 
         const message = document.createElement("p");
         message.id = "pendingConfirmationMessage";
@@ -2309,12 +2361,12 @@
         cancel.className = "secondary";
         cancel.type = "button";
         cancel.dataset.confirmCancel = "";
-        cancel.textContent = resolvesRecovery ? "Keep unfinished" : "Cancel";
+        cancel.textContent = resolvesRecovery ? t("Keep unfinished") : t("Cancel");
         cancel.onclick = () => resolveConfirm(confirm.id, false);
         const apply = document.createElement("button");
         apply.className = "primary";
         apply.type = "button";
-        apply.textContent = resolvesRecovery ? "Keep changes and close" : "Apply";
+        apply.textContent = resolvesRecovery ? t("Keep changes and close") : t("Apply");
         apply.onclick = () => resolveConfirm(confirm.id, true);
         buttons.append(cancel, apply);
         card.append(buttons);
@@ -2360,10 +2412,7 @@
 
           const summary = document.createElement("summary");
           summary.className = "timeline-label";
-          summary.textContent = `${eventLabel(event)} — ${truncate(
-            summaryLineForEvent(event, firstLine),
-            summaryLimit,
-          )}`;
+          summary.textContent = t("{label} — {summary}", { label: eventLabel(event), summary: truncate(summaryLineForEvent(event, firstLine), summaryLimit) });
 
           item.append(summary, content);
           return item;
@@ -2419,11 +2468,11 @@
           sources,
           false,
         );
-        item.setAttribute("aria-label", `Web Search: ${accessibleSummaryText}`);
+        item.setAttribute("aria-label", t("Web Search: {summary}", { summary: accessibleSummaryText }));
         const summary = document.createElement("summary");
         summary.className = "timeline-label";
-        summary.textContent = `Web Search — ${summaryText}`;
-        summary.setAttribute("aria-label", `Web Search: ${accessibleSummaryText}`);
+        summary.textContent = t("Web Search — {summary}", { summary: summaryText });
+        summary.setAttribute("aria-label", t("Web Search: {summary}", { summary: accessibleSummaryText }));
         item.append(summary);
 
         const contentElement = document.createElement("div");
@@ -2449,26 +2498,26 @@
           : firstQuery;
         const action = search?.action || "search";
         if (search?.status === "failed") {
-          return "Failed before result pages were returned.";
+          return t("Failed before result pages were returned.");
         }
         if (search?.status === "searching") {
-          if (action === "open_page") return "Opening a web page…";
-          if (action === "find_in_page") return "Searching within a web page…";
+          if (action === "open_page") return t("Opening a web page…");
+          if (action === "find_in_page") return t("Searching within a web page…");
           return visibleFirstQuery
-            ? `Searching “${visibleFirstQuery}”${queries.length > 1 ? ` + ${queries.length - 1} more` : ""}…`
-            : "Searching…";
+            ? t("Searching “{query}”{more}…", { query: visibleFirstQuery, more: queries.length > 1 ? t(" + {count} more", { count: queries.length - 1 }) : "" })
+            : t("Searching…");
         }
         const actionSummary = action === "open_page"
-          ? "Opened a web page"
+          ? t("Opened a web page")
           : action === "find_in_page"
-            ? "Searched within a web page"
+            ? t("Searched within a web page")
             : visibleFirstQuery
-              ? `“${visibleFirstQuery}”${queries.length > 1 ? ` + ${queries.length - 1} more` : ""}`
-              : live ? "Search completed" : "Completed";
+              ? t("“{query}”{more}", { query: visibleFirstQuery, more: queries.length > 1 ? t(" + {count} more", { count: queries.length - 1 }) : "" })
+              : live ? t("Search completed") : t("Completed");
         return [
           actionSummary,
           ...(sources.length
-            ? [`${sources.length} ${sources.length === 1 ? "page" : "pages"}`]
+            ? [(sources.length === 1 ? t("{count} page", { count: sources.length }) : t("{count} pages", { count: sources.length }))]
             : []),
         ].join(" · ");
       }
@@ -2504,7 +2553,7 @@
         section.className = "web-search-section";
         const label = document.createElement("div");
         label.className = "web-search-section-label";
-        label.textContent = queries.length === 1 ? "Query" : "Queries";
+        label.textContent = queries.length === 1 ? t("Query") : t("Queries");
         if (queries.length === 1) {
           const query = document.createElement("p");
           query.className = "web-search-query-single";
@@ -2531,9 +2580,9 @@
         heading.className = "web-search-section-heading";
         const label = document.createElement("div");
         label.className = "web-search-section-label";
-        label.textContent = "Source pages";
+        label.textContent = t("Source pages");
         const sourceHelp = document.createElement("span");
-        const sourceHelpText = "Page text is available to the model; Live Smith receives source links, not excerpts. Citations appear with the answer when the provider returns them.";
+        const sourceHelpText = t("Page text is available to the model; Live Smith receives source links, not excerpts. Citations appear with the answer when the provider returns them.");
         sourceHelp.className = "inline-help";
         sourceHelp.tabIndex = 0;
         sourceHelp.textContent = "?";
@@ -2545,10 +2594,10 @@
           const empty = document.createElement("p");
           empty.className = "web-search-source-empty";
           empty.textContent = emptyState === "failed"
-            ? "Web Search failed before result pages were returned."
+            ? t("Web Search failed before result pages were returned.")
             : emptyState === "waiting"
-              ? "Waiting for result pages…"
-              : "The provider returned no result page URLs for this search.";
+              ? t("Waiting for result pages…")
+              : t("The provider returned no result page URLs for this search.");
           section.append(empty);
           target.append(section);
           return;
@@ -2609,10 +2658,10 @@
 
         const container = document.createElement("section");
         container.className = "citation-sources";
-        container.setAttribute("aria-label", "Citations");
+        container.setAttribute("aria-label", t("Citations"));
         const heading = document.createElement("div");
         heading.className = "citation-sources-label";
-        heading.textContent = "Citations";
+        heading.textContent = t("Citations");
         const list = document.createElement("ol");
         list.className = "citation-source-list";
         for (const source of sources) {
@@ -2657,15 +2706,15 @@
       }
 
       function summaryLineForEvent(event, firstLine) {
-        if (event.kind === "compaction") return "Conversation checkpoint";
+        if (event.kind === "compaction") return t("Conversation checkpoint");
         return firstLine;
       }
 
       function eventLabel(event) {
-        if (event.kind === "user") return "You";
+        if (event.kind === "user") return t("You");
         if (event.kind === "assistant") return "Live Smith";
-        if (event.kind === "compaction") return "Context compacted";
-        if (event.kind === "error") return "Error";
+        if (event.kind === "compaction") return t("Context compacted");
+        if (event.kind === "error") return t("Error");
         return event.kind;
       }
 
@@ -2720,11 +2769,60 @@
         return (event?.content || "").split("\n")[0]?.trim() || "";
       }
 
+      function preserveLocaleRender(rootId, render) {
+        let locale = window.LiveSmithI18n.locale;
+        return () => {
+          const nextLocale = window.LiveSmithI18n.locale;
+          const root = document.getElementById(rootId);
+          if (!root || locale === nextLocale) return render();
+          locale = nextLocale;
+          const elements = [root, ...root.querySelectorAll("*")];
+          const path = (element) => {
+            if (!element || !root.contains(element)) return null;
+            const indices = [];
+            while (element && element !== root) {
+              indices.unshift([...element.parentElement.children].indexOf(element));
+              element = element.parentElement;
+            }
+            return element === root ? indices : null;
+          };
+          const resolve = (indices) => indices?.reduce((node, index) => node?.children[index], root);
+          const focus = path(document.activeElement);
+          const scroll = elements.filter((element) => element.scrollTop || element.scrollLeft)
+            .map((element) => [path(element), element.scrollTop, element.scrollLeft]);
+          const details = elements.filter((element) => element instanceof HTMLDetailsElement)
+            .map((element) => [path(element), element.open]);
+          const top = root.scrollTop;
+          const left = root.scrollLeft;
+          render();
+          if (rootId === "timeline") cancelPendingTimelinePosition();
+          for (const [indices, open] of details) {
+            const element = resolve(indices);
+            if (element instanceof HTMLDetailsElement) element.open = open;
+          }
+          if (focus) resolve(focus)?.focus({ preventScroll: true });
+          for (const [indices, top, left] of scroll) {
+            const element = resolve(indices);
+            if (element) { element.scrollTop = top; element.scrollLeft = left; }
+          }
+          root.scrollTop = top;
+          root.scrollLeft = left;
+        };
+      }
+
+      renderTimeline = preserveLocaleRender("timeline", renderTimeline);
+
+      function refreshLocale() {
+        renderSessions();
+        renderTimeline();
+      }
+
       return {
         announceAssistantMessage,
         handleInspectorTabKeydown,
         renderAssistantDraft,
         syncSessionPresentation,
+        refreshLocale,
         renderSessions,
         renderTimeline,
         syncMessageActions,

@@ -8,6 +8,8 @@ import { JSDOM, VirtualConsole } from "jsdom";
 
 import {
   incrementContextUsageVisibilityRevision,
+  isUiLanguage,
+  type UiLanguage,
   incrementDefaultFollowUpBehaviorRevision,
   incrementNetworkProxyRevision,
   type ModelAdvancedSettings,
@@ -151,6 +153,7 @@ const chatTemplate = fs.readFileSync(
 const markdownRendererScript = await buildMarkdownRendererScript(false);
 const clientScripts = {
   actionPreview: readClientScript("action-preview"),
+  i18n: readClientScript("i18n"),
   attachments: readClientScript("attachments"),
   bootstrap: readClientScript("bootstrap"),
   bridgeClient: readClientScript("bridge-client"),
@@ -354,6 +357,8 @@ function stateFixture(): ChatBridgeState {
       approvalMode: "manual",
       defaultFollowUpBehavior: "queue",
       defaultFollowUpBehaviorRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       showContextUsage: true,
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
@@ -413,6 +418,7 @@ async function createDialogHarness(
   options: {
     oauthLoginResult?: NonNullable<ChatBridgeState["oauthAuth"]>;
     scrollendSupported?: boolean;
+    navigatorLanguages?: string[];
     webCryptoAvailable?: boolean;
     webCryptoDigestFails?: boolean;
     serverState?: ChatBridgeState;
@@ -876,6 +882,11 @@ async function createDialogHarness(
         event.networkProxy as NetworkProxySettings,
       );
       serverState.settings.networkProxyRevision = event.networkProxyRevision;
+      if (isUiLanguage(event.uiLanguage) &&
+          typeof event.uiLanguageRevision === "string") {
+        serverState.settings.uiLanguage = event.uiLanguage;
+        serverState.settings.uiLanguageRevision = event.uiLanguageRevision;
+      }
     }
   };
 
@@ -887,6 +898,8 @@ async function createDialogHarness(
     if (event.type === "global_settings_changed") {
       event.networkProxy ??= cloneState(serverState.settings.networkProxy);
       event.networkProxyRevision ??= serverState.settings.networkProxyRevision;
+      if (!Object.hasOwn(event, "uiLanguage")) event.uiLanguage = serverState.settings.uiLanguage;
+      if (!Object.hasOwn(event, "uiLanguageRevision")) event.uiLanguageRevision = serverState.settings.uiLanguageRevision;
     }
     if (event.type === "confirm_request" && event.kind === undefined) {
       event.kind = "apply";
@@ -1042,6 +1055,10 @@ async function createDialogHarness(
       pretendToBeVisual: true,
       virtualConsole,
       beforeParse(window) {
+        if (options.navigatorLanguages) {
+          Object.defineProperty(window.navigator, "languages", { configurable: true, value: options.navigatorLanguages });
+          Object.defineProperty(window.navigator, "language", { configurable: true, value: options.navigatorLanguages[0] ?? "en" });
+        }
         if (options.scrollendSupported !== undefined) {
           window.addEventListener("DOMContentLoaded", () => {
             const timeline = window.document.getElementById("timeline");
@@ -1385,6 +1402,7 @@ async function createDialogHarness(
                 editScopes?: EditScope[];
                 defaultFollowUpBehavior?: "queue" | "steer";
                 showContextUsage?: boolean;
+                uiLanguage?: UiLanguage;
                 networkProxy?: NetworkProxySettings;
                 profile?: SavedProfile;
                 profileId?: string;
@@ -1401,7 +1419,10 @@ async function createDialogHarness(
               if (
                 command.kind === "save_global_settings"
               ) {
-                if (typeof command.defaultFollowUpBehavior === "string") {
+                if (command.uiLanguage) {
+                  serverState.settings.uiLanguage = command.uiLanguage;
+                  serverState.settings.uiLanguageRevision = String(BigInt(serverState.settings.uiLanguageRevision) + 1n);
+                } else if (typeof command.defaultFollowUpBehavior === "string") {
                   serverState.settings.defaultFollowUpBehavior =
                     command.defaultFollowUpBehavior;
                   serverState.settings.defaultFollowUpBehaviorRevision =

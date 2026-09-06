@@ -3,6 +3,8 @@ import type {
   DefaultFollowUpBehavior,
   DefaultFollowUpBehaviorRevision,
   NetworkProxyRevision,
+  UiLanguage,
+  UiLanguageRevision,
   NetworkProxySettings,
 } from "../model/profile.js";
 import { storageScopeKey } from "../storage/scope.js";
@@ -14,6 +16,8 @@ export interface GlobalSettingsChange {
   contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
   networkProxy: NetworkProxySettings;
   networkProxyRevision: NetworkProxyRevision;
+  uiLanguage: UiLanguage;
+  uiLanguageRevision: UiLanguageRevision;
   commandId: string;
 }
 

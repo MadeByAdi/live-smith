@@ -23,6 +23,11 @@ import {
   compareContextUsageVisibilityRevisions,
   compareDefaultFollowUpBehaviorRevisions,
   compareNetworkProxyRevisions,
+  compareUiLanguageRevisions,
+  isUiLanguage,
+  isUiLanguageRevision,
+  type UiLanguage,
+  type UiLanguageRevision,
   isContextUsageVisibilityRevision,
   isDefaultFollowUpBehavior,
   isDefaultFollowUpBehaviorRevision,
@@ -476,6 +481,8 @@ type StateChangeSsePayloadBase =
       contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
       networkProxy: NetworkProxySettings;
       networkProxyRevision: NetworkProxyRevision;
+      uiLanguage: UiLanguage;
+      uiLanguageRevision: UiLanguageRevision;
       commandId: string;
     }
   | {
@@ -854,7 +861,9 @@ export async function createChatBridge(
         settings.contextUsageVisibilityRevision,
       ) ||
       !isNetworkProxySettings(settings.networkProxy) ||
-      !isNetworkProxyRevision(settings.networkProxyRevision)
+      !isNetworkProxyRevision(settings.networkProxyRevision) ||
+      !isUiLanguage(settings.uiLanguage) ||
+      !isUiLanguageRevision(settings.uiLanguageRevision)
     ) return state;
     if (latestGlobalSettingsChange === undefined) {
       latestGlobalSettingsChange = {
@@ -866,6 +875,8 @@ export async function createChatBridge(
           settings.contextUsageVisibilityRevision,
         networkProxy: settings.networkProxy,
         networkProxyRevision: settings.networkProxyRevision,
+        uiLanguage: settings.uiLanguage,
+        uiLanguageRevision: settings.uiLanguageRevision,
         commandId: stateSnapshotCommandId,
       };
       latestGlobalSettingsFromState = true;
@@ -880,6 +891,10 @@ export async function createChatBridge(
       settings.contextUsageVisibilityRevision,
       latestGlobalSettingsChange.contextUsageVisibilityRevision,
     ) > 0;
+    const uiLanguageFromState = compareUiLanguageRevisions(
+      settings.uiLanguageRevision,
+      latestGlobalSettingsChange.uiLanguageRevision,
+    ) > 0;
     const networkProxyFromState = compareNetworkProxyRevisions(
       settings.networkProxyRevision,
       latestGlobalSettingsChange.networkProxyRevision,
@@ -887,7 +902,8 @@ export async function createChatBridge(
     if (
       behaviorFromState ||
       contextVisibilityFromState ||
-      networkProxyFromState
+      networkProxyFromState ||
+      uiLanguageFromState
     ) {
       latestGlobalSettingsChange = {
         ...latestGlobalSettingsChange,
@@ -905,6 +921,10 @@ export async function createChatBridge(
                 settings.contextUsageVisibilityRevision,
           }
           : {}),
+        ...(uiLanguageFromState ? {
+          uiLanguage: settings.uiLanguage,
+          uiLanguageRevision: settings.uiLanguageRevision,
+        } : {}),
         ...(networkProxyFromState
           ? {
               networkProxy: settings.networkProxy,
@@ -927,6 +947,8 @@ export async function createChatBridge(
         showContextUsage: latestGlobalSettingsChange.showContextUsage,
         contextUsageVisibilityRevision:
           latestGlobalSettingsChange.contextUsageVisibilityRevision,
+        uiLanguage: latestGlobalSettingsChange.uiLanguage,
+        uiLanguageRevision: latestGlobalSettingsChange.uiLanguageRevision,
         networkProxy: latestGlobalSettingsChange.networkProxy,
         networkProxyRevision:
           latestGlobalSettingsChange.networkProxyRevision,
@@ -2408,11 +2430,19 @@ export async function createChatBridge(
           change.contextUsageVisibilityRevision,
           latestGlobalSettingsChange.contextUsageVisibilityRevision,
         );
+        const uiLanguageOrder = compareUiLanguageRevisions(
+          change.uiLanguageRevision,
+          latestGlobalSettingsChange.uiLanguageRevision,
+        );
         const networkProxyOrder = compareNetworkProxyRevisions(
           change.networkProxyRevision,
           latestGlobalSettingsChange.networkProxyRevision,
         );
         if (
+          (
+            uiLanguageOrder === 0 &&
+            change.uiLanguage !== latestGlobalSettingsChange.uiLanguage
+          ) ||
           (
             behaviorOrder === 0 &&
             change.defaultFollowUpBehavior !==
@@ -2436,11 +2466,13 @@ export async function createChatBridge(
             behaviorOrder <= 0 &&
             contextVisibilityOrder <= 0 &&
             networkProxyOrder <= 0 &&
+            uiLanguageOrder <= 0 &&
             !(
               latestGlobalSettingsFromState &&
               behaviorOrder === 0 &&
               contextVisibilityOrder === 0 &&
-              networkProxyOrder === 0
+              networkProxyOrder === 0 &&
+              uiLanguageOrder === 0
             )
           )
         ) return;
@@ -2457,6 +2489,12 @@ export async function createChatBridge(
           contextUsageVisibilityRevision: contextVisibilityOrder > 0
             ? change.contextUsageVisibilityRevision
             : latestGlobalSettingsChange.contextUsageVisibilityRevision,
+          uiLanguage: uiLanguageOrder > 0
+            ? change.uiLanguage
+            : latestGlobalSettingsChange.uiLanguage,
+          uiLanguageRevision: uiLanguageOrder > 0
+            ? change.uiLanguageRevision
+            : latestGlobalSettingsChange.uiLanguageRevision,
           networkProxy: networkProxyOrder > 0
             ? change.networkProxy
             : latestGlobalSettingsChange.networkProxy,

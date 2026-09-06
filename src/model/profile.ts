@@ -3,6 +3,8 @@ import { isIP } from "node:net";
 import { URL, URLSearchParams } from "node:url";
 
 import { cloneJsonValue } from "./json-clone.js";
+import type { UiLanguage } from "../i18n/languages.js";
+export { isUiLanguage, type UiLanguage } from "../i18n/languages.js";
 
 export type ApiFamily = "openai" | "anthropic";
 export type ApiMode = "responses" | "chat-completions" | "messages";
@@ -183,6 +185,7 @@ export interface NetworkProxySettings {
   url: string;
 }
 export type NetworkProxyRevision = string;
+export type UiLanguageRevision = string;
 
 export const CURRENT_AGENT_SETTINGS_SCHEMA_VERSION = 8 as const;
 
@@ -197,6 +200,8 @@ export interface AgentSettings {
   contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
   networkProxy: NetworkProxySettings;
   networkProxyRevision: NetworkProxyRevision;
+  uiLanguage: UiLanguage;
+  uiLanguageRevision: UiLanguageRevision;
 }
 
 export class ProfileValidationError extends Error {
@@ -227,6 +232,8 @@ export function freshEmptyAgentSettings(): AgentSettings {
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   };
 }
 
@@ -1412,4 +1419,19 @@ function assertJsonCompatible(value: unknown, field: string): void {
   } catch {
     throw new ProfileValidationError(field, `${field} must contain valid JSON.`);
   }
+}
+
+export function isUiLanguageRevision(value: unknown): value is UiLanguageRevision {
+  return isCanonicalSettingsRevision(value);
+}
+
+export function compareUiLanguageRevisions(
+  left: UiLanguageRevision,
+  right: UiLanguageRevision,
+): number {
+  return compareCanonicalSettingsRevisions(left, right);
+}
+
+export function incrementUiLanguageRevision(revision: UiLanguageRevision): UiLanguageRevision {
+  return incrementCanonicalSettingsRevision(revision);
 }

@@ -199,6 +199,8 @@ test("serializeChatStateForHtml escapes script-breaking characters", () => {
       approvalMode: "manual",
       defaultFollowUpBehavior: "queue",
       defaultFollowUpBehaviorRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       showContextUsage: true,
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },

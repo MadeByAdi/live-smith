@@ -10,9 +10,11 @@
         runCommand,
         showStatus,
       }) {
+      const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const maximumProfileModelCount = __MAX_PROFILE_MODEL_COUNT__;
       const maximumContextWindowTokens =
         __MAX_DISCOVERED_MODEL_CONTEXT_WINDOW_TOKENS__;
+      const localValidationMessages = new WeakMap();
       let draftProfile = null;
       let savedProfileSnapshot = null;
       let savedProfileRevisionSnapshot = null;
@@ -164,7 +166,7 @@
         return controlIdByGlobalSettingsField[field] ? "app" : "agent";
       }
 
-      function showFieldError(field, message) {
+      function showFieldError(field, message, sourceMessage) {
         const modelField = /^models\.(\d+)\.(.+)$/.exec(field);
         if (modelField && draftProfile?.models?.[Number(modelField[1])]) {
           selectedModelIndex = Number(modelField[1]);
@@ -183,6 +185,7 @@
         error.id = `${control.id}Error`;
         error.className = "field-error";
         error.textContent = message;
+        if (sourceMessage) error.dataset.profileMessage = sourceMessage;
         container.append(error);
         control.setAttribute("aria-invalid", "true");
         const describedBy = new Set(
@@ -195,12 +198,15 @@
       }
 
       function showProfileFormError(error) {
-        const message = error instanceof SyntaxError
+        const sourceMessage = error instanceof SyntaxError
           ? "Extra Body must be valid JSON."
-          : error.message || String(error);
+          : localValidationMessages.get(error);
+        const message = sourceMessage
+          ? t(sourceMessage) : error.message || String(error);
         if (!showFieldError(
           `models.${selectedModelIndex}.advanced.extraBody`,
           message,
+          sourceMessage,
         )) {
           showStatus(message, true);
         }
@@ -217,7 +223,7 @@
         if (source) {
           const copy = cloneValue(source);
           copy.id = createProfileId();
-          copy.name = `${source.name} Copy`;
+          copy.name = t("{name} Copy", { name: source.name });
           return copy;
         }
         return {
@@ -378,7 +384,9 @@
         if (!invalidExtraBody && extraRaw) {
           if (!extraBody || Array.isArray(extraBody) || typeof extraBody !== "object") {
             if (!preserveInvalidExtraBody) {
-              throw new Error("Extra Body must be a JSON object.");
+              const error = new Error(t("Extra Body must be a JSON object."));
+              localValidationMessages.set(error, "Extra Body must be a JSON object.");
+              throw error;
             }
             invalidExtraBody = true;
             extraBody = undefined;
@@ -574,7 +582,7 @@
 
       function modelConfigLabel(entry, displayNamesById) {
         const model = String(entry?.model || "").trim();
-        if (!model) return "No model added yet";
+        if (!model) return t("No model added yet");
         const displayName = String(displayNamesById.get(model) || "").trim();
         return displayName && displayName !== model
           ? `${displayName} · ${model}`
@@ -596,7 +604,9 @@
           const isDefault = Boolean(entry.model) &&
             entry.model === draftProfile.defaultModel;
           optionRows.push({
-            label: `${modelConfigLabel(entry, displayNamesById)}${isDefault ? " · Default" : ""}`,
+            label: isDefault
+              ? t("{model} · Default", { model: modelConfigLabel(entry, displayNamesById) })
+              : modelConfigLabel(entry, displayNamesById),
             value: String(index),
           });
         }
@@ -617,8 +627,8 @@
         const defaultMessage = isDefault
           ? ""
           : draftProfile?.defaultModel
-            ? `New Sessions: ${draftProfile.defaultModel}`
-            : "Choose a default model";
+            ? t("New Sessions: {defaultModel}", { defaultModel: draftProfile.defaultModel })
+            : t("Choose a default model");
         if (defaultStatus.textContent !== defaultMessage) {
           defaultStatus.textContent = defaultMessage;
         }
@@ -769,7 +779,7 @@
       ) {
         if (configuredModelIds().size + modelIds.length > maximumProfileModelCount) {
           showStatus(
-            `A Profile can contain at most ${maximumProfileModelCount} models. Remove models before loading more.`,
+            t("A Profile can contain at most {maximumProfileModelCount} models. Remove models before loading more.", { maximumProfileModelCount: maximumProfileModelCount }),
             true,
           );
           return false;
@@ -1006,6 +1016,7 @@
         if (!entry?.model) {
           showFieldError(
             `models.${selectedModelIndex}.model`,
+            t("Enter a Model ID before setting the default."),
             "Enter a Model ID before setting the default.",
           );
           return;
@@ -1052,7 +1063,7 @@
         const button = document.getElementById("apiKeyVisibilityButton");
         const visible = field.type === "password";
         field.type = visible ? "text" : "password";
-        button.textContent = visible ? "Hide" : "Show";
+        button.textContent = visible ? t("Hide") : t("Show");
         button.setAttribute("aria-pressed", String(visible));
       }
 
@@ -1197,12 +1208,12 @@
         control.dataset.protocolSupported = String(supported);
         const showHint = subscription || !supported || control.checked;
         const hintText = subscription
-          ? "Unavailable for subscriptions. Use Direct API with Responses or Messages."
+          ? t("Unavailable for subscriptions. Use Direct API with Responses or Messages.")
           : supported
-            ? "Endpoint support isn’t verified."
+            ? t("Endpoint support isn’t verified.")
             : wasTurnedOff
-              ? "Turned off · unavailable with Chat Completions."
-              : "Unavailable with Chat Completions.";
+              ? t("Turned off · unavailable with Chat Completions.")
+              : t("Unavailable with Chat Completions.");
         setPropertyIfChanged(hint, "textContent", hintText);
         setPropertyIfChanged(hint, "hidden", !showHint);
         setDescribedByToken(control, "webSearchHint", showHint);
@@ -1229,45 +1240,45 @@
         if (!auth) {
           return {
             state: "unchecked",
-            badge: "Not checked",
-            title: "Check account",
+            badge: t("Not checked"),
+            title: t("Check account"),
             detail: "",
-            signIn: { label: "Sign in", hidden: false, tone: "primary" },
-            check: { label: "Check account", hidden: false, tone: "secondary" },
-            logout: { label: "Sign out", hidden: true, tone: "quiet" },
+            signIn: { label: t("Sign in"), hidden: false, tone: "primary" },
+            check: { label: t("Check account"), hidden: false, tone: "secondary" },
+            logout: { label: t("Sign out"), hidden: true, tone: "quiet" },
           };
         }
         if (auth.status === "unavailable") {
           const retryableSignIn = auth.definitive === true;
           return {
             state: "unavailable",
-            badge: "Unavailable",
+            badge: t("Unavailable"),
             title: retryableSignIn
-              ? `${providerLabel} sign-in failed`
-              : `${providerLabel} subscription unavailable`,
+              ? t("{providerLabel} sign-in failed", { providerLabel: providerLabel })
+              : t("{providerLabel} subscription unavailable", { providerLabel: providerLabel }),
             detail: auth.message,
             signIn: {
-              label: retryableSignIn ? "Try sign-in again" : "Sign in",
+              label: retryableSignIn ? t("Try sign-in again") : t("Sign in"),
               hidden: !retryableSignIn,
               tone: "primary",
             },
             check: {
-              label: "Check again",
+              label: t("Check again"),
               hidden: false,
               tone: retryableSignIn ? "secondary" : "primary",
             },
-            logout: { label: "Sign out", hidden: false, tone: "quiet" },
+            logout: { label: t("Sign out"), hidden: false, tone: "quiet" },
           };
         }
         if (auth.status === "signed-out") {
           return {
             state: "signed-out",
-            badge: "Signed out",
-            title: "Sign in to continue",
+            badge: t("Signed out"),
+            title: t("Sign in to continue"),
             detail: "",
-            signIn: { label: "Sign in", hidden: false, tone: "primary" },
-            check: { label: "Check account", hidden: false, tone: "secondary" },
-            logout: { label: "Sign out", hidden: true, tone: "quiet" },
+            signIn: { label: t("Sign in"), hidden: false, tone: "primary" },
+            check: { label: t("Check account"), hidden: false, tone: "secondary" },
+            logout: { label: t("Sign out"), hidden: true, tone: "quiet" },
           };
         }
         if (auth.status === "pending") {
@@ -1275,24 +1286,24 @@
           const needsAuthorizationCode = auth.authorizationCodeInput === true;
           return {
             state: "pending",
-            badge: "Waiting",
-            title: "Finish sign-in",
+            badge: t("Waiting"),
+            title: t("Finish sign-in"),
             detail: auth.browserLaunchFailed
-              ? `Live Smith could not open the system browser. Retry the ${providerLabel} account link below or copy it into a browser.`
+              ? t("Live Smith could not open the system browser. Retry the {providerLabel} account link below or copy it into a browser.", { providerLabel: providerLabel })
               : needsAuthorizationCode
-                ? `Finish ${providerLabel} sign-in, then paste the authorization code shown in the browser.`
+                ? t("Finish {providerLabel} sign-in, then paste the authorization code shown in the browser.", { providerLabel: providerLabel })
               : hasCode
-                ? `Open the ${providerLabel} page, enter the one-time code, then return here.`
-                : `Complete ${providerLabel} sign-in in the browser, then return here.`,
-            signIn: { label: "Sign in", hidden: true, tone: "secondary" },
+                ? t("Open the {providerLabel} page, enter the one-time code, then return here.", { providerLabel: providerLabel })
+                : t("Complete {providerLabel} sign-in in the browser, then return here.", { providerLabel: providerLabel }),
+            signIn: { label: t("Sign in"), hidden: true, tone: "secondary" },
             check: {
-              label: "Check sign-in",
+              label: t("Check sign-in"),
               hidden: needsAuthorizationCode,
               tone: "primary",
             },
             logout: {
-              label: "Cancel sign-in",
-              busyLabel: "Cancelling…",
+              label: t("Cancel sign-in"),
+              busyLabel: t("Cancelling…"),
               hidden: false,
               tone: "quiet",
             },
@@ -1301,24 +1312,24 @@
         if (!auth.subscriptionEligible) {
           return {
             state: "ineligible",
-            badge: "Not eligible",
-            title: "This account isn’t supported",
-            detail: `This ${providerLabel} account cannot use the selected subscription backend.`,
-            signIn: { label: "Sign in", hidden: true, tone: "secondary" },
-            check: { label: "Refresh account", hidden: false, tone: "secondary" },
-            logout: { label: "Sign out", hidden: false, tone: "quiet" },
+            badge: t("Not eligible"),
+            title: t("This account isn’t supported"),
+            detail: t("This {providerLabel} account cannot use the selected subscription backend.", { providerLabel: providerLabel }),
+            signIn: { label: t("Sign in"), hidden: true, tone: "secondary" },
+            check: { label: t("Refresh account"), hidden: false, tone: "secondary" },
+            logout: { label: t("Sign out"), hidden: false, tone: "quiet" },
           };
         }
         return {
           state: "signed-in",
-          badge: "Connected",
-          title: "Subscription ready",
+          badge: t("Connected"),
+          title: t("Subscription ready"),
           detail: auth.accountLabel
-            ? `Signed in as ${auth.accountLabel} (${auth.planType}).`
-            : `Signed in with a ${auth.planType} plan.`,
-          signIn: { label: "Sign in", hidden: true, tone: "secondary" },
-          check: { label: "Refresh account", hidden: false, tone: "secondary" },
-          logout: { label: "Sign out", hidden: false, tone: "quiet" },
+            ? t("Signed in as {accountLabel} ({planType}).", { accountLabel: auth.accountLabel, planType: auth.planType })
+            : t("Signed in with a {planType} plan.", { planType: auth.planType }),
+          signIn: { label: t("Sign in"), hidden: true, tone: "secondary" },
+          check: { label: t("Refresh account"), hidden: false, tone: "secondary" },
+          logout: { label: t("Sign out"), hidden: false, tone: "quiet" },
         };
       }
 
@@ -1359,9 +1370,9 @@
         const codeHeading = document.getElementById("oauthDeviceCodeHeading");
         const codeHelp = document.getElementById("oauthDeviceCodeHelp");
         const submitCode = document.getElementById("oauthSubmitCodeButton");
-        const presentationKey = JSON.stringify(auth || null);
+        const presentationKey = JSON.stringify([window.LiveSmithI18n.locale, auth || null]);
         const providerLabel = oauthProviderLabel();
-        const headingText = `${providerLabel} account `;
+        const headingText = t("{providerLabel} account ", { providerLabel: providerLabel });
         const headingNode = document.getElementById("oauthAuthHeading").firstChild;
         if (headingNode.textContent !== headingText) headingNode.textContent = headingText;
         const authNote = document.getElementById("oauthAuthNote");
@@ -1369,17 +1380,17 @@
         setPropertyIfChanged(
           authNote,
           "textContent",
-          showAuthNote ? "Extra Usage, when enabled, is billed to this account." : "",
+          showAuthNote ? t("Extra Usage, when enabled, is billed to this account.") : "",
         );
         setPropertyIfChanged(authNote, "hidden", !showAuthNote);
         setPropertyIfChanged(
           document.getElementById("oauthVerificationLinkLabel"),
           "textContent",
           auth?.status === "pending" && auth.browserLaunchFailed
-            ? `Retry opening ${providerLabel} sign-in page`
+            ? t("Retry opening {providerLabel} sign-in page", { providerLabel: providerLabel })
             : auth?.status === "unavailable" && auth.verificationLabel
               ? auth.verificationLabel
-              : `Open ${providerLabel} sign-in page`,
+              : t("Open {providerLabel} sign-in page", { providerLabel: providerLabel }),
         );
         setDataIfChanged(panel, "authState", presentation.state);
         setPropertyIfChanged(
@@ -1413,7 +1424,7 @@
               userCode.readOnly;
             userCode.readOnly = !authorizationCodeInput;
             userCode.placeholder = authorizationCodeInput
-              ? "Paste authorization code"
+              ? t("Paste authorization code")
               : "";
             if (!authorizationCodeInput || enteringAuthorizationCodeInput) {
               userCode.value = pending && !authorizationCodeInput
@@ -1428,21 +1439,21 @@
               authorizationCodeInput,
             );
             codeHeading.firstChild.textContent = authorizationCodeInput
-              ? "Authorization code"
-              : "One-time code";
+              ? t("Authorization code")
+              : t("One-time code");
             codeHelp.textContent = authorizationCodeInput
-              ? "Paste from the browser"
-              : "Select to copy";
+              ? t("Paste from the browser")
+              : t("Select to copy");
             submitCode.hidden = !authorizationCodeInput;
             deviceGuidance.textContent = verificationAction
-              ? `Complete the requested ${providerLabel} account step in the browser, then try sign-in again.`
+              ? t("Complete the requested {providerLabel} account step in the browser, then try sign-in again.", { providerLabel: providerLabel })
               : auth.browserLaunchFailed
-                ? "The current sign-in attempt is still active. Retry the link or copy its address before it expires."
+                ? t("The current sign-in attempt is still active. Retry the link or copy its address before it expires.")
                 : authorizationCodeInput
-                  ? "The Antigravity callback page displays this code after Google sign-in."
+                  ? t("The Antigravity callback page displays this code after Google sign-in.")
                 : auth.userCode
-                  ? "Keep this window open. Return here after entering the code."
-                  : "Complete sign-in in the browser; Live Smith will check automatically.";
+                  ? t("Keep this window open. Return here after entering the code.")
+                  : t("Complete sign-in in the browser; Live Smith will check automatically.");
           } else {
             verificationLink.hidden = true;
             verificationLink.removeAttribute("href");
@@ -1452,8 +1463,8 @@
             userCode.placeholder = "";
             codeTicket.hidden = true;
             toggleClassIfChanged(codeTicket, "authorization-code-entry", false);
-            codeHeading.firstChild.textContent = "One-time code";
-            codeHelp.textContent = "Select to copy";
+            codeHeading.firstChild.textContent = t("One-time code");
+            codeHelp.textContent = t("Select to copy");
             submitCode.hidden = true;
           }
         }
@@ -1615,12 +1626,12 @@
         fields = {},
       ) {
         if (isAnyOperationInProgress()) {
-          showStatus("Wait for the current operation to finish.");
+          showStatus(t("Wait for the current operation to finish."));
           return;
         }
         const source = document.getElementById(sourceId);
         const shouldRestoreFocus = document.activeElement === source;
-        if (!draftProfile?.id) throw new Error("OAuth requires a Profile ID.");
+        if (!draftProfile?.id) throw new Error(t("OAuth requires a Profile ID."));
         const profileId = draftProfile.id;
         const provisional = oauthScopeIsProvisional(profileId, provider);
         if (kind !== "logout_oauth" && provisional) {
@@ -1674,7 +1685,7 @@
         const input = document.getElementById("oauthUserCode");
         const code = input.value.trim();
         if (!code) {
-          showStatus("Paste the authorization code shown by Antigravity.", true);
+          showStatus(t("Paste the authorization code shown by Antigravity."), true);
           input.focus({ preventScroll: true });
           return;
         }
@@ -1698,9 +1709,9 @@
       async function logoutOAuth() {
         const providerLabel = oauthProviderLabel();
         if (!(await confirmAction({
-          title: `Sign out of ${providerLabel}?`,
-          message: `Remove this Profile’s ${providerLabel} OAuth session? Any pending login for this Profile will be cancelled.`,
-          acceptLabel: "Sign Out",
+          title: window.LiveSmithI18n.message("Sign out of {providerLabel}?", { providerLabel: providerLabel }),
+          message: window.LiveSmithI18n.message("Remove this Profile’s {providerLabel} OAuth session? Any pending login for this Profile will be cancelled.", { providerLabel: providerLabel }),
+          acceptLabel: window.LiveSmithI18n.message("Sign Out"),
           danger: true,
         }))) return;
         await runOAuthAuthCommand("logout_oauth", "oauthLogoutButton");
@@ -1708,9 +1719,9 @@
 
       async function addProfile() {
         if (draftDirty && !(await confirmAction({
-          title: "Discard unsaved changes?",
-          message: "Create a new Profile and discard the current unsaved changes?",
-          acceptLabel: "Discard & Add",
+          title: window.LiveSmithI18n.message("Discard unsaved changes?"),
+          message: window.LiveSmithI18n.message("Create a new Profile and discard the current unsaved changes?"),
+          acceptLabel: window.LiveSmithI18n.message("Discard & Add"),
         }))) return;
         if (hasProvisionalOAuth() && !(await discardProvisionalOAuth())) return;
         setDraftProfile(blankProfile(), null, true, null);
@@ -1720,9 +1731,9 @@
         if (!draftProfile) return;
         const sourceModelsConnection = cloneValue(draftModelsConnection);
         if (draftDirty && !(await confirmAction({
-          title: "Duplicate unsaved values?",
-          message: "Create a new Profile from the values currently shown in the form?",
-          acceptLabel: "Duplicate",
+          title: window.LiveSmithI18n.message("Duplicate unsaved values?"),
+          message: window.LiveSmithI18n.message("Create a new Profile from the values currently shown in the form?"),
+          acceptLabel: window.LiveSmithI18n.message("Duplicate"),
         }))) return;
         let current;
         try {
@@ -1773,9 +1784,9 @@
       async function deleteProfile() {
         if (!savedProfileSnapshot) return;
         if (!(await confirmAction({
-          title: "Delete Profile?",
-          message: `Delete “${savedProfileSnapshot.name}”? This cannot be undone.`,
-          acceptLabel: "Delete",
+          title: window.LiveSmithI18n.message("Delete Profile?"),
+          message: window.LiveSmithI18n.message("Delete “{name}”? This cannot be undone.", { name: savedProfileSnapshot.name }),
+          acceptLabel: window.LiveSmithI18n.message("Delete"),
           danger: true,
         }))) return;
         if (await runCommand("delete_profile", {
@@ -1813,9 +1824,9 @@
         const next = selectedSavedProfile();
         if (!next) return;
         if (draftDirty && !(await confirmAction({
-          title: "Discard unsaved changes?",
-          message: `Switch to “${next.name}” and discard the current unsaved changes?`,
-          acceptLabel: "Discard & Switch",
+          title: window.LiveSmithI18n.message("Discard unsaved changes?"),
+          message: window.LiveSmithI18n.message("Switch to “{name}” and discard the current unsaved changes?", { name: next.name }),
+          acceptLabel: window.LiveSmithI18n.message("Discard & Switch"),
         }))) {
           document.getElementById("profileSelector").value = draftProfile?.id || "";
           return;
@@ -1837,10 +1848,10 @@
           control.classList.toggle("is-everything", isEverything);
         }
         const title = isEverything
-          ? "Accept Everything auto-applies every validated change, including deletes and replacement writes."
+          ? t("Accept Everything auto-applies every validated change, including deletes and replacement writes.")
           : control.value === "low-risk"
-            ? "Low Risk auto-applies changes that are not deletes, Clip writes, Arrangement clears, or sample replacements."
-            : "Manual requests approval for every Apply request.";
+            ? t("Low Risk auto-applies changes that are not deletes, Clip writes, Arrangement clears, or sample replacements.")
+            : t("Manual requests approval for every Apply request.");
         const label = control.closest("label");
         if (label.title !== title) label.title = title;
       }
@@ -1921,7 +1932,7 @@
           selectedProfileId &&
           !profiles.some((profile) => profile.id === selectedProfileId)
         ) {
-          optionRows.push({ label: "Unsaved profile", value: selectedProfileId });
+          optionRows.push({ label: t("Unsaved profile"), value: selectedProfileId });
         }
         syncSelectOptions(selector, optionRows);
         setPropertyIfChanged(selector, "value", selectedProfileId);
@@ -1958,7 +1969,7 @@
         renderApiModes(directConnection?.apiFamily || "openai", directConnection?.apiMode);
         document.getElementById("apiKey").value = directConnection?.apiKey || "";
         document.getElementById("apiKey").type = "password";
-        document.getElementById("apiKeyVisibilityButton").textContent = "Show";
+        document.getElementById("apiKeyVisibilityButton").textContent = t("Show");
         document.getElementById("apiKeyVisibilityButton").setAttribute("aria-pressed", "false");
         document.getElementById("baseUrl").value = directConnection?.baseUrl || "";
         document.getElementById("manualModelId").value = "";
@@ -2029,7 +2040,9 @@
         const modelCount = configured.size;
         const profileIsFull = modelCount >= maximumProfileModelCount;
 
-        const count = `${modelCount} ${modelCount === 1 ? "model" : "models"}`;
+        const count = modelCount === 1
+          ? t("{count} model", { count: modelCount })
+          : t("{count} models", { count: modelCount });
         const countStatus = document.getElementById("profileModelCount");
         if (countStatus.textContent !== count) countStatus.textContent = count;
         const manualEntry = document.getElementById("manualModelEntry");
@@ -2038,12 +2051,12 @@
 
         const hint = document.getElementById("manualModelIdHint");
         const hintText = profileIsFull
-          ? `This Profile already contains ${maximumProfileModelCount} models.`
+          ? t("This Profile already contains {maximumProfileModelCount} models.", { maximumProfileModelCount: maximumProfileModelCount })
           : !modelId
-            ? "For models missing from the provider list."
+            ? t("For models missing from the provider list.")
             : duplicate
-              ? `${modelId} is already in this Profile.`
-              : "The provider will validate this ID when you use the model.";
+              ? t("{modelId} is already in this Profile.", { modelId: modelId })
+              : t("The provider will validate this ID when you use the model.");
         setPropertyIfChanged(hint, "textContent", hintText);
 
         setPropertyIfChanged(
@@ -2053,7 +2066,7 @@
         );
       }
 
-      function updateReasoningVisibility() {
+      function updateReasoningVisibility(presentationOnly = false) {
         const settingsLocked = isOperationInProgress() || hasAnySendInProgress();
         const selection = selectedModelCapabilities();
         const capability = selection.capability;
@@ -2074,9 +2087,13 @@
             !showHint,
           );
           setPropertyIfChanged(hint, "textContent", selection.authoritative.reasoning
-            ? "Unavailable. Use provider default or Compatibility Overrides."
-            : "Unverified connection · current reasoning values are preserved.");
+            ? t("Unavailable. Use provider default or Compatibility Overrides.")
+            : t("Unverified connection · current reasoning values are preserved."));
           setDescribedByToken(modeSelect, "reasoningHint", showHint);
+        }
+        if (presentationOnly) {
+          refreshReasoningLabels();
+          return;
         }
         let adjusted = false;
         const rawRequestedMode = modeSelect.dataset.requestedValue ??
@@ -2088,11 +2105,11 @@
         delete effortSelect.dataset.requestedValue;
         const budgetInput = document.getElementById("reasoningBudgetTokens");
         if (selection.authoritative.reasoning) {
-          const modeRows = [{ label: "Provider default", value: "default" }];
+          const modeRows = [{ label: t("Provider default"), value: "default" }];
           if (supported && reasoning.canDisable) {
-            modeRows.push({ label: "Disabled", value: "disabled" });
+            modeRows.push({ label: t("Disabled"), value: "disabled" });
           }
-          if (supported) modeRows.push({ label: "Enabled", value: "enabled" });
+          if (supported) modeRows.push({ label: t("Enabled"), value: "enabled" });
           syncSelectOptions(modeSelect, modeRows);
           const nextMode = [...modeSelect.options].some(
             (option) => option.value === requestedMode,
@@ -2110,10 +2127,10 @@
           const efforts = supported && Array.isArray(reasoning.efforts)
             ? reasoning.efforts
             : [];
-          const effortRows = [{ label: "Provider default", value: "" }];
+          const effortRows = [{ label: t("Provider default"), value: "" }];
           for (const effort of efforts) {
             effortRows.push({
-              label: effort[0].toUpperCase() + effort.slice(1),
+              label: reasoningEffortLabel(effort),
               value: effort,
             });
           }
@@ -2180,6 +2197,34 @@
         if (adjusted) markDraftDirtyForCapabilityAdjustment();
       }
 
+      function reasoningEffortLabel(effort) {
+        const labels = {
+          none: () => t("None"), minimal: () => t("Minimal"),
+          low: () => t("Low"), medium: () => t("Medium"),
+          high: () => t("High"), xhigh: () => t("Xhigh"),
+          max: () => t("Max"), ultra: () => t("Ultra"),
+        };
+        return Object.hasOwn(labels, effort)
+          ? labels[effort]()
+          : effort[0].toUpperCase() + effort.slice(1);
+      }
+
+      function refreshReasoningLabels() {
+        const modeLabels = {
+          default: () => t("Provider default"),
+          enabled: () => t("Enabled"), disabled: () => t("Disabled"),
+        };
+        for (const option of document.getElementById("reasoningMode").options) {
+          if (Object.hasOwn(modeLabels, option.value)) {
+            option.textContent = modeLabels[option.value]();
+          }
+        }
+        for (const option of document.getElementById("reasoningEffort").options) {
+          option.textContent = option.value
+            ? reasoningEffortLabel(option.value) : t("Provider default");
+        }
+      }
+
       function preserveUnknownReasoningControls({
         budgetInput,
         budgetRow,
@@ -2191,14 +2236,14 @@
         settingsLocked,
       }) {
         if (![...modeSelect.options].some((option) => option.value === "default")) {
-          modeSelect.prepend(new Option("Provider default", "default"));
+          modeSelect.prepend(new Option(t("Provider default"), "default"));
         }
         if (
           requestedMode !== "default" &&
           ![...modeSelect.options].some((option) => option.value === requestedMode)
         ) {
           modeSelect.append(new Option(
-            requestedMode === "enabled" ? "Enabled" : "Disabled",
+            requestedMode === "enabled" ? t("Enabled") : t("Disabled"),
             requestedMode,
           ));
         }
@@ -2210,7 +2255,7 @@
           )
         ) {
           effortSelect.append(new Option(
-            requestedEffort[0].toUpperCase() + requestedEffort.slice(1),
+            reasoningEffortLabel(requestedEffort),
             requestedEffort,
           ));
         }
@@ -2324,8 +2369,8 @@
         };
       }
 
-      function updateCapabilityPreview() {
-        updateReasoningVisibility();
+      function updateCapabilityPreview(presentationOnly = false) {
+        updateReasoningVisibility(presentationOnly);
         const settingsLocked = isOperationInProgress() || hasAnySendInProgress();
         const selection = selectedModelCapabilities();
         const capability = selection.capability;
@@ -2335,13 +2380,13 @@
           const inputs = capability.inputs || {};
           const statuses = [
             inputCapabilityStatus(
-              "Image",
+              t("Image"),
               "image",
               inputs,
               selection.authoritative.inputs,
             ),
             inputCapabilityStatus(
-              "Audio",
+              t("Audio"),
               "audio",
               inputs,
               selection.authoritative.inputs,
@@ -2373,7 +2418,7 @@
         );
         const requestedOutputTokens = Number(outputTokensInput.value);
         if (
-          !subscription &&
+          !presentationOnly && !subscription &&
           trustedModelLimit !== undefined &&
           Number.isFinite(requestedOutputTokens) &&
           requestedOutputTokens > trustedModelLimit
@@ -2383,10 +2428,10 @@
           markDraftDirtyForCapabilityAdjustment();
         }
         const outputLimitHint = subscription
-          ? "Set by the subscription backend."
+          ? t("Set by the subscription backend.")
           : trustedModelLimit === undefined
-            ? "Unknown · validated by the provider."
-            : `Model limit: ${trustedModelLimit}.`;
+            ? t("Unknown · validated by the provider.")
+            : t("Model limit: {trustedModelLimit}.", { trustedModelLimit: trustedModelLimit });
         setPropertyIfChanged(
           document.getElementById("maxOutputTokensHint"),
           "textContent",
@@ -2417,20 +2462,20 @@
           document.getElementById("contextWindowTokensHint"),
           "textContent",
           Number.isInteger(configuredWindow) && configuredWindow > 0
-            ? "Used for metering and auto-compact."
+            ? t("Used for metering and auto-compact.")
             : detectedWindow
-              ? `Model limit: ${detectedWindow} tokens.`
-              : "Set a limit to enable metering and auto-compact.",
+              ? t("Model limit: {detectedWindow} tokens.", { detectedWindow: detectedWindow })
+              : t("Set a limit to enable metering and auto-compact."),
         );
         const configuredCompactAt = Number(autoCompactInput.value);
         setPropertyIfChanged(
           document.getElementById("autoCompactTokenLimitHint"),
           "textContent",
           Number.isInteger(configuredCompactAt) && configuredCompactAt > 0
-            ? "Runs before the next turn."
+            ? t("Runs before the next turn.")
             : effectiveWindow
-              ? `Auto: ${Math.floor(effectiveWindow * 0.9)} tokens (90%).`
-              : "Set a threshold to enable auto-compact.",
+              ? t("Auto: {value} tokens (90%).", { value: Math.floor(effectiveWindow * 0.9) })
+              : t("Set a threshold to enable auto-compact."),
         );
       }
 
@@ -2441,12 +2486,12 @@
             label,
             mark: "?",
             state: "unverified",
-            value: "Unverified",
+            value: t("Unverified"),
           };
         }
         return inputs[key]
-          ? { key, label, mark: "✓", state: "supported", value: "Supported" }
-          : { key, label, mark: "×", state: "unsupported", value: "Unsupported" };
+          ? { key, label, mark: "✓", state: "supported", value: t("Supported") }
+          : { key, label, mark: "×", state: "unsupported", value: t("Unsupported") };
       }
 
       function synchronizeInputCapabilityPreview(preview, statuses) {
@@ -2479,12 +2524,10 @@
           if (item.dataset.capabilityState !== status.state) {
             item.dataset.capabilityState = status.state;
           }
-          const title = `${status.label} input: ${status.value}`;
+          const title = t("{label} input: {value}", { label: status.label, value: status.value });
           if (item.title !== title) item.title = title;
         });
-        const accessibleLabel = `Input capabilities. ${
-          statuses.map((status) => `${status.label}: ${status.value}`).join(". ")
-        }.`;
+        const accessibleLabel = t("Input capabilities. {value}.", { value: statuses.map((status) => `${status.label}: ${status.value}`).join(". ") });
         if (preview.getAttribute("aria-label") !== accessibleLabel) {
           preview.setAttribute("aria-label", accessibleLabel);
         }
@@ -2507,19 +2550,19 @@
           positiveVideoEvidence;
         const messages = [
           ...(conflictingVideoEvidence
-            ? ["Provider returned conflicting video capability evidence; Live Smith cannot send video attachments."]
+            ? [t("Provider returned conflicting video capability evidence; Live Smith cannot send video attachments.")]
             : positiveVideoEvidence
-              ? ["Provider reports video input; Live Smith cannot send video attachments."]
+              ? [t("Provider reports video input; Live Smith cannot send video attachments.")]
               : inputs.supportsVideo === false
-                ? ["Provider reports video input as unsupported."]
+                ? [t("Provider reports video input as unsupported.")]
                 : []),
           ...(reportedMimeTypes.length
-            ? [`Provider returned ${reportedMimeTypes.length} MIME capability ` +
-                `${reportedMimeTypes.length === 1 ? "entry" : "entries"}; ` +
-                "only the Supported input rows authorize formats Live Smith can send."]
+            ? [reportedMimeTypes.length === 1
+                ? t("Provider returned {count} MIME capability entry; only the Supported input rows authorize formats Live Smith can send.", { count: reportedMimeTypes.length })
+                : t("Provider returned {count} MIME capability entries; only the Supported input rows authorize formats Live Smith can send.", { count: reportedMimeTypes.length })]
             : []),
           ...(Object.keys(reasoning).length
-            ? ["Provider reasoning metadata is retained without enabling unverified controls."]
+            ? [t("Provider reasoning metadata is retained without enabling unverified controls.")]
             : []),
         ];
         setPropertyIfChanged(note, "hidden", messages.length === 0);
@@ -2536,15 +2579,15 @@
         ];
         const title = [
           ...(inputDetails.length
-            ? [`Provider inputs: ${inputDetails.join(", ")}`]
+            ? [t("Provider inputs: {value}", { value: inputDetails.join(", ") })]
             : []),
           ...(reportedMimeTypes.length
-            ? [`Provider MIME support: ${reportedMimeTypes.map(
+            ? [t("Provider MIME support: {value}", { value: reportedMimeTypes.map(
                 ([mimeType, supported]) => `${mimeType}=${String(supported)}`
-              ).join(", ")}`]
+              ).join(", ") })]
             : []),
           ...(reasoningDetails.length
-            ? [`Provider reasoning: ${reasoningDetails.join(", ")}`]
+            ? [t("Provider reasoning: {value}", { value: reasoningDetails.join(", ") })]
             : []),
         ].join(". ");
         setPropertyIfChanged(note, "title", title);
@@ -2595,34 +2638,52 @@
         );
         const badge = document.getElementById("draftStatus");
         const badgeText = draftProfileBaselineChanged
-          ? "Draft blocked · Profile changed elsewhere"
+          ? t("Draft blocked · Profile changed elsewhere")
           : draftProfileChangedElsewhere
-            ? "Draft kept · Active Profile changed elsewhere"
+            ? t("Draft kept · Active Profile changed elsewhere")
             : draftDirty
-              ? "Unsaved changes"
-              : "Saved";
+              ? t("Unsaved changes")
+              : t("Saved");
         setPropertyIfChanged(badge, "textContent", badgeText);
         toggleClassIfChanged(badge, "dirty", draftDirty);
         const badgeTitle = draftProfileBaselineChanged
-          ? "This saved Profile changed in another Live Smith window. Your local Draft was preserved; discard it to load the latest version before editing again."
+          ? t("This saved Profile changed in another Live Smith window. Your local Draft was preserved; discard it to load the latest version before editing again.")
           : draftProfileChangedElsewhere
-            ? "The active Profile changed in another Live Smith window. Your local Draft was preserved and can still be saved."
+            ? t("The active Profile changed in another Live Smith window. Your local Draft was preserved and can still be saved.")
             : "";
         setPropertyIfChanged(badge, "title", badgeTitle);
         const previewBadge = document.getElementById("draftPreviewLabel");
         setPropertyIfChanged(previewBadge, "hidden", !draftDirty);
         const previewText = draftProfileBaselineChanged
-          ? "Outdated saved Profile · local Draft preview"
+          ? t("Outdated saved Profile · local Draft preview")
           : draftProfileChangedElsewhere
-            ? "External active Profile change · local Draft preview"
+            ? t("External active Profile change · local Draft preview")
             : draftDirty
-              ? "Unsaved Draft preview"
+              ? t("Unsaved Draft preview")
               : "";
         setPropertyIfChanged(previewBadge, "textContent", previewText);
         requestSendPresentation();
       }
 
+      // Parent locale hook: refresh presentation without loading or normalizing a draft.
+      function refreshLocale() {
+        const locked = isOperationInProgress() || hasAnySendInProgress();
+        renderProfileSelector(draftProfile?.id || "");
+        renderProfileModels();
+        renderOAuthAuthState(locked);
+        updateHostedToolControls(locked);
+        updateCapabilityPreview(true);
+        for (const error of document.querySelectorAll(".field-error[data-profile-message]")) {
+          error.textContent = t(error.dataset.profileMessage);
+        }
+        updateApprovalModePresentation();
+        updateDraftActions();
+        document.getElementById("apiKeyVisibilityButton").textContent =
+          document.getElementById("apiKey").type === "password" ? t("Show") : t("Hide");
+      }
+
       return {
+        refreshLocale,
         addManualModel,
         addProfile,
         applyConnectionKindPresentation,

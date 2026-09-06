@@ -8,6 +8,7 @@
         presentStatus,
         setState,
       }) {
+      const t = (sourceEnglish, namedParams) => window.LiveSmithI18n.t(sourceEnglish, namedParams);
       const maximumDiscoveredModelCount = __MAX_DISCOVERED_MODEL_COUNT__;
       const maximumProviderReportedMimeTypeCount = 128;
       const maximumProviderReportedModalityCount = 32;
@@ -33,10 +34,10 @@
         typeof parseComposerInput !== "function" ||
         typeof closeComposerAutocomplete !== "function"
       ) {
-        throw new Error("Composer command support is unavailable.");
+        throw new Error(t("Composer command support is unavailable."));
       }
       if (!isWireChatBridgeState(getState())) {
-        throw new Error("Initial Live Smith state is invalid.");
+        throw new Error(t("Initial Live Smith state is invalid."));
       }
       let view = null;
 
@@ -45,7 +46,7 @@
       }
 
       function requireView() {
-        if (!view) throw new Error("Bridge client is not connected to the UI.");
+        if (!view) throw new Error(t("Bridge client is not connected to the UI."));
         return view;
       }
       function activeSessionId() {
@@ -151,6 +152,11 @@
       )
         ? getState().settings.networkProxyRevision
         : "0";
+      let confirmedUiLanguage = isUiLanguage(getState().settings?.uiLanguage)
+        ? getState().settings.uiLanguage : "system";
+      let confirmedUiLanguageRevision = isDecimalRevision(getState().settings?.uiLanguageRevision)
+        ? getState().settings.uiLanguageRevision : "0";
+      let optimisticUiLanguage = null;
       let optimisticDefaultFollowUpBehavior = null;
       let optimisticContextUsageVisibility = null;
       let optimisticNetworkProxy = null;
@@ -1207,22 +1213,22 @@
           state.oauthAuthProfileId !== activeProfile.id ||
           state.oauthAuthProvider !== provider
         ) {
-          return `Check the ${label} account before sending a subscription request.`;
+          return t("Check the {provider} account before sending a subscription request.", { provider: label });
         }
         const auth = state.oauthAuth;
         if (auth?.status === "signed-in") {
           return auth.subscriptionEligible
             ? ""
-            : `This ${label} account is not eligible for subscription requests in Live Smith.`;
+            : t("This {provider} account is not eligible for subscription requests in Live Smith.", { provider: label });
         }
         if (auth?.status === "pending") {
-          return `Complete ${label} sign-in before sending a subscription request.`;
+          return t("Complete {provider} sign-in before sending a subscription request.", { provider: label });
         }
         if (auth?.status === "signed-out") {
-          return `Sign in to ${label} before sending a subscription request.`;
+          return t("Sign in to {provider} before sending a subscription request.", { provider: label });
         }
         if (auth?.status === "unavailable") return auth.message;
-        return `The ${label} subscription is unavailable. Check the account status before sending.`;
+        return t("The {provider} subscription is unavailable. Check the account status before sending.", { provider: label });
       }
 
       function isDefaultFollowUpBehavior(value) {
@@ -2325,6 +2331,10 @@
         return value.models.some((model) => model.model === value.defaultModel);
       }
 
+      function isUiLanguage(value) {
+        return window.LiveSmithI18n.isLanguage(value);
+      }
+
       function isWireAgentSettings(value) {
         if (
           !isWireRecord(value) ||
@@ -2339,6 +2349,8 @@
             "contextUsageVisibilityRevision",
             "networkProxy",
             "networkProxyRevision",
+            "uiLanguage",
+            "uiLanguageRevision",
           ]) ||
           value.schemaVersion !== 8 ||
           !Array.isArray(value.profiles) ||
@@ -2351,6 +2363,8 @@
           typeof value.showContextUsage !== "boolean" ||
           !isDecimalRevision(value.contextUsageVisibilityRevision) ||
           !isNetworkProxySettings(value.networkProxy) ||
+          !isUiLanguage(value.uiLanguage) ||
+          !isDecimalRevision(value.uiLanguageRevision) ||
           !isDecimalRevision(value.networkProxyRevision)
         ) return false;
         return value.activeProfileId === null ||
@@ -3152,7 +3166,7 @@
       function invalidBridgeHttpResponse(path) {
         const operation = path.replace(/^\//, "") || "bridge";
         return new Error(
-          `The ${operation} response did not match its wire contract.`,
+          t("The {operation} response did not match its wire contract.", { operation: operation }),
         );
       }
 
@@ -3252,10 +3266,27 @@
         state.settings.contextUsageVisibilityRevision =
           confirmedContextUsageVisibilityRevision;
         state.settings.networkProxyRevision = confirmedNetworkProxyRevision;
+        state.settings.uiLanguage = optimisticUiLanguage?.language ?? confirmedUiLanguage;
+        state.settings.uiLanguageRevision = confirmedUiLanguageRevision;
         return state;
       }
 
+      function adoptUiLanguage(language, revision, commandId) {
+        if (!isUiLanguage(language) || !isDecimalRevision(revision) ||
+            compareDecimalRevisions(revision, confirmedUiLanguageRevision) <= 0) return false;
+        confirmedUiLanguage = language;
+        confirmedUiLanguageRevision = revision;
+        const optimistic = optimisticUiLanguage;
+        if (optimistic) {
+          if (commandId === optimistic.commandId) optimistic.committedRevision = revision;
+          else if (compareDecimalRevisions(revision,
+            optimistic.committedRevision ?? optimistic.startedRevision) > 0) optimisticUiLanguage = null;
+        }
+        return true;
+      }
+
       function adoptGlobalSettingsFromState(state) {
+        adoptUiLanguage(state?.settings?.uiLanguage, state?.settings?.uiLanguageRevision);
         const behavior = state?.settings?.defaultFollowUpBehavior;
         const behaviorRevision =
           state?.settings?.defaultFollowUpBehaviorRevision;
@@ -3348,9 +3379,11 @@
           !isDecimalRevision(behaviorRevision) ||
           !isDecimalRevision(contextRevision) ||
           !isNetworkProxySettings(networkProxy) ||
+          !isUiLanguage(payload.uiLanguage) ||
+          !isDecimalRevision(payload.uiLanguageRevision) ||
           !isDecimalRevision(networkProxyRevision)
         ) return false;
-        let adopted = false;
+        let adopted = adoptUiLanguage(payload.uiLanguage, payload.uiLanguageRevision, payload.commandId);
         if (
           compareDecimalRevisions(
             behaviorRevision,
@@ -3476,9 +3509,9 @@
           previousDraft !== "" &&
           previousDraft !== source.draft &&
           !(await confirmAction({
-            title: "Replace current draft?",
-            message: "Replace the unsent composer text with this message? Nothing will be sent until you choose Send.",
-            acceptLabel: "Replace draft",
+            title: window.LiveSmithI18n.message("Replace current draft?"),
+            message: window.LiveSmithI18n.message("Replace the unsent composer text with this message? Nothing will be sent until you choose Send."),
+            acceptLabel: window.LiveSmithI18n.message("Replace draft"),
           }))
         ) return false;
         if (
@@ -3505,10 +3538,10 @@
         promptControl.setSelectionRange(source.draft.length, source.draft.length);
         showStatus(
           source.recovery
-            ? "Request restored for editing. Choose Send to submit the edited request."
+            ? window.LiveSmithI18n.message("Request restored for editing. Choose Send to submit the edited request.")
             : source.event.attachments?.length
-              ? "Text is ready as a new request. Original attachments remain in history; pending attachments are unchanged."
-              : "Message is ready as a new request. Edit it, then choose Send.",
+              ? window.LiveSmithI18n.message("Text is ready as a new request. Original attachments remain in history; pending attachments are unchanged.")
+              : window.LiveSmithI18n.message("Message is ready as a new request. Edit it, then choose Send."),
         );
         return true;
       }
@@ -3721,6 +3754,7 @@
           skillInProgress: skillOperationInProgress,
           sendInProgress: Boolean(activeAttempt),
           networkProxyDirty: hasNetworkProxyChanges(),
+          uiLanguageSaving: Boolean(optimisticUiLanguage),
         };
         if (
           renderedOperationState &&
@@ -3734,7 +3768,7 @@
 
       function bridgeUrl(path) {
         if (!bridgeConfig || !bridgeConfig.baseUrl) {
-          throw new Error("Live Smith bridge configuration is missing.");
+          throw new Error(t("Live Smith bridge configuration is missing."));
         }
         const separator = path.includes("?") ? "&" : "?";
         return `${bridgeConfig.baseUrl}${path}${separator}token=${encodeURIComponent(bridgeConfig.token || "")}`;
@@ -3795,7 +3829,7 @@
 
       async function runCommand(kind, extra, options) {
         if (attachmentOperationInProgress || skillOperationInProgress) {
-          showStatus("Wait for the current file or Skill operation to finish.", true);
+          showStatus(window.LiveSmithI18n.message("Wait for the current file or Skill operation to finish."), true);
           return false;
         }
         const sessionCommand = sessionCommandKinds.has(kind);
@@ -3804,12 +3838,12 @@
           (sendAttemptsBySession.size || runnableQueuedFollowUpCount()) &&
           !allowedDuringSend
         ) {
-          showStatus("Profile settings cannot change while an agent request is active.");
+          showStatus(window.LiveSmithI18n.message("Profile settings cannot change while an agent request is active."));
           return false;
         }
         if (commandInProgress || commandReconciliationBlocked) {
           if (commandInProgress) {
-            showStatus("Wait for the current operation to finish.");
+            showStatus(window.LiveSmithI18n.message("Wait for the current operation to finish."));
           }
           return false;
         }
@@ -3936,7 +3970,7 @@
           }
           if (applied) return true;
           const error = new Error(
-            "Current state could not be reconciled after the command response. Close and reopen Live Smith before continuing.",
+            t("Current state could not be reconciled after the command response. Close and reopen Live Smith before continuing."),
           );
           error.reconciliationRequired = true;
           commandError = error;
@@ -3960,8 +3994,8 @@
           if (outcome.type === "stop_acknowledged") {
             const stopError = new Error(
               outcome.terminal
-                ? "Stop reached a terminal command state before its original outcome was received."
-                : "Stop was accepted, but the command's terminal outcome was not received.",
+                ? t("Stop reached a terminal command state before its original outcome was received.")
+                : t("Stop was accepted, but the command's terminal outcome was not received."),
             );
             const terminalOutcome = await waitForCommandSseOutcome(
               attempt,
@@ -3985,7 +4019,7 @@
               attempt,
               kind,
               new Error(
-                "The command response ended before its authoritative state was available.",
+                t("The command response ended before its authoritative state was available."),
               ),
               outcome.source === "http",
             );
@@ -4071,7 +4105,7 @@
           });
         }
         if (commandStopped) {
-          showStatus("Command stopped.");
+          showStatus(window.LiveSmithI18n.message("Command stopped."));
         }
         if (commandError) {
           const message = commandError.message || String(commandError);
@@ -4123,7 +4157,7 @@
         waitForSse,
       ) {
         showStatus(
-          "Lost the command response. Waiting for authoritative bridge state…",
+          window.LiveSmithI18n.message("Lost the command response. Waiting for authoritative bridge state…"),
           true,
         );
         let outcome = waitForSse
@@ -4141,19 +4175,19 @@
       }
 
       async function reconcileInterruptedCommand(originalError, kind, causalAttempt) {
-        const originalMessage = originalError?.message || "The command response was lost.";
+        const originalMessage = originalError?.message || t("The command response was lost.");
         try {
           const refreshed = await refreshState(causalAttempt, kind, {
             commandOutcomeKnown: false,
           });
-          if (!refreshed) throw new Error("The bridge did not return current state.");
+          if (!refreshed) throw new Error(t("The bridge did not return current state."));
           return {
             type: "reconciled",
-            message: `${originalMessage} Authoritative state was refreshed; verify the command outcome before continuing.`,
+            message: t("{message} Authoritative state was refreshed; verify the command outcome before continuing.", { message: originalMessage }),
           };
         } catch (error) {
           const reconciliationError = new Error(
-            `${originalMessage} Current state could not be reconciled: ${error.message || String(error)} Close and reopen Live Smith before continuing.`,
+            t("{message} Current state could not be reconciled: {error} Close and reopen Live Smith before continuing.", { message: originalMessage, error: error.message || String(error) }),
           );
           reconciliationError.reconciliationRequired = true;
           return { type: "error", error: reconciliationError, source: "reconcile" };
@@ -4509,6 +4543,9 @@
           attempt.sessionId === activeSessionId() &&
           state.activeSessionId === activeSessionId();
         const reconciledState = preserveNewerCausalState(state, attempt);
+        // Session causality may retain the current settings object. Reapply the
+        // independently revisioned global values before publishing the merged state.
+        adoptGlobalSettingsFromState(reconciledState);
         const profileSettingsChanged =
           previousSettings.activeProfileId !==
             reconciledState.settings.activeProfileId ||
@@ -4528,7 +4565,7 @@
         if (!reconcileSteeringAck(attempt, state)) {
           setAttemptStatus(
             attempt,
-            "The steering outcome could not be reconciled from Session state. Close and reopen Live Smith before continuing.",
+            window.LiveSmithI18n.message("The steering outcome could not be reconciled from Session state. Close and reopen Live Smith before continuing."),
             true,
           );
           return false;
@@ -4550,8 +4587,8 @@
         }
         recordAttemptOwnedActivityRevisions(attempt, state);
         reconcileAttemptProgressFromActivities(getState());
-        if (visible) {
-          requireView().render();
+        if (visible || window.LiveSmithI18n.preference !== getState().settings.uiLanguage) {
+          requireView().render({ preserveStatus: !visible });
         } else {
           renderDefaultFollowUpBehavior();
           renderNetworkProxySettings();
@@ -4579,6 +4616,7 @@
       }
 
       function renderDefaultFollowUpBehavior() {
+        renderUiLanguage();
         const behavior = effectiveDefaultFollowUpBehavior();
         const running = Boolean(activeSendAttempt());
         const control = document.getElementById("defaultFollowUpBehavior");
@@ -4587,9 +4625,9 @@
         if (prompt) {
           const placeholder = running
             ? behavior === "steer"
-              ? "Redirect the response in progress…"
-              : "Add a follow-up for after this response…"
-            : "Describe your idea…";
+              ? t("Redirect the response in progress…")
+              : t("Add a follow-up for after this response…")
+            : t("Describe your idea…");
           if (prompt.placeholder !== placeholder) prompt.placeholder = placeholder;
           const describedBy = new Set(
             (prompt.getAttribute("aria-describedby") || "")
@@ -4622,8 +4660,8 @@
         const shortcutHint = document.getElementById("followUpShortcutHint");
         if (shortcutHint) {
           const shortcutText = behavior === "steer"
-            ? "Cmd/Ctrl+Enter · Steer current response"
-            : "Cmd/Ctrl+Enter · Queue follow-up";
+            ? t("Cmd/Ctrl+Enter · Steer current response")
+            : t("Cmd/Ctrl+Enter · Queue follow-up");
           if (shortcutHint.textContent !== shortcutText) {
             shortcutHint.textContent = shortcutText;
           }
@@ -4661,9 +4699,9 @@
         if (hint) {
           const showHint = mode !== "none";
           const text = mode === "system"
-            ? "Uses static system proxy settings · no PAC/WPAD."
+            ? t("Uses static system proxy settings · no PAC/WPAD.")
             : mode === "manual"
-              ? "Provider traffic uses this URL · local endpoints stay direct."
+              ? t("Provider traffic uses this URL · local endpoints stay direct.")
               : "";
           if (hint.textContent !== text) hint.textContent = text;
           if (hint.hidden !== !showHint) hint.hidden = !showHint;
@@ -4701,7 +4739,7 @@
           const activity = (getState().sessionActivities || []).find(
             (entry) => entry.sessionId === activeSessionId(),
           );
-          if (activity?.status === "failed") showStatus(activity.message || "Agent request failed.", true);
+          if (activity?.status === "failed") showStatus(activity.message || window.LiveSmithI18n.message("Agent request failed."), true);
           else showStatus(getState().status || "");
         }
       }
@@ -4767,11 +4805,11 @@
         if (
           admission?.requiresSavedRuntime !== false &&
           !getState().settings.activeProfileId
-        ) return "Create and save a model profile before sending.";
+        ) return t("Create and save a model profile before sending.");
         if (
           profileDraftDirty &&
           admission?.allowsUnsavedProfileDraft !== true
-        ) return "Save or discard profile changes before sending.";
+        ) return t("Save or discard profile changes before sending.");
         return admission?.requiresSavedRuntime === false
           ? ""
           : subscriptionSendGateMessage();
@@ -4797,7 +4835,7 @@
         }
         if (command.name === "compact" && activeSendAttempt()) {
           showStatus(
-            "Wait for this Session's active request to finish before compacting.",
+            window.LiveSmithI18n.message("Wait for this Session's active request to finish before compacting."),
             true,
           );
           return;
@@ -4816,7 +4854,7 @@
             };
             break;
           default:
-            showStatus(`Unknown command /${command.name}.`, true);
+            showStatus(window.LiveSmithI18n.message("Unknown command /{command}.", { command: command.name }), true);
             return;
         }
         const sourceRevision = prepareComposerCommandDraft(
@@ -4876,7 +4914,7 @@
         const promptControl = document.getElementById("prompt");
         const prompt = promptOverride ?? promptControl.value;
         if (!prompt.trim()) {
-          showStatus("Enter a request for Live Smith.", true);
+          showStatus(window.LiveSmithI18n.message("Enter a request for Live Smith."), true);
           promptControl.focus({ preventScroll: true });
           return;
         }
@@ -4975,7 +5013,7 @@
             : null,
           promptEventPersisted: false,
           queueId,
-          progress: "Starting Live Smith…",
+          progress: window.LiveSmithI18n.message("Starting Live Smith…"),
           progressIsError: false,
           queuedFollowUp: Boolean(queuedFollowUp),
           failureHandled: false,
@@ -4995,7 +5033,7 @@
         captureAttemptComposerBaseline(attempt);
         syncSendPresentation(sessionId);
         if (visible) requireView().renderTimeline();
-        setAttemptStatus(attempt, "Starting Live Smith…", false);
+        setAttemptStatus(attempt, window.LiveSmithI18n.message("Starting Live Smith…"), false);
 
         try {
           const response = await fetch(bridgeUrl("/send"), {
@@ -5014,7 +5052,7 @@
           try {
             rawResult = await response.json();
           } catch {
-            throw new Error("The bridge response ended before JSON was complete.");
+            throw new Error(t("The bridge response ended before JSON was complete."));
           }
           let result;
           try {
@@ -5042,12 +5080,12 @@
           if (attempt.awaitingStopTerminal) return;
           if (cancelReconciledUnavailableSession(
             attempt,
-            "The target Session is no longer available.",
+            t("The target Session is no longer available."),
           )) return;
           if (refreshed !== true) {
             setAttemptStatus(
               attempt,
-              "The send completed, but authoritative state is unavailable. Retry Stop or close and reopen Live Smith before continuing.",
+              window.LiveSmithI18n.message("The send completed, but authoritative state is unavailable. Retry Stop or close and reopen Live Smith before continuing."),
               true,
             );
             return;
@@ -5094,7 +5132,7 @@
         const promptControl = document.getElementById("prompt");
         const prompt = promptOverride ?? promptControl.value;
         if (!prompt.trim()) {
-          showStatus("Enter a follow-up for the active request.", true);
+          showStatus(window.LiveSmithI18n.message("Enter a follow-up for the active request."), true);
           promptControl.focus({ preventScroll: true });
           return;
         }
@@ -5110,8 +5148,8 @@
         setAttemptStatus(
           attempt,
           entries.length === 1
-            ? "Follow-up queued."
-            : `${entries.length} follow-ups queued.`,
+            ? window.LiveSmithI18n.message("Follow-up queued.")
+            : window.LiveSmithI18n.message("{count} follow-ups queued.", { count: entries.length }),
           false,
         );
         requireView().renderTimeline();
@@ -5162,7 +5200,7 @@
         const behavior = behaviorOverride ?? effectiveDefaultFollowUpBehavior();
         if (attempt?.steering && behavior !== "steer") {
           showStatus(
-            "Resolve the earlier guidance first: switch Follow-ups to Steer and retry that unchanged guidance.",
+            window.LiveSmithI18n.message("Resolve the earlier guidance first: switch Follow-ups to Steer and retry that unchanged guidance."),
             true,
           );
           return;
@@ -5171,6 +5209,38 @@
           void steerPrompt(promptOverride, sourceDraft);
         } else {
           queueFollowUpPrompt(promptOverride, sourceDraft);
+        }
+      }
+
+      function renderUiLanguage() {
+        const control = document.getElementById("uiLanguage");
+        if (!control) return;
+        const value = optimisticUiLanguage?.language ?? confirmedUiLanguage;
+        if (control.value !== value) control.value = value;
+      }
+
+      async function setUiLanguage(language) {
+        if (!isUiLanguage(language) || commandInProgress || optimisticUiLanguage) {
+          renderUiLanguage();
+          return false;
+        }
+        if (language === confirmedUiLanguage) return true;
+        const optimistic = {
+          language, commandId: createCorrelationId("command"),
+          startedRevision: confirmedUiLanguageRevision, committedRevision: null,
+        };
+        optimisticUiLanguage = optimistic;
+        writeEffectiveGlobalSettingsToState();
+        requireView().render({ preserveStatus: true });
+        let saved = false;
+        try {
+          saved = await runCommand("save_global_settings", { uiLanguage: language }, { commandId: optimistic.commandId });
+          return saved;
+        } finally {
+          if (optimisticUiLanguage === optimistic) optimisticUiLanguage = null;
+          writeEffectiveGlobalSettingsToState();
+          // runCommand owns its outcome presentation, including unknown-commit warnings.
+          requireView().render({ preserveStatus: true });
         }
       }
 
@@ -5284,7 +5354,7 @@
           return false;
         }
         if (mode === "manual" && !url) {
-          showStatus("Enter a Manual proxy URL before applying it.", true);
+          showStatus(window.LiveSmithI18n.message("Enter a Manual proxy URL before applying it."), true);
           urlControl?.focus({ preventScroll: true });
           return false;
         }
@@ -5448,7 +5518,7 @@
         ) return;
         if (activeResolution?.sendId === attempt.id) {
           showStatus(
-            "Wait for the current Apply decision to finish before steering.",
+            window.LiveSmithI18n.message("Wait for the current Apply decision to finish before steering."),
             true,
           );
           return;
@@ -5457,13 +5527,13 @@
         const prompt = promptOverride ?? promptControl.value;
         const composerValue = sourceDraft ?? prompt;
         if (!prompt.trim()) {
-          showStatus("Enter guidance for the active request.", true);
+          showStatus(window.LiveSmithI18n.message("Enter guidance for the active request."), true);
           promptControl.focus({ preventScroll: true });
           return;
         }
         if (attempt.steering && attempt.steering.prompt !== prompt) {
           showStatus(
-            "The earlier steering outcome is unresolved. Retry the unchanged guidance before submitting different text.",
+            window.LiveSmithI18n.message("The earlier steering outcome is unresolved. Retry the unchanged guidance before submitting different text."),
             true,
           );
           promptControl.focus({ preventScroll: true });
@@ -5497,7 +5567,7 @@
         if (pendingConfirmation?.sendId === attempt.id) {
           requireView().setConfirmationState(true);
         }
-        setAttemptStatus(attempt, "Applying guidance…", false);
+        setAttemptStatus(attempt, window.LiveSmithI18n.message("Applying guidance…"), false);
         syncOperationState();
         try {
           const accepted = await postBridge(
@@ -5516,7 +5586,7 @@
             })
           ) {
             throw new Error(
-              "The steering response did not contain its authoritative acknowledgement.",
+              t("The steering response did not contain its authoritative acknowledgement."),
             );
           }
         } catch (error) {
@@ -5534,7 +5604,7 @@
           setAttemptStatus(
             attempt,
             outcomeUnknown
-              ? `${error.message || String(error)} Retry the unchanged guidance to resolve it safely.`
+              ? window.LiveSmithI18n.message("{error} Retry the unchanged guidance to resolve it safely.", { error: error.message || String(error) })
               : error.message || String(error),
             true,
           );
@@ -5567,7 +5637,7 @@
         const recovery = (async () => {
           setAttemptStatus(
             attempt,
-            `${message} Stopping the active agent request…`,
+            window.LiveSmithI18n.message("{message} Stopping the active agent request…", { message: message }),
             true,
             { stopPhase: true },
           );
@@ -5594,7 +5664,7 @@
                 ) {
                   setAttemptStatus(
                     attempt,
-                    `${message} Stop reached a terminal state; waiting briefly for the original Send outcome…`,
+                    window.LiveSmithI18n.message("{message} Stop reached a terminal state; waiting briefly for the original Send outcome…", { message: message }),
                     true,
                     { stopPhase: true },
                   );
@@ -5614,7 +5684,7 @@
                 if (promptPersistence === "not_persisted") {
                   await handleSendFailure(
                     attempt,
-                    `${message} The prompt was not persisted.`,
+                    t("{message} The prompt was not persisted.", { message: message }),
                     promptPersistence,
                     deferredTerminal.field,
                     deferredTerminal.state,
@@ -5660,7 +5730,7 @@
                 } else {
                   setAttemptStatus(
                     attempt,
-                    `${message} The agent request stopped, but current state is unavailable. Retry Stop or close and reopen Live Smith before continuing.`,
+                    window.LiveSmithI18n.message("{message} The agent request stopped, but current state is unavailable. Retry Stop or close and reopen Live Smith before continuing.", { message: message }),
                     true,
                     { stopPhase: true },
                   );
@@ -5669,7 +5739,7 @@
               }
               setAttemptStatus(
                 attempt,
-                `${message} Stop requested; waiting for the agent request to reach a terminal state…`,
+                window.LiveSmithI18n.message("{message} Stop requested; waiting for the agent request to reach a terminal state…", { message: message }),
                 true,
                 { stopPhase: true },
               );
@@ -5678,7 +5748,7 @@
               if (!attemptIsCurrent(attempt) || attempt.failureHandled) return;
               setAttemptStatus(
                 attempt,
-                `${message} The stop request could not be confirmed. Retry Stop or close Live Smith.`,
+                window.LiveSmithI18n.message("{message} The stop request could not be confirmed. Retry Stop or close Live Smith.", { message: message }),
                 true,
                 { stopPhase: true },
               );
@@ -5781,11 +5851,11 @@
           showStatus(
             restoreQueuedFollowUp
               ? queuedRecovery?.restoredToComposer
-                ? `${message} The queued follow-up was restored as a draft; choose Send before later follow-ups can continue.`
-                : `${message} The queued follow-up remains paused under Up next; the newer composer draft was preserved.`
+                ? window.LiveSmithI18n.message("{message} The queued follow-up was restored as a draft; choose Send before later follow-ups can continue.", { message: message })
+                : window.LiveSmithI18n.message("{message} The queued follow-up remains paused under Up next; the newer composer draft was preserved.", { message: message })
               : pauseQueuedFollowUps
-                ? `${message} Queued follow-ups remain paused; check the timeline, then choose Send when you are ready to continue.`
-              : `${message} The interrupted request was stopped; check the timeline before trying again.`,
+                ? window.LiveSmithI18n.message("{message} Queued follow-ups remain paused; check the timeline, then choose Send when you are ready to continue.", { message: message })
+              : window.LiveSmithI18n.message("{message} The interrupted request was stopped; check the timeline before trying again.", { message: message }),
             true,
           );
         }
@@ -5872,7 +5942,7 @@
         if (!settleSendAttempt(attempt, { promoteQueued: false })) return true;
         const stateUnavailableMessage = stateReconciled
           ? ""
-          : "Current Session state is unavailable; close and reopen Live Smith before continuing.";
+          : t("Current Session state is unavailable; close and reopen Live Smith before continuing.");
         const cancellationMessage = message;
         if (canceledCount > 0) {
           retainCanceledFollowUps(canceledCount);
@@ -5987,9 +6057,7 @@
             if (!field || !requireView().showFieldError(field, message)) {
               showStatus(
                 !failedRecovery.restoredToComposer
-                  ? `${message} The failed ${
-                      attempt.queuedFollowUp ? "queued follow-up" : "original request"
-                    } remains paused under Up next; the newer composer draft was preserved.`
+                  ? window.LiveSmithI18n.message("{message} The failed {requestKind} remains paused under Up next; the newer composer draft was preserved.", { message: message, requestKind: attempt.queuedFollowUp ? window.LiveSmithI18n.message("queued follow-up") : window.LiveSmithI18n.message("original request") })
                   : message,
                 true,
               );
@@ -6011,12 +6079,12 @@
         if (!attemptIsCurrent(attempt)) return;
         if (cancelReconciledUnavailableSession(attempt, message)) return;
         const guidance = persistence === "persisted"
-          ? "The prompt is already in this session; check the timeline before trying again."
-          : "The send result is unknown; check the timeline before trying again.";
+          ? t("The prompt is already in this session; check the timeline before trying again.")
+          : t("The send result is unknown; check the timeline before trying again.");
         if (!refreshed) {
           setAttemptStatus(
             attempt,
-            `${message} ${guidance} Authoritative state is unavailable. Retry Stop or close and reopen Live Smith before continuing.`,
+            window.LiveSmithI18n.message("{message} {guidance} Authoritative state is unavailable. Retry Stop or close and reopen Live Smith before continuing.", { message: message, guidance: guidance }),
             true,
             { stopPhase: true },
           );
@@ -6034,7 +6102,7 @@
             showStatus(
               queuedRecovery.restoredToComposer
                 ? `${message} ${guidance}`
-                : `${message} ${guidance} The newer composer draft was preserved; the failed follow-up remains paused under Up next.`,
+                : window.LiveSmithI18n.message("{message} {guidance} The newer composer draft was preserved; the failed follow-up remains paused under Up next.", { message: message, guidance: guidance }),
               true,
             );
           }
@@ -6049,7 +6117,7 @@
           if (activeSessionId() === attempt.sessionId) {
             requireView().renderTimeline();
             showStatus(
-              `${message} ${guidance} Queued follow-ups remain paused until you deliberately continue.`,
+              window.LiveSmithI18n.message("{message} {guidance} Queued follow-ups remain paused until you deliberately continue.", { message: message, guidance: guidance }),
               true,
             );
           }
@@ -6062,7 +6130,7 @@
         ) {
           showStatus(
             persistence === "persisted"
-              ? "Request stopped. The prompt and error are saved in this Session; check the timeline before continuing."
+              ? window.LiveSmithI18n.message("Request stopped. The prompt and error are saved in this Session; check the timeline before continuing.")
               : `${message} ${guidance}`,
             true,
           );
@@ -6079,7 +6147,7 @@
         try {
           result = await response.json();
         } catch {
-          throw new Error("The bridge response ended before JSON was complete.");
+          throw new Error(t("The bridge response ended before JSON was complete."));
         }
         return decodeBridgeHttpResponse(path, response, result, {
           commandId: extraHeaders?.["X-Live-Smith-Command-Id"],
@@ -6089,7 +6157,7 @@
 
       async function runFileOperation(kind, operation) {
         if (isOperationInProgress()) {
-          throw new Error("Another Live Smith operation is already in progress.");
+          throw new Error(t("Another Live Smith operation is already in progress."));
         }
         const causalAttempt = {
           kind,
@@ -6122,13 +6190,13 @@
           result = await response.json();
         } catch {
           return reconcileAttachmentResponseLoss(
-            new Error("The attachment response ended before its state was available."),
+            new Error(t("The attachment response ended before its state was available.")),
             causalAttempt,
           );
         }
         if (!result || typeof result !== "object" || Array.isArray(result)) {
           return reconcileAttachmentResponseLoss(
-            new Error("The attachment response did not contain state."),
+            new Error(t("The attachment response did not contain state.")),
             causalAttempt,
           );
         }
@@ -6162,7 +6230,7 @@
         }
         if (!isWireChatBridgeState(result)) {
           return reconcileAttachmentResponseLoss(
-            new Error("The attachment response did not contain authoritative state."),
+            new Error(t("The attachment response did not contain authoritative state.")),
             causalAttempt,
           );
         }
@@ -6184,13 +6252,13 @@
         if (!reconciled) {
           commandReconciliationBlocked = true;
           const blockedError = new Error(
-            `${message} Current attachment state could not be reconciled. Close and reopen Live Smith before continuing.`,
+            t("{message} Current attachment state could not be reconciled. Close and reopen Live Smith before continuing.", { message: message }),
           );
           blockedError.attachmentFailureKind = "blocked";
           throw blockedError;
         }
         const unknownError = new Error(
-          `${message} Authoritative attachment state was refreshed; verify the pending files before continuing.`,
+          t("{message} Authoritative attachment state was refreshed; verify the pending files before continuing.", { message: message }),
         );
         unknownError.attachmentFailureKind = "unknown";
         throw unknownError;
@@ -6235,7 +6303,7 @@
                 previousIds,
               )) {
                 committedWarnings.push(
-                  `${attachmentFileLabel(file)} was confirmed attached after its response was interrupted`,
+                  t("{fileName} was confirmed attached after its response was interrupted", { fileName: attachmentFileLabel(file) }),
                 );
               } else if (error.attachmentFailureKind === "policy") {
                 policyFailures.push(detail);
@@ -6247,7 +6315,7 @@
               if (commandReconciliationBlocked) {
                 for (const remaining of files.slice(index + 1)) {
                   uncertainFailures.push(
-                    `${attachmentFileLabel(remaining)}: not attempted because attachment state could not be reconciled`,
+                    t("{fileName}: not attempted because attachment state could not be reconciled", { fileName: attachmentFileLabel(remaining) }),
                   );
                 }
                 break;
@@ -6256,16 +6324,16 @@
           }
           const messages = [];
           if (committedWarnings.length) {
-            messages.push(`${committedWarnings.join("; ")}. Do not upload those files again.`);
+            messages.push(t("{files}. Do not upload those files again.", { files: committedWarnings.join("; ") }));
           }
           if (policyFailures.length) {
-            messages.push(`Not attached: ${policyFailures.join("; ")}. Resolve the stated requirement before selecting another file.`);
+            messages.push(t("Not attached: {files}. Resolve the stated requirement before selecting another file.", { files: policyFailures.join("; ") }));
           }
           if (retryableFailures.length) {
-            messages.push(`Retryable uploads: ${retryableFailures.join("; ")}. Re-select only those named files to retry.`);
+            messages.push(t("Retryable uploads: {files}. Re-select only those named files to retry.", { files: retryableFailures.join("; ") }));
           }
           if (uncertainFailures.length) {
-            messages.push(`Unconfirmed uploads: ${uncertainFailures.join("; ")}. Verify current attachment state before uploading anything again.`);
+            messages.push(t("Unconfirmed uploads: {files}. Verify current attachment state before uploading anything again.", { files: uncertainFailures.join("; ") }));
           }
           if (messages.length) {
             throw new Error(messages.join(" "));
@@ -6301,7 +6369,7 @@
       }
 
       function attachmentFileLabel(file) {
-        const name = file?.name || "Unnamed file";
+        const name = file?.name || t("Unnamed file");
         return name.length <= 80 ? name : `${name.slice(0, 79)}…`;
       }
 
@@ -6330,7 +6398,7 @@
       function unconfirmedSkillResultError(error) {
         commandReconciliationBlocked = true;
         return new Error(
-          `${error.message || String(error)} The Skill result is unconfirmed. Close and reopen Live Smith before changing Skills again.`,
+          t("{error} The Skill result is unconfirmed. Close and reopen Live Smith before changing Skills again.", { error: error.message || String(error) }),
         );
       }
 
@@ -6359,7 +6427,7 @@
         causalAttempt,
       ) {
         showStatus(
-          "Lost the Skill response. Waiting for authoritative bridge state…",
+          window.LiveSmithI18n.message("Lost the Skill response. Waiting for authoritative bridge state…"),
           true,
         );
         try {
@@ -6368,7 +6436,7 @@
             "skill_reconcile",
           );
           if (refreshed !== true) {
-            throw new Error("The bridge did not return current Skill state.");
+            throw new Error(t("The bridge did not return current Skill state."));
           }
         } catch {
           throw unconfirmedSkillResultError(responseError);
@@ -6429,7 +6497,7 @@
 
       function skillResponseLossError() {
         const error = new Error(
-          "The Skill response ended before its authoritative state was available.",
+          t("The Skill response ended before its authoritative state was available."),
         );
         error.skillNetworkFailure = true;
         return error;
@@ -6441,7 +6509,7 @@
           if (!contentSha256) {
             commandReconciliationBlocked = true;
             throw new Error(
-              "The selected Skill could not be fingerprinted. Close and reopen Live Smith before retrying.",
+              t("The selected Skill could not be fingerprinted. Close and reopen Live Smith before retrying."),
             );
           }
           const result = await requestSkill(
@@ -6464,7 +6532,7 @@
           ) {
             commandReconciliationBlocked = true;
             throw new Error(
-              "The Skill response could not be matched to the submitted definition. Close and reopen Live Smith before retrying.",
+              t("The Skill response could not be matched to the submitted definition. Close and reopen Live Smith before retrying."),
             );
           }
           return receipt;
@@ -6520,7 +6588,7 @@
         const statusWasPresented = presentStatus({
           canceledFollowUpCount,
           isError: Boolean(isError),
-          message: String(message || ""),
+          message: message || "",
           source: "bridge",
           stopPhase: options?.stopPhase === true,
           trailingMessage: options?.trailingMessage || "",
@@ -6562,7 +6630,7 @@
         ) return;
         attempt.stopRequested = true;
         attempt.stopRequestInProgress = true;
-        showStatus("Stopping current operation…");
+        showStatus(window.LiveSmithI18n.message("Stopping current operation…"));
         syncOperationState();
         try {
           const outcome = await postBridge(
@@ -6588,7 +6656,7 @@
       async function stopAgent() {
         const attempt = activeSendAttempt();
         if (!attempt) return;
-        await recoverInterruptedSend(attempt, "Agent request stopped.", {
+        await recoverInterruptedSend(attempt, t("Agent request stopped."), {
           resumeQueuedAfterStop: true,
         });
       }
@@ -6692,7 +6760,7 @@
               resolution.confirmationGeneration
           ) {
             throw new Error(
-              "The confirmation response did not match its authoritative generation.",
+              t("The confirmation response did not match its authoritative generation."),
             );
           }
           if (!applyConfirmationResolvedPayload(attempt, {
@@ -6702,7 +6770,7 @@
             id,
           })) {
             throw new Error(
-              "The confirmation response did not contain its authoritative activity.",
+              t("The confirmation response did not contain its authoritative activity."),
             );
           }
         } catch (error) {
@@ -6831,7 +6899,7 @@
           refresh.failed = true;
           syncOperationState();
           showStatus(
-            "Live Smith settings or Skills changed in another window, but current state could not be refreshed. Close and reopen Live Smith before sending.",
+            window.LiveSmithI18n.message("Live Smith settings or Skills changed in another window, but current state could not be refreshed. Close and reopen Live Smith before sending."),
             true,
           );
         };
@@ -6891,7 +6959,7 @@
           syncOperationState();
           if (activeSessionId() === sessionId) {
             showStatus(
-              "The Session model changed, but its capabilities could not be refreshed. Close and reopen Live Smith before sending.",
+              window.LiveSmithI18n.message("The Session model changed, but its capabilities could not be refreshed. Close and reopen Live Smith before sending."),
               true,
             );
           }
@@ -6901,7 +6969,7 @@
           syncOperationState();
           if (activeSessionId() === sessionId) {
             showStatus(
-              "The Session model changed, but its capabilities could not be refreshed. Close and reopen Live Smith before sending.",
+              window.LiveSmithI18n.message("The Session model changed, but its capabilities could not be refreshed. Close and reopen Live Smith before sending."),
               true,
             );
           }
@@ -6979,7 +7047,7 @@
           syncOperationState();
           if (activeSessionId() === sessionId) {
             showStatus(
-              "This Session changed in another Live Smith window, but its current state could not be refreshed. Close and reopen Live Smith before sending.",
+              window.LiveSmithI18n.message("This Session changed in another Live Smith window, but its current state could not be refreshed. Close and reopen Live Smith before sending."),
               true,
             );
           }
@@ -7071,7 +7139,7 @@
           refresh.failed = true;
           syncOperationState();
           showStatus(
-            "Live Smith reconnected, but current state could not be confirmed. Close and reopen Live Smith before sending.",
+            window.LiveSmithI18n.message("Live Smith reconnected, but current state could not be confirmed. Close and reopen Live Smith before sending."),
             true,
           );
         };
@@ -7260,6 +7328,8 @@
                 "contextUsageVisibilityRevision",
                 "networkProxy",
                 "networkProxyRevision",
+                "uiLanguage",
+                "uiLanguageRevision",
                 "commandId",
                 "bridgeStateRevision",
               ]) ||
@@ -7269,15 +7339,15 @@
               !isDecimalRevision(payload.contextUsageVisibilityRevision) ||
               !isNetworkProxySettings(payload.networkProxy) ||
               !isDecimalRevision(payload.networkProxyRevision) ||
+              !isUiLanguage(payload.uiLanguage) ||
+              !isDecimalRevision(payload.uiLanguageRevision) ||
               !isWireCorrelationId(payload.commandId)
             ) return;
             const received = receiveStateChangeRevision(payload);
             if (!received) return;
             const adopted = adoptGlobalSettingsEvent(payload);
             if (!adopted) return;
-            renderDefaultFollowUpBehavior();
-            renderNetworkProxySettings();
-            requireView().renderContextUsage();
+            requireView().render({ preserveStatus: true });
             return;
           }
           if (payload.type === "approval_mode_changed") {
@@ -7949,7 +8019,7 @@
             if (!applyAuthoritativeSendState(attempt, payload.state)) return;
             if (cancelReconciledUnavailableSession(
               attempt,
-              "The target Session is no longer available.",
+              t("The target Session is no longer available."),
             )) return;
             settleSendAttempt(attempt);
             if (activeSessionId() === payload.sessionId && !activeSendAttempt()) {
@@ -8034,7 +8104,7 @@
           syncOperationState();
           presentStatus({
             isError: true,
-            message: "Lost connection to Live Smith bridge.",
+            message: window.LiveSmithI18n.message("Lost connection to Live Smith bridge."),
             source: "event-stream",
           });
           activeCommandAttempt?.resolveSseUnavailable();
@@ -8084,6 +8154,8 @@
         loadSessionModelCapabilities,
         resolveConfirm,
         renderDefaultFollowUpBehavior,
+        renderUiLanguage,
+        setUiLanguage,
         renderNetworkProxySettings,
         runCommand,
         handleNetworkProxyModeChange,

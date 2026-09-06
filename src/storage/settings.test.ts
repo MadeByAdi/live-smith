@@ -125,6 +125,8 @@ test("loadAgentSettings starts empty and rejects every legacy or invalid setting
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
 
   const legacyShapes = [
@@ -285,6 +287,8 @@ test("the migration decoder accepts only canonical current per-field revisions",
           contextUsageVisibilityRevision,
           networkProxy: { mode: "none", url: "" },
           networkProxyRevision: "0",
+          uiLanguage: "system",
+          uiLanguageRevision: "0",
         } as const;
         assert.deepEqual(decodeAgentSettings(current), current);
       }
@@ -302,6 +306,8 @@ test("the migration decoder accepts only canonical current per-field revisions",
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   } as const;
   for (const invalid of [undefined, "later", false]) {
     assert.throws(
@@ -482,6 +488,8 @@ test("schema-v3 discrimination uses follow-up field presence for empty Profile a
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
 
   assert.deepEqual(decodeAgentSettings({
@@ -500,6 +508,8 @@ test("schema-v3 discrimination uses follow-up field presence for empty Profile a
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
 });
 
@@ -703,6 +713,8 @@ test("schema-v5 strictly validates model collections before migrating to current
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
   assert.throws(
     () => decodeAgentSettings({ ...current, showContextUsage: false }),
@@ -782,6 +794,8 @@ test("current settings reject the removed Codex connection kind", () => {
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
     }),
     /connection kind is unsupported/i,
   );
@@ -932,6 +946,8 @@ test("saveSavedProfile normalizes, persists, and activates the complete profile"
     "profiles",
     "schemaVersion",
     "showContextUsage",
+    "uiLanguage",
+    "uiLanguageRevision",
   ]);
 });
 

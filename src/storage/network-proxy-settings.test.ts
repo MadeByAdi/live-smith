@@ -24,6 +24,8 @@ test("schema-v7 settings migrate without changing the existing direct route", ()
     schemaVersion: 8,
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   });
 });
 
@@ -39,6 +41,8 @@ test("current network proxy settings are strict and normalize proxy origins", ()
   } as const;
   assert.deepEqual(decodeAgentSettings(current), {
     ...current,
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
     networkProxy: {
       mode: "manual",
       url: "https://proxy.example",

@@ -1,6 +1,8 @@
 import {
   CURRENT_AGENT_SETTINGS_SCHEMA_VERSION,
   isApprovalMode,
+  isUiLanguage,
+  isUiLanguageRevision,
   isContextUsageVisibilityRevision,
   isDefaultFollowUpBehavior,
   isDefaultFollowUpBehaviorRevision,
@@ -237,6 +239,8 @@ function migrateSettingsV7ToV8(value: unknown): AgentSettings {
     schemaVersion: 8,
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    uiLanguage: "system",
+    uiLanguageRevision: "0",
   };
 }
 
@@ -468,20 +472,32 @@ function validateSettingsV8(value: unknown): AgentSettings {
       "contextUsageVisibilityRevision",
       "networkProxy",
       "networkProxyRevision",
+      "uiLanguage",
+      "uiLanguageRevision",
     ],
     "settings",
   );
   const {
     networkProxy: networkProxyValue,
     networkProxyRevision: networkProxyRevisionValue,
+    uiLanguage = "system",
+    uiLanguageRevision = "0",
     ...settingsV7
   } = record;
+  if (!isUiLanguage(uiLanguage)) {
+    throw new ProfileValidationError("uiLanguage", "UI language must be system or a registered interface language.");
+  }
+  if (!isUiLanguageRevision(uiLanguageRevision)) {
+    throw new ProfileValidationError("uiLanguageRevision", "UI language revision must be a canonical decimal string.");
+  }
   const validated = validateSettingsV7({ ...settingsV7, schemaVersion: 7 });
   return {
     ...validated,
     schemaVersion: 8,
     networkProxy: normalizeNetworkProxySettings(networkProxyValue),
     networkProxyRevision: networkProxyRevision(networkProxyRevisionValue),
+    uiLanguage,
+    uiLanguageRevision,
   };
 }
 

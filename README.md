@@ -29,6 +29,11 @@ without changing the draft or choosing a task mode.
 The message box starts at one line, grows with its content, and scrolls within a
 bounded height for long drafts so conversation history remains visible.
 
+Choose **App → Interface language** to use **English**, **简体中文**, or follow the
+system language. The preference is shared across Live Smith windows. Switching
+languages keeps drafts and ongoing work; user messages, model replies, object
+names, and raw provider/SDK output stay in their original language.
+
 > [!NOTE]
 > Live Smith is beta software and requires an Ableton Live build with Extensions
 > support. See the [development guide](docs/DEVELOPMENT.md) for installation from source.

@@ -337,6 +337,8 @@ test("global settings changes publish to every open bridge for the same storage"
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "global-settings-success",
     });
     const secondState = await (await fetch(
@@ -373,6 +375,8 @@ test("global settings changes publish to every open bridge for the same storage"
       contextUsageVisibilityRevision: "1",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "global-context-visibility",
     });
     const contextState = await (await fetch(
@@ -415,6 +419,8 @@ test("global settings changes publish to every open bridge for the same storage"
         url: "socks5://proxy.example:1080",
       },
       networkProxyRevision: "1",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "global-network-proxy",
     });
     const proxyState = await (await fetch(
@@ -574,6 +580,8 @@ test("an unknown global settings commit publishes its reconciled value to every 
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
       networkProxyRevision: "0",
+      uiLanguage: "system",
+      uiLanguageRevision: "0",
       commandId: "global-settings-unknown",
     });
     const peerState = await (await fetch(
@@ -686,6 +694,8 @@ test("unknown global settings readback stays ordered before a later save", async
         contextUsageVisibilityRevision: "0",
         networkProxy: { mode: "none", url: "" },
         networkProxyRevision: "0",
+        uiLanguage: "system",
+        uiLanguageRevision: "0",
         commandId: "global-settings-unknown-first",
       },
     );
@@ -701,6 +711,8 @@ test("unknown global settings readback stays ordered before a later save", async
         contextUsageVisibilityRevision: "0",
         networkProxy: { mode: "none", url: "" },
         networkProxyRevision: "0",
+        uiLanguage: "system",
+        uiLanguageRevision: "0",
         commandId: "global-settings-success-second",
       },
     );

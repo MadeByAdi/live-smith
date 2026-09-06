@@ -9,6 +9,9 @@ import {
   incrementContextUsageVisibilityRevision,
   incrementDefaultFollowUpBehaviorRevision,
   incrementNetworkProxyRevision,
+  incrementUiLanguageRevision,
+  isUiLanguage,
+  type UiLanguage,
   isDefaultFollowUpBehavior,
   normalizeNetworkProxySettings,
   validateDraftProfileForSave,
@@ -59,19 +62,28 @@ export interface SaveSavedProfileOptions {
 
 export type GlobalSettingsPatch =
   | {
+      uiLanguage?: never;
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
       showContextUsage?: never;
       networkProxy?: never;
     }
   | {
+      uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage: boolean;
       networkProxy?: never;
     }
   | {
+      uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
+    }
+  | {
+      uiLanguage: UiLanguage;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
     };
 
 export function savedProfileRevision(profile: SavedProfile): string {
@@ -210,6 +222,7 @@ export async function saveGlobalSettings(
     input,
     "showContextUsage",
   );
+  const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
   const hasNetworkProxy = Object.prototype.hasOwnProperty.call(
     input,
     "networkProxy",
@@ -217,7 +230,7 @@ export async function saveGlobalSettings(
   if (
     Number(hasFollowUpBehavior) +
       Number(hasContextUsage) +
-      Number(hasNetworkProxy) !== 1 ||
+      Number(hasNetworkProxy) + Number(hasUiLanguage) !== 1 ||
     Object.keys(input).length !== 1
   ) {
     throw new Error("Global settings update must contain exactly one setting.");
@@ -230,6 +243,9 @@ export async function saveGlobalSettings(
   }
   if (hasContextUsage && typeof input.showContextUsage !== "boolean") {
     throw new Error("Show context usage must be a boolean.");
+  }
+  if (hasUiLanguage && !isUiLanguage(input.uiLanguage)) {
+    throw new Error("UI language must be system, en, or zh-CN.");
   }
   const networkProxy = hasNetworkProxy
     ? normalizeNetworkProxySettings(input.networkProxy)
@@ -253,6 +269,11 @@ export async function saveGlobalSettings(
               incrementContextUsageVisibilityRevision(
                 settings.contextUsageVisibilityRevision,
               ),
+          }
+        : hasUiLanguage
+        ? {
+            uiLanguage: input.uiLanguage!,
+            uiLanguageRevision: incrementUiLanguageRevision(settings.uiLanguageRevision),
           }
         : {
             networkProxy: networkProxy!,

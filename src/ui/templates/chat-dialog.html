@@ -10,6 +10,7 @@
       window.__LIVE_SMITH_STATE__ = JSON.parse(__STATE__);
       window.__LIVE_SMITH_BRIDGE__ = __BRIDGE__;
       __HOST_ADAPTER_SCRIPT__
+      __I18N_SCRIPT__
       __PROFILE_EDITOR_SCRIPT__
       __ATTACHMENTS_SCRIPT__
       __COMPOSER_INPUT_SCRIPT__
@@ -2794,7 +2795,7 @@
       }
 
       .capability-preview::before {
-        content: "Inputs";
+        content: attr(data-label);
         color: var(--muted);
         font-family: inherit;
         font-size: 8px;
@@ -3642,77 +3643,77 @@
       <header>
         <h1>Live Smith</h1>
         <div class="header-actions">
-          <button id="sessionsToggleButton" class="icon-button header-tool-button sessions-toggle-button" type="button" title="Collapse Sessions" aria-label="Collapse Sessions" aria-controls="sessionsPane" aria-expanded="true" onclick="LiveSmithUI.toggleSessionsPane()"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4" width="17" height="16" rx="2"></rect><path d="M9 4v16M6 8h.01M6 12h.01"></path></svg></button>
-          <button id="settingsButton" class="icon-button header-tool-button settings-button" type="button" title="Inspector" aria-label="Open Inspector" aria-controls="inspectorPane" aria-expanded="false" onclick="LiveSmithUI.toggleInspector()"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6"></path></svg></button>
-          <button id="closeButton" class="icon-button header-tool-button" type="button" title="Close" aria-label="Close Live Smith" onclick="LiveSmithUI.requestClose()"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
+          <button id="sessionsToggleButton" class="icon-button header-tool-button sessions-toggle-button" type="button" title="Collapse Sessions" aria-label="Collapse Sessions" aria-controls="sessionsPane" aria-expanded="true" onclick="LiveSmithUI.toggleSessionsPane()" data-i18n-title="Collapse Sessions" data-i18n-aria-label="Collapse Sessions"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4" width="17" height="16" rx="2"></rect><path d="M9 4v16M6 8h.01M6 12h.01"></path></svg></button>
+          <button id="settingsButton" class="icon-button header-tool-button settings-button" type="button" title="Inspector" aria-label="Open Inspector" aria-controls="inspectorPane" aria-expanded="false" onclick="LiveSmithUI.toggleInspector()" data-i18n-title="Inspector" data-i18n-aria-label="Open Inspector"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6"></path></svg></button>
+          <button id="closeButton" class="icon-button header-tool-button" type="button" title="Close" aria-label="Close Live Smith" onclick="LiveSmithUI.requestClose()" data-i18n-title="Close" data-i18n-aria-label="Close Live Smith"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"></path></svg></button>
         </div>
       </header>
       <main>
         <aside id="sessionsPane" class="sessions-pane">
           <div class="pane-header">
             <span class="session-heading">
-              <span>Sessions</span>
+              <span data-i18n="Sessions">Sessions</span>
               <span id="sessionSelectionCount" class="session-selection-count" aria-live="polite" hidden></span>
             </span>
             <div class="session-actions">
-              <button id="newSessionButton" class="icon-button" type="button" title="New Session" aria-label="New Session" data-idle-label="+" onclick="LiveSmithUI.runCommand('new_session')">+</button>
+              <button id="newSessionButton" class="icon-button" type="button" title="New Session" aria-label="New Session" data-idle-label="+" onclick="LiveSmithUI.runCommand('new_session')" data-i18n-title="New Session" data-i18n-aria-label="New Session">+</button>
             </div>
           </div>
           <div id="sessions" class="sessions"></div>
         </aside>
 
         <section class="chat-pane">
-          <div id="timeline" class="timeline" aria-label="Conversation"></div>
+          <div id="timeline" class="timeline" aria-label="Conversation" data-i18n-aria-label="Conversation"></div>
           <div id="conversationAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="messageActionAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
           <div class="composer">
-            <div id="pendingAttachments" class="pending-attachments" role="list" aria-label="Pending file attachments" aria-busy="false" hidden></div>
-            <div id="composerAutocomplete" class="composer-autocomplete" role="listbox" aria-label="Composer suggestions" hidden></div>
-            <button id="liveContextSummaryButton" class="live-context-summary" type="button" aria-controls="contextPanel" onclick="LiveSmithUI.openInspector('context')" hidden><span class="context-caption">Context</span><span id="liveContextTitle" class="context-title"></span><span id="liveContextLocation" class="context-location"></span></button>
-            <label class="visually-hidden" for="prompt">Message Live Smith</label>
-            <textarea id="prompt" name="prompt" rows="1" aria-label="Message Live Smith" aria-autocomplete="list" aria-controls="composerAutocomplete" aria-expanded="false" autocomplete="off" spellcheck="true" placeholder="Describe your idea…"></textarea>
+            <div id="pendingAttachments" class="pending-attachments" role="list" aria-label="Pending file attachments" aria-busy="false" hidden data-i18n-aria-label="Pending file attachments"></div>
+            <div id="composerAutocomplete" class="composer-autocomplete" role="listbox" aria-label="Composer suggestions" hidden data-i18n-aria-label="Composer suggestions"></div>
+            <button id="liveContextSummaryButton" class="live-context-summary" type="button" aria-controls="contextPanel" onclick="LiveSmithUI.openInspector('context')" hidden><span class="context-caption" data-i18n="Context">Context</span><span id="liveContextTitle" class="context-title"></span><span id="liveContextLocation" class="context-location"></span></button>
+            <label class="visually-hidden" for="prompt" data-i18n="Message Live Smith">Message Live Smith</label>
+            <textarea id="prompt" name="prompt" rows="1" aria-label="Message Live Smith" aria-autocomplete="list" aria-controls="composerAutocomplete" aria-expanded="false" autocomplete="off" spellcheck="true" placeholder="Describe your idea…" data-i18n-placeholder="Describe your idea…" data-i18n-aria-label="Message Live Smith"></textarea>
             <div class="composer-toolbar">
               <div class="composer-live-controls">
                 <div id="attachmentMenuShell" class="attachment-menu-shell">
-                  <button id="attachmentMenuButton" class="attachment-menu-button" type="button" aria-label="Add attachment" aria-controls="attachmentMenu" aria-describedby="attachmentCapabilityHint" aria-expanded="false">+</button>
-                  <div id="attachmentMenu" class="attachment-menu" aria-label="Attachment options" hidden>
+                  <button id="attachmentMenuButton" class="attachment-menu-button" type="button" aria-label="Add attachment" aria-controls="attachmentMenu" aria-describedby="attachmentCapabilityHint" aria-expanded="false" data-i18n-aria-label="Add attachment">+</button>
+                  <div id="attachmentMenu" class="attachment-menu" aria-label="Attachment options" hidden data-i18n-aria-label="Attachment options">
                     <div class="attachment-drop-hint">
-                      <strong>Drop or paste files</strong>
-                      <span>Images, PDF, Office documents, WAV, and MP3. File browsing is not available in this Ableton window.</span>
+                      <strong data-i18n="Drop or paste files">Drop or paste files</strong>
+                      <span data-i18n="Images, PDF, Office documents, WAV, and MP3. File browsing is not available in this Ableton window.">Images, PDF, Office documents, WAV, and MP3. File browsing is not available in this Ableton window.</span>
                     </div>
                     <span id="attachmentCapabilityHint" class="attachment-capability-hint" role="status" aria-live="polite" hidden></span>
                   </div>
                 </div>
-                <label class="approval-mode-label" title="Manual requests approval for every Apply request.">
-                  <span class="approval-mode-copy visually-hidden">Apply</span>
-                  <select id="approvalMode" name="approvalMode" class="approval-mode-select composer-select" aria-label="Apply approval mode" onchange="LiveSmithUI.saveApprovalMode()">
-                    <option value="manual">Manual</option>
-                    <option value="low-risk">Low Risk</option>
-                    <option value="everything">Accept Everything</option>
+                <label class="approval-mode-label" title="Manual requests approval for every Apply request." data-i18n-title="Manual requests approval for every Apply request.">
+                  <span class="approval-mode-copy visually-hidden" data-i18n="Apply">Apply</span>
+                  <select id="approvalMode" name="approvalMode" class="approval-mode-select composer-select" aria-label="Apply approval mode" onchange="LiveSmithUI.saveApprovalMode()" data-i18n-aria-label="Apply approval mode">
+                    <option value="manual" data-i18n="Manual">Manual</option>
+                    <option value="low-risk" data-i18n="Low Risk">Low Risk</option>
+                    <option value="everything" data-i18n="Accept Everything">Accept Everything</option>
                   </select>
                 </label>
                 <div id="editScopeShell" class="edit-scope-shell">
-                  <button id="editScopeButton" class="edit-scope-button composer-select" type="button" aria-label="Edit scope: All scopes" aria-haspopup="dialog" aria-controls="editScopePanel" aria-expanded="false">All scopes</button>
+                  <button id="editScopeButton" class="edit-scope-button composer-select" type="button" aria-label="Edit scope: All scopes" aria-haspopup="dialog" aria-controls="editScopePanel" aria-expanded="false" data-i18n-aria-label="Edit scope: All scopes" data-i18n="All scopes">All scopes</button>
                   <div id="editScopePanel" class="edit-scope-panel" role="dialog" aria-labelledby="editScopeHeading" aria-describedby="editScopeSavedSummary" aria-busy="false" hidden>
-                    <span id="editScopeSavedSummary" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">Saved: All</span>
+                    <span id="editScopeSavedSummary" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-i18n="Saved: All">Saved: All</span>
                     <div class="permission-field-heading">
-                      <h2 id="editScopeHeading">Scope</h2>
-                      <span id="editScopeHelp" class="inline-help" tabindex="0" role="note" aria-label="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-tooltip="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately.">?</span>
+                      <h2 id="editScopeHeading" data-i18n="Scope">Scope</h2>
+                      <span id="editScopeHelp" class="inline-help" tabindex="0" role="note" aria-label="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-tooltip="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-i18n-aria-label="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-i18n-data-tooltip="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately.">?</span>
                       <span id="permissionsSaveStatus" class="permissions-save-status" role="status" aria-live="polite" hidden></span>
-                      <label class="edit-scope-all"><input id="editScopeAll" type="checkbox" aria-label="All edit scopes">All</label>
+                      <label class="edit-scope-all"><input id="editScopeAll" type="checkbox" aria-label="All edit scopes" data-i18n-aria-label="All edit scopes"><span data-i18n="All">All</span></label>
                     </div>
                     <fieldset>
-                      <legend class="visually-hidden">Allowed changes</legend>
+                      <legend class="visually-hidden" data-i18n="Allowed changes">Allowed changes</legend>
                       <div id="editScopeOptions" class="edit-scope-options"></div>
                     </fieldset>
-                    <button id="editScopeReadOnlyButton" class="secondary" type="button">Read only</button>
+                    <button id="editScopeReadOnlyButton" class="secondary" type="button" data-i18n="Read only">Read only</button>
                   </div>
                 </div>
               </div>
               <span id="followUpShortcutHint" class="visually-hidden" hidden></span>
               <div class="composer-runtime-controls">
-                <div id="contextUsage" class="context-usage" data-state="unavailable" role="status" aria-live="polite" aria-atomic="true" aria-label="Context usage unavailable for the active Session." title="Context usage unavailable for the active Session.">
+                <div id="contextUsage" class="context-usage" data-state="unavailable" role="status" aria-live="polite" aria-atomic="true" aria-label="Context usage unavailable for the active Session." title="Context usage unavailable for the active Session." data-i18n-title="Context usage unavailable for the active Session." data-i18n-aria-label="Context usage unavailable for the active Session.">
                   <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                     <circle class="context-usage-track" cx="16" cy="16" r="12" pathLength="100"></circle>
                     <g transform="rotate(-90 16 16)"><circle class="context-usage-meter" cx="16" cy="16" r="12" pathLength="100"></circle></g>
@@ -3720,71 +3721,71 @@
                   <span id="contextUsageValue" class="context-usage-value">?</span>
                 </div>
                 <label class="composer-runtime-field model" for="composerModel">
-                  <span class="visually-hidden">Model for the active Session</span>
-                  <select id="composerModel" name="composerModel" class="composer-select" aria-label="Model for the active Session" onfocus="LiveSmithUI.ensureSessionModelCapabilities()" onpointerdown="LiveSmithUI.ensureSessionModelCapabilities()" onchange="LiveSmithUI.saveSessionModelSelection(true)"></select>
+                  <span class="visually-hidden" data-i18n="Model for the active Session">Model for the active Session</span>
+                  <select id="composerModel" name="composerModel" class="composer-select" aria-label="Model for the active Session" onfocus="LiveSmithUI.ensureSessionModelCapabilities()" onpointerdown="LiveSmithUI.ensureSessionModelCapabilities()" onchange="LiveSmithUI.saveSessionModelSelection(true)" data-i18n-aria-label="Model for the active Session"></select>
                 </label>
                 <label class="composer-runtime-field reasoning" for="composerReasoning">
-                  <span class="visually-hidden">Reasoning effort for the active Session</span>
-                  <select id="composerReasoning" name="composerReasoning" class="composer-select" aria-label="Reasoning effort for the active Session" onfocus="LiveSmithUI.ensureSessionModelCapabilities()" onpointerdown="LiveSmithUI.ensureSessionModelCapabilities()" onchange="LiveSmithUI.saveSessionModelSelection(false)"></select>
+                  <span class="visually-hidden" data-i18n="Reasoning effort for the active Session">Reasoning effort for the active Session</span>
+                  <select id="composerReasoning" name="composerReasoning" class="composer-select" aria-label="Reasoning effort for the active Session" onfocus="LiveSmithUI.ensureSessionModelCapabilities()" onpointerdown="LiveSmithUI.ensureSessionModelCapabilities()" onchange="LiveSmithUI.saveSessionModelSelection(false)" data-i18n-aria-label="Reasoning effort for the active Session"></select>
                 </label>
-                <button id="sendButton" class="primary composer-send" data-action="send" type="button" aria-keyshortcuts="Meta+Enter Control+Enter" aria-label="Send message" title="Send (Cmd/Ctrl+Enter)" onclick="LiveSmithUI.handleSendButton()"><span id="sendButtonLabel" class="send-button-label visually-hidden">Send</span><svg class="send-button-icon send-button-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20V4M5.5 10.5 12 4l6.5 6.5"></path></svg><svg class="send-button-icon send-button-stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg></button>
+                <button id="sendButton" class="primary composer-send" data-action="send" type="button" aria-keyshortcuts="Meta+Enter Control+Enter" aria-label="Send message" title="Send (Cmd/Ctrl+Enter)" onclick="LiveSmithUI.handleSendButton()" data-i18n-title="Send (Cmd/Ctrl+Enter)" data-i18n-aria-label="Send message"><span id="sendButtonLabel" class="send-button-label visually-hidden" data-i18n="Send">Send</span><svg class="send-button-icon send-button-send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20V4M5.5 10.5 12 4l6.5 6.5"></path></svg><svg class="send-button-icon send-button-stop-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="7" width="10" height="10" rx="1"></rect></svg></button>
               </div>
             </div>
           </div>
         </section>
 
-        <aside id="inspectorPane" class="inspector-pane" aria-label="Inspector" hidden>
-          <div class="tab-bar" role="tablist" aria-label="Inspector Views">
-            <button id="agentTab" class="active" type="button" role="tab" aria-selected="true" aria-controls="agentPanel" tabindex="0" onclick="LiveSmithUI.openInspector('agent')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)">Agent</button>
-            <button id="appTab" type="button" role="tab" aria-selected="false" aria-controls="appPanel" tabindex="-1" onclick="LiveSmithUI.openInspector('app')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)">App</button>
-            <button id="contextTab" type="button" role="tab" aria-selected="false" aria-controls="contextPanel" tabindex="-1" onclick="LiveSmithUI.openInspector('context')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)">Context</button>
+        <aside id="inspectorPane" class="inspector-pane" aria-label="Inspector" hidden data-i18n-aria-label="Inspector">
+          <div class="tab-bar" role="tablist" aria-label="Inspector Views" data-i18n-aria-label="Inspector Views">
+            <button id="agentTab" class="active" type="button" role="tab" aria-selected="true" aria-controls="agentPanel" tabindex="0" onclick="LiveSmithUI.openInspector('agent')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)" data-i18n="Agent">Agent</button>
+            <button id="appTab" type="button" role="tab" aria-selected="false" aria-controls="appPanel" tabindex="-1" onclick="LiveSmithUI.openInspector('app')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)" data-i18n="App">App</button>
+            <button id="contextTab" type="button" role="tab" aria-selected="false" aria-controls="contextPanel" tabindex="-1" onclick="LiveSmithUI.openInspector('context')" onkeydown="LiveSmithUI.handleInspectorTabKeydown(event)" data-i18n="Context">Context</button>
           </div>
           <div id="agentPanel" class="tab-panel agent-panel" role="tabpanel" aria-labelledby="agentTab" tabindex="0">
             <div class="settings">
               <section id="modelProfileSettings" class="settings-scope settings-scope-profile" aria-labelledby="modelProfileSettingsHeading">
                 <div class="inspector-scope-header">
-                  <h2 id="modelProfileSettingsHeading">Model Profile</h2>
+                  <h2 id="modelProfileSettingsHeading" data-i18n="Model Profile">Model Profile</h2>
                 </div>
-              <div id="settingsLockNotice" class="settings-lock-notice" role="status" aria-live="polite" hidden>Profile settings are locked while another Session is running. You can keep working in this Session.</div>
+              <div id="settingsLockNotice" class="settings-lock-notice" role="status" aria-live="polite" hidden data-i18n="Profile settings are locked while another Session is running. You can keep working in this Session.">Profile settings are locked while another Session is running. You can keep working in this Session.</div>
               <div id="modelProfileControls" class="model-profile-controls" role="group" aria-labelledby="modelProfileSettingsHeading" aria-busy="false">
               <section id="modelSetupGuide" class="model-setup-guide" aria-labelledby="modelSetupGuideHeading">
-                <h3 id="modelSetupGuideHeading">Connect a model</h3>
+                <h3 id="modelSetupGuideHeading" data-i18n="Connect a model">Connect a model</h3>
                 <ol>
-                  <li>Enter connection details.</li>
-                  <li>Load Models.</li>
-                  <li>Save &amp; Use.</li>
+                  <li data-i18n="Enter connection details.">Enter connection details.</li>
+                  <li data-i18n="Load Models.">Load Models.</li>
+                  <li data-i18n="Save &amp; Use.">Save &amp; Use.</li>
                 </ol>
               </section>
               <section id="profileSettingsSection" class="settings-section" aria-labelledby="profileSettingsHeading">
-                <h3 id="profileSettingsHeading">Profile Details</h3>
+                <h3 id="profileSettingsHeading" data-i18n="Profile Details">Profile Details</h3>
                 <div id="savedProfileControls" class="saved-profile-controls">
                   <div class="field">
-                    <label for="profileSelector">Saved profile</label>
+                    <label for="profileSelector" data-i18n="Saved profile">Saved profile</label>
                     <select id="profileSelector" name="profileSelector" autocomplete="off" onchange="LiveSmithUI.handleProfileSelection()"></select>
                   </div>
                   <div class="profile-actions">
-                    <button id="addProfileButton" class="secondary" type="button" onclick="LiveSmithUI.addProfile()">Add</button>
-                    <button id="duplicateProfileButton" class="secondary" type="button" onclick="LiveSmithUI.duplicateProfile()">Duplicate</button>
-                    <button id="deleteProfileButton" class="secondary" type="button" data-idle-label="Delete" onclick="LiveSmithUI.deleteProfile()">Delete</button>
+                    <button id="addProfileButton" class="secondary" type="button" onclick="LiveSmithUI.addProfile()" data-i18n="Add">Add</button>
+                    <button id="duplicateProfileButton" class="secondary" type="button" onclick="LiveSmithUI.duplicateProfile()" data-i18n="Duplicate">Duplicate</button>
+                    <button id="deleteProfileButton" class="secondary" type="button" data-idle-label="Delete" data-i18n-data-idle-label="Delete" onclick="LiveSmithUI.deleteProfile()" data-i18n="Delete">Delete</button>
                   </div>
                 </div>
                 <div class="field">
-                  <label for="profileName">Profile name</label>
-                  <input id="profileName" name="profileName" autocomplete="off" placeholder="e.g. Studio…" oninput="LiveSmithUI.markDraftDirty(this)" />
+                  <label for="profileName" data-i18n="Profile name">Profile name</label>
+                  <input id="profileName" name="profileName" autocomplete="off" placeholder="e.g. Studio…" oninput="LiveSmithUI.markDraftDirty(this)"  data-i18n-placeholder="e.g. Studio…"/>
                 </div>
               </section>
 
               <section id="connectionSettingsSection" class="settings-section" aria-labelledby="connectionSettingsHeading">
-                <h3 id="connectionSettingsHeading">Connection</h3>
+                <h3 id="connectionSettingsHeading" data-i18n="Connection">Connection</h3>
                 <div class="field">
-                  <label for="connectionKind">Type</label>
+                  <label for="connectionKind" data-i18n="Type">Type</label>
                   <select id="connectionKind" name="connectionKind" autocomplete="off" onchange="LiveSmithUI.handleConnectionKindChange()">
-                    <option value="direct-api">Direct API</option>
-                    <option value="oauth-subscription">Account subscription (OAuth)</option>
+                    <option value="direct-api" data-i18n="Direct API">Direct API</option>
+                    <option value="oauth-subscription" data-i18n="Account subscription (OAuth)">Account subscription (OAuth)</option>
                   </select>
                 </div>
                 <div id="oauthProviderField" class="field" hidden>
-                  <label for="oauthProvider">Subscription provider</label>
+                  <label for="oauthProvider" data-i18n="Subscription provider">Subscription provider</label>
                   <select id="oauthProvider" name="oauthProvider" autocomplete="off" onchange="LiveSmithUI.handleOAuthProviderChange()">
                     <option value="openai">ChatGPT / Codex</option>
                     <option value="anthropic">Claude</option>
@@ -3794,8 +3795,8 @@
                 <div id="directApiFields" class="direct-api-fields">
                 <div class="field">
                   <div class="field-label-row">
-                    <label for="apiFamily">Provider</label>
-                    <span class="inline-help" tabindex="0" role="note" aria-label="Choose the API protocol family. Both official and compatible endpoints are supported." data-tooltip="Choose the API protocol family. Both official and compatible endpoints are supported.">?</span>
+                    <label for="apiFamily" data-i18n="Provider">Provider</label>
+                    <span class="inline-help" tabindex="0" role="note" aria-label="Choose the API protocol family. Both official and compatible endpoints are supported." data-tooltip="Choose the API protocol family. Both official and compatible endpoints are supported." data-i18n-aria-label="Choose the API protocol family. Both official and compatible endpoints are supported." data-i18n-data-tooltip="Choose the API protocol family. Both official and compatible endpoints are supported.">?</span>
                   </div>
                   <select id="apiFamily" name="apiFamily" autocomplete="off" onchange="LiveSmithUI.handleApiFamilyChange()">
                     <option value="openai">OpenAI</option>
@@ -3804,147 +3805,147 @@
                 </div>
                 <div class="field">
                   <div class="field-label-row">
-                    <label for="apiMode">Request format</label>
+                    <label for="apiMode" data-i18n="Request format">Request format</label>
                   </div>
                   <select id="apiMode" name="apiMode" autocomplete="off" onchange="LiveSmithUI.handleApiModeChange()"></select>
                 </div>
                 <div class="field">
                   <div class="field-label-row">
-                    <label for="apiKey">API key</label>
-                    <span class="inline-help" tabindex="0" role="note" aria-label="Optional for local loopback endpoints; required for every other endpoint." data-tooltip="Optional for local loopback endpoints; required for every other endpoint.">?</span>
+                    <label for="apiKey" data-i18n="API key">API key</label>
+                    <span class="inline-help" tabindex="0" role="note" aria-label="Optional for local loopback endpoints; required for every other endpoint." data-tooltip="Optional for local loopback endpoints; required for every other endpoint." data-i18n-aria-label="Optional for local loopback endpoints; required for every other endpoint." data-i18n-data-tooltip="Optional for local loopback endpoints; required for every other endpoint.">?</span>
                   </div>
                   <div class="key-row">
                     <input id="apiKey" name="apiKey" type="password" autocomplete="off" spellcheck="false" oninput="LiveSmithUI.markDraftDirty(this)" />
-                    <button id="apiKeyVisibilityButton" class="secondary" type="button" aria-controls="apiKey" aria-pressed="false" onclick="LiveSmithUI.toggleApiKeyVisibility()">Show</button>
+                    <button id="apiKeyVisibilityButton" class="secondary" type="button" aria-controls="apiKey" aria-pressed="false" onclick="LiveSmithUI.toggleApiKeyVisibility()" data-i18n="Show">Show</button>
                   </div>
                 </div>
                 <div class="field">
                   <div class="field-label-row">
-                    <label for="baseUrl">Endpoint URL</label>
-                    <span id="baseUrlHelp" class="inline-help" tabindex="0" role="note" aria-label="Include the provider API version path, usually ending in /v1." data-tooltip="Include the provider API version path, usually ending in /v1.">?</span>
+                    <label for="baseUrl" data-i18n="Endpoint URL">Endpoint URL</label>
+                    <span id="baseUrlHelp" class="inline-help" tabindex="0" role="note" aria-label="Include the provider API version path, usually ending in /v1." data-tooltip="Include the provider API version path, usually ending in /v1." data-i18n-aria-label="Include the provider API version path, usually ending in /v1." data-i18n-data-tooltip="Include the provider API version path, usually ending in /v1.">?</span>
                   </div>
                   <input id="baseUrl" name="baseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1" oninput="LiveSmithUI.markDraftDirty(this)" />
                 </div>
                 </div>
                 <section id="oauthAuthPanel" class="subscription-auth-panel" data-auth-state="unchecked" aria-labelledby="oauthAuthHeading" hidden>
                   <div class="subscription-auth-header">
-                    <h4 id="oauthAuthHeading">Account <span class="subscription-auth-experimental">Experimental</span></h4>
-                    <span id="oauthAuthStateBadge" class="subscription-auth-state-badge">Not checked</span>
+                    <h4 id="oauthAuthHeading"><span data-i18n="Account">Account</span> <span class="subscription-auth-experimental" data-i18n="Experimental">Experimental</span></h4>
+                    <span id="oauthAuthStateBadge" class="subscription-auth-state-badge" data-i18n="Not checked">Not checked</span>
                   </div>
                   <p id="oauthAuthNote" class="subscription-auth-note" hidden></p>
                   <div id="oauthAuthStatus" class="subscription-auth-status">
                     <div id="oauthAuthState" class="subscription-auth-state" role="status" aria-live="polite" aria-atomic="true">
-                      <strong id="oauthAuthStateLabel" class="subscription-auth-state-title">Account not checked</strong>
+                      <strong id="oauthAuthStateLabel" class="subscription-auth-state-title" data-i18n="Account not checked">Account not checked</strong>
                       <span id="oauthAuthStateDetail" class="subscription-auth-state-detail" hidden></span>
                     </div>
-                    <div id="oauthDeviceCodeTicket" class="subscription-auth-device-ticket" aria-label="Account authorization" hidden>
+                    <div id="oauthDeviceCodeTicket" class="subscription-auth-device-ticket" aria-label="Account authorization" hidden data-i18n-aria-label="Account authorization">
                       <a id="oauthVerificationLink" class="subscription-auth-open-link" target="_blank" rel="noopener noreferrer" hidden onclick="return LiveSmithUI.openOAuthVerification(event)">
-                        <span id="oauthVerificationLinkLabel">Open sign-in page</span><span aria-hidden="true">↗</span>
+                        <span id="oauthVerificationLinkLabel" data-i18n="Open sign-in page">Open sign-in page</span><span aria-hidden="true">↗</span>
                       </a>
-                      <p id="oauthVerificationError" class="subscription-auth-device-error" hidden>Live Smith could not verify the sign-in page. Cancel this sign-in and start again.</p>
+                      <p id="oauthVerificationError" class="subscription-auth-device-error" hidden data-i18n="Live Smith could not verify the sign-in page. Cancel this sign-in and start again.">Live Smith could not verify the sign-in page. Cancel this sign-in and start again.</p>
                       <div class="subscription-auth-code-ticket" hidden>
-                        <label id="oauthDeviceCodeHeading" class="subscription-auth-code-label" for="oauthUserCode">One-time code<small id="oauthDeviceCodeHelp">Select to copy</small></label>
+                        <label id="oauthDeviceCodeHeading" class="subscription-auth-code-label" for="oauthUserCode"><span data-i18n="One-time code">One-time code</span><small id="oauthDeviceCodeHelp" data-i18n="Select to copy">Select to copy</small></label>
                         <input id="oauthUserCode" name="oauthUserCode" type="text" readonly autocomplete="off" spellcheck="false" translate="no" />
-                        <button id="oauthSubmitCodeButton" class="secondary" type="button" data-idle-label="Complete sign-in" onclick="LiveSmithUI.submitOAuthAuthorizationCode()" hidden>Complete sign-in</button>
+                        <button id="oauthSubmitCodeButton" class="secondary" type="button" data-idle-label="Complete sign-in" data-i18n-data-idle-label="Complete sign-in" onclick="LiveSmithUI.submitOAuthAuthorizationCode()" hidden data-i18n="Complete sign-in">Complete sign-in</button>
                       </div>
-                      <p class="subscription-auth-device-guidance">Keep this window open while sign-in completes.</p>
+                      <p class="subscription-auth-device-guidance" data-i18n="Keep this window open while sign-in completes.">Keep this window open while sign-in completes.</p>
                     </div>
                   </div>
                   <div class="subscription-auth-actions">
-                    <button id="oauthSignInButton" class="primary" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign in" onclick="LiveSmithUI.startOAuthLogin()">Sign in</button>
-                    <button id="oauthCheckAccountButton" class="secondary" type="button" aria-describedby="oauthAuthState" data-idle-label="Check existing session" onclick="LiveSmithUI.refreshOAuthAccount()">Check existing session</button>
-                    <button id="oauthLogoutButton" class="subscription-auth-quiet-action" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign out" onclick="LiveSmithUI.logoutOAuth()" hidden>Sign out</button>
+                    <button id="oauthSignInButton" class="primary" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign in" data-i18n-data-idle-label="Sign in" onclick="LiveSmithUI.startOAuthLogin()" data-i18n="Sign in">Sign in</button>
+                    <button id="oauthCheckAccountButton" class="secondary" type="button" aria-describedby="oauthAuthState" data-idle-label="Check existing session" data-i18n-data-idle-label="Check existing session" onclick="LiveSmithUI.refreshOAuthAccount()" data-i18n="Check existing session">Check existing session</button>
+                    <button id="oauthLogoutButton" class="subscription-auth-quiet-action" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign out" data-i18n-data-idle-label="Sign out" onclick="LiveSmithUI.logoutOAuth()" hidden data-i18n="Sign out">Sign out</button>
                   </div>
                   <details class="subscription-auth-details">
-                    <summary>Requirements</summary>
+                    <summary data-i18n="Requirements">Requirements</summary>
                     <ul>
-                      <li>No provider CLI or API key is required.</li>
-                      <li>OAuth credentials stay in Live Smith’s private Ableton storage.</li>
+                      <li data-i18n="No provider CLI or API key is required.">No provider CLI or API key is required.</li>
+                      <li data-i18n="OAuth credentials stay in Live Smith’s private Ableton storage.">OAuth credentials stay in Live Smith’s private Ableton storage.</li>
                     </ul>
                   </details>
                 </section>
               </section>
 
               <section id="modelSettingsSection" class="settings-section" aria-labelledby="modelSettingsHeading">
-                <h3 id="modelSettingsHeading">Models</h3>
+                <h3 id="modelSettingsHeading" data-i18n="Models">Models</h3>
                 <div class="model-load-row">
                   <div class="model-load-copy">
                     <span id="profileModelCount" class="field-hint" role="status" aria-live="polite"></span>
-                    <span id="discoverModelsHelp" class="inline-help" tabindex="0" role="note" aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account.">?</span>
+                    <span id="discoverModelsHelp" class="inline-help" tabindex="0" role="note" aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account.">?</span>
                   </div>
-                  <button id="discoverModelsButton" class="secondary" type="button" data-idle-label="Load Models" onclick="LiveSmithUI.discoverModels()">Load Models</button>
+                  <button id="discoverModelsButton" class="secondary" type="button" data-idle-label="Load Models" data-i18n-data-idle-label="Load Models" onclick="LiveSmithUI.discoverModels()" data-i18n="Load Models">Load Models</button>
                 </div>
                 <div class="model-config-editor">
                   <div class="field">
-                    <label for="modelConfigSelector">Profile models</label>
+                    <label for="modelConfigSelector" data-i18n="Profile models">Profile models</label>
                     <select id="modelConfigSelector" name="modelConfigSelector" autocomplete="off" onchange="LiveSmithUI.handleModelConfigSelection()"></select>
                     <span id="modelConfigDefault" class="model-config-default" role="status" aria-live="polite"></span>
-                    <div id="inputCapabilitiesPreview" class="capability-preview" role="status" aria-live="polite" aria-atomic="true"></div>
+                    <div id="inputCapabilitiesPreview" data-label="Inputs" data-i18n-data-label="Inputs" class="capability-preview" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div id="providerCapabilityNote" class="field-hint provider-capability-note" role="note" hidden></div>
                   </div>
                   <div class="model-config-actions">
-                    <button id="removeModelConfigButton" class="secondary" type="button" onclick="LiveSmithUI.removeModelConfig()">Remove</button>
-                    <button id="setDefaultModelButton" class="secondary" type="button" onclick="LiveSmithUI.setDefaultModel()">Make Default</button>
+                    <button id="removeModelConfigButton" class="secondary" type="button" onclick="LiveSmithUI.removeModelConfig()" data-i18n="Remove">Remove</button>
+                    <button id="setDefaultModelButton" class="secondary" type="button" onclick="LiveSmithUI.setDefaultModel()" data-i18n="Make Default">Make Default</button>
                   </div>
                 </div>
                 <details id="manualModelEntry" class="manual-model-entry">
-                  <summary>Add model ID manually</summary>
+                  <summary data-i18n="Add model ID manually">Add model ID manually</summary>
                   <div class="manual-model-entry-body">
-                    <input id="manualModelId" name="manualModelId" autocomplete="off" spellcheck="false" translate="no" placeholder="Exact model ID" aria-label="Exact model ID to add" aria-describedby="manualModelIdHint" oninput="LiveSmithUI.updateManualModelActions()" onkeydown="LiveSmithUI.handleManualModelIdKeydown(event)" />
-                    <button id="addManualModelButton" class="secondary" type="button" onclick="LiveSmithUI.addManualModel()">Add</button>
-                    <span id="manualModelIdHint" class="field-hint" role="status" aria-live="polite">For models missing from the provider list.</span>
+                    <input id="manualModelId" name="manualModelId" autocomplete="off" spellcheck="false" translate="no" placeholder="Exact model ID" aria-label="Exact model ID to add" aria-describedby="manualModelIdHint" oninput="LiveSmithUI.updateManualModelActions()" onkeydown="LiveSmithUI.handleManualModelIdKeydown(event)"  data-i18n-placeholder="Exact model ID" data-i18n-aria-label="Exact model ID to add"/>
+                    <button id="addManualModelButton" class="secondary" type="button" onclick="LiveSmithUI.addManualModel()" data-i18n="Add">Add</button>
+                    <span id="manualModelIdHint" class="field-hint" role="status" aria-live="polite" data-i18n="For models missing from the provider list.">For models missing from the provider list.</span>
                   </div>
                 </details>
               </section>
 
               <section id="capabilitySettingsSection" class="settings-section capability-settings-section" aria-labelledby="capabilitySettingsHeading">
-                <h3 id="capabilitySettingsHeading">Model Behavior</h3>
+                <h3 id="capabilitySettingsHeading" data-i18n="Model Behavior">Model Behavior</h3>
                 <div class="hosted-tool-control">
                   <label class="hosted-tool-toggle" for="webSearchEnabled">
                     <input id="webSearchEnabled" name="webSearchEnabled" type="checkbox" aria-describedby="webSearchHint" onchange="LiveSmithUI.handleWebSearchChange(this)" />
-                    <span><strong>Allow Web Search</strong></span>
+                    <span><strong data-i18n="Allow Web Search">Allow Web Search</strong></span>
                   </label>
-                  <span id="webSearchHint" class="field-hint" role="status" aria-live="polite" aria-atomic="true">Unavailable with Chat Completions.</span>
+                  <span id="webSearchHint" class="field-hint" role="status" aria-live="polite" aria-atomic="true" data-i18n="Unavailable with Chat Completions.">Unavailable with Chat Completions.</span>
                 </div>
                 <details id="generationSettings" class="settings-disclosure top-level-settings">
                   <summary>
                     <span class="settings-disclosure-copy">
-                      <span class="settings-disclosure-title">Generation</span>
+                      <span class="settings-disclosure-title" data-i18n="Generation">Generation</span>
                     </span>
                     <span class="settings-disclosure-chevron" aria-hidden="true">›</span>
                   </summary>
                   <div class="advanced-fields">
                     <span id="draftPreviewLabel" class="draft-status dirty" role="status" hidden></span>
                     <div class="field">
-                      <label for="temperature">Temperature</label>
-                      <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.1" placeholder="Provider default…" oninput="LiveSmithUI.markDraftDirty(this)" />
+                      <label for="temperature" data-i18n="Temperature">Temperature</label>
+                      <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.1" placeholder="Provider default…" oninput="LiveSmithUI.markDraftDirty(this)"  data-i18n-placeholder="Provider default…"/>
                     </div>
                     <div class="field">
-                      <label for="maxOutputTokens">Requested max output tokens</label>
+                      <label for="maxOutputTokens" data-i18n="Requested max output tokens">Requested max output tokens</label>
                       <input id="maxOutputTokens" name="maxOutputTokens" type="number" min="1" max="1000000" step="1" aria-describedby="maxOutputTokensHint" oninput="LiveSmithUI.markDraftDirty(this)" />
                       <span id="maxOutputTokensHint" class="toggle-hint" role="status" aria-live="polite" aria-atomic="true"></span>
                     </div>
                     <div class="field">
-                      <label for="contextWindowTokens">Context window tokens</label>
-                      <input id="contextWindowTokens" name="contextWindowTokens" type="number" min="1" max="10000000" step="1" placeholder="Model default…" aria-describedby="contextWindowTokensHint" oninput="LiveSmithUI.markDraftDirty(this)" />
+                      <label for="contextWindowTokens" data-i18n="Context window tokens">Context window tokens</label>
+                      <input id="contextWindowTokens" name="contextWindowTokens" type="number" min="1" max="10000000" step="1" placeholder="Model default…" aria-describedby="contextWindowTokensHint" oninput="LiveSmithUI.markDraftDirty(this)"  data-i18n-placeholder="Model default…"/>
                       <span id="contextWindowTokensHint" class="toggle-hint" role="status" aria-live="polite" aria-atomic="true"></span>
                     </div>
                     <div class="field">
-                      <label for="autoCompactTokenLimit">Compact at tokens</label>
-                      <input id="autoCompactTokenLimit" name="autoCompactTokenLimit" type="number" min="1" max="10000000" step="1" placeholder="Automatic (90%)…" aria-describedby="autoCompactTokenLimitHint" oninput="LiveSmithUI.markDraftDirty(this)" />
+                      <label for="autoCompactTokenLimit" data-i18n="Compact at tokens">Compact at tokens</label>
+                      <input id="autoCompactTokenLimit" name="autoCompactTokenLimit" type="number" min="1" max="10000000" step="1" placeholder="Automatic (90%)…" aria-describedby="autoCompactTokenLimitHint" oninput="LiveSmithUI.markDraftDirty(this)"  data-i18n-placeholder="Automatic (90%)…"/>
                       <span id="autoCompactTokenLimitHint" class="toggle-hint" role="status" aria-live="polite" aria-atomic="true"></span>
                     </div>
                     <div id="reasoningModeRow" class="field">
-                      <label for="reasoningMode">Reasoning</label>
+                      <label for="reasoningMode" data-i18n="Reasoning">Reasoning</label>
                       <select id="reasoningMode" name="reasoningMode" aria-describedby="reasoningHint" onchange="LiveSmithUI.markDraftDirty(this)"></select>
-                      <span id="reasoningHint" class="toggle-hint" role="status" aria-live="polite" aria-atomic="true" hidden>Unavailable. Use provider default or Compatibility Overrides.</span>
+                      <span id="reasoningHint" class="toggle-hint" role="status" aria-live="polite" aria-atomic="true" hidden data-i18n="Unavailable. Use provider default or Compatibility Overrides.">Unavailable. Use provider default or Compatibility Overrides.</span>
                     </div>
                     <div id="reasoningEffortRow" class="field" hidden>
-                      <label for="reasoningEffort">Reasoning effort</label>
+                      <label for="reasoningEffort" data-i18n="Reasoning effort">Reasoning effort</label>
                       <select id="reasoningEffort" name="reasoningEffort" onchange="LiveSmithUI.markDraftDirty(this)"></select>
                     </div>
                     <div id="reasoningBudgetRow" class="field" hidden>
-                      <label for="reasoningBudgetTokens">Thinking budget</label>
+                      <label for="reasoningBudgetTokens" data-i18n="Thinking budget">Thinking budget</label>
                       <input id="reasoningBudgetTokens" name="reasoningBudgetTokens" type="number" min="1024" step="1" oninput="LiveSmithUI.markDraftDirty(this)" />
                     </div>
                   </div>
@@ -3952,125 +3953,125 @@
                 <details id="advancedSettings" class="settings-disclosure top-level-settings advanced-settings">
                   <summary id="advancedSettingsHeading">
                     <span class="settings-disclosure-copy">
-                      <span class="settings-disclosure-title">Compatibility Overrides</span>
+                      <span class="settings-disclosure-title" data-i18n="Compatibility Overrides">Compatibility Overrides</span>
                     </span>
                     <span class="settings-disclosure-chevron" aria-hidden="true">›</span>
                   </summary>
                   <div class="advanced-groups">
                     <fieldset class="advanced-group">
-                      <legend>Input support</legend>
+                      <legend data-i18n="Input support">Input support</legend>
                       <div class="field">
-                        <label for="overrideInputImage">Image input</label>
+                        <label for="overrideInputImage" data-i18n="Image input">Image input</label>
                         <select id="overrideInputImage" name="overrideInputImage" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideInputAudio">Audio input</label>
+                        <label for="overrideInputAudio" data-i18n="Audio input">Audio input</label>
                         <select id="overrideInputAudio" name="overrideInputAudio" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideInputPdf">PDF input</label>
+                        <label for="overrideInputPdf" data-i18n="PDF input">PDF input</label>
                         <select id="overrideInputPdf" name="overrideInputPdf" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                     </fieldset>
                     <fieldset class="advanced-group">
-                      <legend>Generation support</legend>
+                      <legend data-i18n="Generation support">Generation support</legend>
                       <div class="field">
-                        <label for="overrideTools">Tools capability</label>
+                        <label for="overrideTools" data-i18n="Tools capability">Tools capability</label>
                         <select id="overrideTools" name="overrideTools" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideStreaming">Streaming capability</label>
+                        <label for="overrideStreaming" data-i18n="Streaming capability">Streaming capability</label>
                         <select id="overrideStreaming" name="overrideStreaming" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideTemperature">Temperature capability</label>
+                        <label for="overrideTemperature" data-i18n="Temperature capability">Temperature capability</label>
                         <select id="overrideTemperature" name="overrideTemperature" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="supported">Supported</option><option value="unsupported">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="supported" data-i18n="Supported">Supported</option><option value="unsupported" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
-                      <div class="field"><label for="overrideMaxOutputTokens">Model output limit</label><input id="overrideMaxOutputTokens" name="overrideMaxOutputTokens" type="number" min="1" oninput="LiveSmithUI.markDraftDirty(this)" /></div>
+                      <div class="field"><label for="overrideMaxOutputTokens" data-i18n="Model output limit">Model output limit</label><input id="overrideMaxOutputTokens" name="overrideMaxOutputTokens" type="number" min="1" oninput="LiveSmithUI.markDraftDirty(this)" /></div>
                     </fieldset>
                     <fieldset class="advanced-group">
-                      <legend>Reasoning support</legend>
+                      <legend data-i18n="Reasoning support">Reasoning support</legend>
                       <div class="field">
-                        <label for="overrideReasoningSupported">Reasoning capability</label>
+                        <label for="overrideReasoningSupported" data-i18n="Reasoning capability">Reasoning capability</label>
                         <select id="overrideReasoningSupported" name="overrideReasoningSupported" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideReasoningCanDisable">Can disable reasoning</label>
+                        <label for="overrideReasoningCanDisable" data-i18n="Can disable reasoning">Can disable reasoning</label>
                         <select id="overrideReasoningCanDisable" name="overrideReasoningCanDisable" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Yes</option><option value="false">No</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Yes">Yes</option><option value="false" data-i18n="No">No</option>
                         </select>
                       </div>
                       <div class="field">
-                        <label for="overrideReasoningStrategy">Reasoning strategy</label>
+                        <label for="overrideReasoningStrategy" data-i18n="Reasoning strategy">Reasoning strategy</label>
                         <select id="overrideReasoningStrategy" name="overrideReasoningStrategy" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="effort">Effort</option><option value="adaptive-thinking">Adaptive thinking</option><option value="budget-thinking">Budget thinking</option><option value="none">None</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="effort" data-i18n="Effort">Effort</option><option value="adaptive-thinking" data-i18n="Adaptive thinking">Adaptive thinking</option><option value="budget-thinking" data-i18n="Budget thinking">Budget thinking</option><option value="none" data-i18n="None">None</option>
                         </select>
                       </div>
-                      <div class="field"><label for="overrideReasoningEfforts">Allowed efforts (comma separated)</label><input id="overrideReasoningEfforts" name="overrideReasoningEfforts" autocomplete="off" spellcheck="false" placeholder="low, medium, high…" oninput="LiveSmithUI.markDraftDirty(this)" /></div>
+                      <div class="field"><label for="overrideReasoningEfforts" data-i18n="Allowed efforts (comma separated)">Allowed efforts (comma separated)</label><input id="overrideReasoningEfforts" name="overrideReasoningEfforts" autocomplete="off" spellcheck="false" placeholder="low, medium, high…" oninput="LiveSmithUI.markDraftDirty(this)" /></div>
                       <div class="field">
-                        <label for="overrideReasoningBudget">Thinking budget capability</label>
+                        <label for="overrideReasoningBudget" data-i18n="Thinking budget capability">Thinking budget capability</label>
                         <select id="overrideReasoningBudget" name="overrideReasoningBudget" onchange="LiveSmithUI.markDraftDirty(this)">
-                          <option value="inherit">Automatic</option><option value="true">Supported</option><option value="false">Unsupported</option>
+                          <option value="inherit" data-i18n="Automatic">Automatic</option><option value="true" data-i18n="Supported">Supported</option><option value="false" data-i18n="Unsupported">Unsupported</option>
                         </select>
                       </div>
                     </fieldset>
                     <fieldset class="advanced-group">
-                      <legend>Raw request JSON</legend>
-                      <span class="field-hint">Cannot override protected request fields.</span>
-                      <div class="field"><label for="extraBody">Extra Body JSON</label><textarea id="extraBody" name="extraBody" autocomplete="off" spellcheck="false" placeholder="{}" oninput="LiveSmithUI.markDraftDirty(this)"></textarea></div>
+                      <legend data-i18n="Raw request JSON">Raw request JSON</legend>
+                      <span class="field-hint" data-i18n="Cannot override protected request fields.">Cannot override protected request fields.</span>
+                      <div class="field"><label for="extraBody" data-i18n="Extra Body JSON">Extra Body JSON</label><textarea id="extraBody" name="extraBody" autocomplete="off" spellcheck="false" placeholder="{}" oninput="LiveSmithUI.markDraftDirty(this)"></textarea></div>
                     </fieldset>
                   </div>
                 </details>
               </section>
               <div class="settings-actions" role="group" aria-labelledby="settingsProfileActionsLabel">
                 <span class="settings-actions-status">
-                  <span id="settingsProfileActionsLabel" class="settings-actions-owner">Profile</span>
+                  <span id="settingsProfileActionsLabel" class="settings-actions-owner" data-i18n="Profile">Profile</span>
                   <span id="draftStatus" class="draft-status"></span>
                 </span>
-                <button id="discardProfileButton" class="secondary" type="button" onclick="LiveSmithUI.discardProfileChanges()">Discard</button>
-                <button id="saveProfileButton" class="primary" type="button" data-idle-label="Save &amp; Use" onclick="LiveSmithUI.saveProfile()">Save &amp; Use</button>
+                <button id="discardProfileButton" class="secondary" type="button" onclick="LiveSmithUI.discardProfileChanges()" data-i18n="Discard">Discard</button>
+                <button id="saveProfileButton" class="primary" type="button" data-idle-label="Save &amp; Use" data-i18n-data-idle-label="Save &amp; Use" onclick="LiveSmithUI.saveProfile()" data-i18n="Save &amp; Use">Save &amp; Use</button>
               </div>
               </div>
               </section>
 
               <section id="skillManager" class="settings-scope skill-manager" aria-labelledby="skillsHeading" aria-busy="false" tabindex="-1">
                 <div class="inspector-scope-header">
-                  <h2 id="skillsHeading">Session Skills</h2>
-                  <span class="inline-help" tabindex="0" role="note" aria-label="Enable for this Session, or use $skill-id for one turn." data-tooltip="Enable for this Session, or use $skill-id for one turn.">?</span>
+                  <h2 id="skillsHeading" data-i18n="Session Skills">Session Skills</h2>
+                  <span class="inline-help" tabindex="0" role="note" aria-label="Enable for this Session, or use $skill-id for one turn." data-tooltip="Enable for this Session, or use $skill-id for one turn." data-i18n-aria-label="Enable for this Session, or use $skill-id for one turn." data-i18n-data-tooltip="Enable for this Session, or use $skill-id for one turn.">?</span>
                 </div>
                 <section class="skill-group" aria-labelledby="builtInSkillsHeading">
-                  <h3 id="builtInSkillsHeading">Built-in</h3>
+                  <h3 id="builtInSkillsHeading" data-i18n="Built-in">Built-in</h3>
                   <div id="builtInSkillList" class="skill-list" role="list" aria-labelledby="builtInSkillsHeading"></div>
-                  <p id="builtInSkillEmptyState" class="skill-empty" hidden>Same-ID User Skills are shown below.</p>
+                  <p id="builtInSkillEmptyState" class="skill-empty" hidden data-i18n="Same-ID User Skills are shown below.">Same-ID User Skills are shown below.</p>
                 </section>
                 <section class="skill-group" aria-labelledby="userSkillsHeading">
-                  <h3 id="userSkillsHeading">User Skills</h3>
+                  <h3 id="userSkillsHeading" data-i18n="User Skills">User Skills</h3>
                   <div id="userSkillList" class="skill-list" role="list" aria-labelledby="userSkillsHeading"></div>
-                  <p id="userSkillEmptyState" class="skill-empty">No user Skills.</p>
+                  <p id="userSkillEmptyState" class="skill-empty" data-i18n="No user Skills.">No user Skills.</p>
                   <details class="skill-paste">
-                    <summary>Import Skill</summary>
+                    <summary data-i18n="Import Skill">Import Skill</summary>
                     <div class="skill-import-body">
                       <div id="skillDropZone" class="skill-drop-zone">
-                        <strong>Drop SKILL.md</strong>
+                        <strong data-i18n="Drop SKILL.md">Drop SKILL.md</strong>
                       </div>
                       <div class="skill-paste-fields">
-                        <label for="skillPasteText">Paste SKILL.md</label>
+                        <label for="skillPasteText" data-i18n="Paste SKILL.md">Paste SKILL.md</label>
                         <textarea id="skillPasteText" name="skillMarkdown" autocomplete="off" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What this Skill does&#10;---&#10;Instructions…"></textarea>
-                        <button id="installPastedSkillButton" class="secondary" type="button" disabled>Install Skill</button>
+                        <button id="installPastedSkillButton" class="secondary" type="button" disabled data-i18n="Install Skill">Install Skill</button>
                       </div>
                     </div>
                   </details>
@@ -4078,8 +4079,8 @@
               </section>
               <section id="skillViewer" class="settings-scope skill-viewer" aria-labelledby="skillViewerId" hidden>
                 <div class="skill-viewer-header">
-                  <button id="closeSkillViewer" class="secondary" type="button" aria-label="Back to Skills">← Skills</button>
-                  <span>Built-in · Read-only</span>
+                  <button id="closeSkillViewer" class="secondary" type="button" aria-label="Back to Skills" data-i18n-aria-label="Back to Skills" data-i18n="← Skills">← Skills</button>
+                  <span data-i18n="Built-in · Read-only">Built-in · Read-only</span>
                 </div>
                 <code id="skillViewerId" class="skill-viewer-id" translate="no"></code>
                 <p id="skillViewerDescription" class="skill-viewer-description"></p>
@@ -4091,53 +4092,59 @@
             <div class="settings">
               <section id="appPreferencesSettings" class="settings-scope settings-scope-app" aria-labelledby="appPreferencesSettingsHeading">
                 <div class="inspector-scope-header">
-                  <h2 id="appPreferencesSettingsHeading">App Preferences</h2>
+                  <h2 id="appPreferencesSettingsHeading" data-i18n="App Preferences">App Preferences</h2>
                 </div>
               <section id="followUpSettingsSection" class="settings-section conversation-settings-section" aria-labelledby="followUpSettingsHeading">
-                <h3 id="followUpSettingsHeading">Conversation &amp; Display</h3>
+                <h3 id="followUpSettingsHeading" data-i18n="Conversation &amp; Display">Conversation &amp; Display</h3>
+                <div class="field">
+                  <label for="uiLanguage" data-i18n="Interface language">Interface language</label>
+                  <select id="uiLanguage" aria-label="Interface language" onchange="LiveSmithUI.setUiLanguage(this.value)" data-i18n-aria-label="Interface language">
+                    <option value="system" data-i18n="System language">System language</option>
+                  </select>
+                </div>
                 <div class="field">
                   <div class="field-label-row">
-                    <label for="defaultFollowUpBehavior">While Live Smith is working</label>
+                    <label for="defaultFollowUpBehavior" data-i18n="While Live Smith is working">While Live Smith is working</label>
                   </div>
                   <select id="defaultFollowUpBehavior" name="defaultFollowUpBehavior" onchange="LiveSmithUI.saveDefaultFollowUpBehavior()">
-                    <option value="queue">Queue after response</option>
-                    <option value="steer">Steer current response</option>
+                    <option value="queue" data-i18n="Queue after response">Queue after response</option>
+                    <option value="steer" data-i18n="Steer current response">Steer current response</option>
                   </select>
                 </div>
                 <label class="context-usage-setting" for="showContextUsage">
                   <input id="showContextUsage" name="showContextUsage" type="checkbox" onchange="LiveSmithUI.saveContextUsageVisibility()" />
-                  <span>Show context meter</span>
+                  <span data-i18n="Show context meter">Show context meter</span>
                 </label>
               </section>
               <section id="networkSettingsSection" class="settings-section" aria-labelledby="networkSettingsHeading">
-                <h3 id="networkSettingsHeading">Network Proxy</h3>
+                <h3 id="networkSettingsHeading" data-i18n="Network Proxy">Network Proxy</h3>
                 <div class="network-proxy-panel">
                   <div class="field-label-row">
-                    <span id="networkProxyModeLabel" class="network-proxy-control-label">Proxy mode</span>
+                    <span id="networkProxyModeLabel" class="network-proxy-control-label" data-i18n="Proxy mode">Proxy mode</span>
                   </div>
                   <fieldset id="networkProxyMode" class="network-proxy-mode" aria-labelledby="networkProxyModeLabel">
-                    <legend class="visually-hidden">Proxy mode</legend>
+                    <legend class="visually-hidden" data-i18n="Proxy mode">Proxy mode</legend>
                     <label class="network-proxy-option" for="networkProxyModeNone">
                       <input id="networkProxyModeNone" name="networkProxyMode" type="radio" value="none" onchange="LiveSmithUI.handleNetworkProxyModeChange()" checked />
-                      <span class="network-proxy-option-label">No proxy</span>
+                      <span class="network-proxy-option-label" data-i18n="No proxy">No proxy</span>
                     </label>
                     <label class="network-proxy-option" for="networkProxyModeSystem">
                       <input id="networkProxyModeSystem" name="networkProxyMode" type="radio" value="system" onchange="LiveSmithUI.handleNetworkProxyModeChange()" />
-                      <span class="network-proxy-option-label">System</span>
+                      <span class="network-proxy-option-label" data-i18n="System">System</span>
                     </label>
                     <label class="network-proxy-option" for="networkProxyModeManual">
                       <input id="networkProxyModeManual" name="networkProxyMode" type="radio" value="manual" onchange="LiveSmithUI.handleNetworkProxyModeChange()" />
-                      <span class="network-proxy-option-label">Manual</span>
+                      <span class="network-proxy-option-label" data-i18n="Manual">Manual</span>
                     </label>
                   </fieldset>
                   <span id="networkProxyHint" class="field-hint" role="status" aria-live="polite" hidden></span>
                   <div class="network-proxy-commit">
                     <div id="networkProxyUrlField" class="field network-proxy-url-field" hidden>
-                      <label class="visually-hidden" for="networkProxyUrl">Proxy URL</label>
-                      <input id="networkProxyUrl" name="networkProxyUrl" type="url" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Enter proxy URL…" aria-describedby="networkProxyUrlHint" oninput="LiveSmithUI.handleNetworkProxyUrlInput()" />
+                      <label class="visually-hidden" for="networkProxyUrl" data-i18n="Proxy URL">Proxy URL</label>
+                      <input id="networkProxyUrl" name="networkProxyUrl" type="url" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Enter proxy URL…" aria-describedby="networkProxyUrlHint" oninput="LiveSmithUI.handleNetworkProxyUrlInput()"  data-i18n-placeholder="Enter proxy URL…"/>
                     </div>
-                    <button id="applyNetworkProxyButton" class="network-proxy-apply" type="button" data-busy-label="Applying…" onclick="LiveSmithUI.saveNetworkProxySettings()" disabled>Apply Proxy</button>
-                    <span id="networkProxyUrlHint" class="field-hint network-proxy-url-hint" hidden>HTTP(S) or SOCKS(5), without credentials.</span>
+                    <button id="applyNetworkProxyButton" class="network-proxy-apply" type="button" data-busy-label="Applying…" onclick="LiveSmithUI.saveNetworkProxySettings()" disabled data-i18n="Apply Proxy">Apply Proxy</button>
+                    <span id="networkProxyUrlHint" class="field-hint network-proxy-url-hint" hidden data-i18n="HTTP(S) or SOCKS(5), without credentials.">HTTP(S) or SOCKS(5), without credentials.</span>
                   </div>
                 </div>
               </section>
@@ -4152,11 +4159,11 @@
     </div>
     <div id="appConfirmation" class="app-confirmation-layer" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmationTitle" aria-describedby="appConfirmationMessage" hidden>
       <section class="app-confirmation-card">
-        <h2 id="appConfirmationTitle">Confirm action</h2>
+        <h2 id="appConfirmationTitle" data-i18n="Confirm action">Confirm action</h2>
         <p id="appConfirmationMessage"></p>
         <div class="app-confirmation-actions">
-          <button id="appConfirmationCancel" class="secondary" type="button">Cancel</button>
-          <button id="appConfirmationAccept" class="primary" type="button">Continue</button>
+          <button id="appConfirmationCancel" class="secondary" type="button" data-i18n="Cancel">Cancel</button>
+          <button id="appConfirmationAccept" class="primary" type="button" data-i18n="Continue">Continue</button>
         </div>
       </section>
     </div>

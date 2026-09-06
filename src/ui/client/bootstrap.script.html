@@ -1,11 +1,13 @@
       (function bootstrapLiveSmithUI() {
+        const i18n = window.LiveSmithI18n;
+        const t = (sourceEnglish, namedParams) => window.LiveSmithI18n.t(sourceEnglish, namedParams);
         const factories = window.LiveSmithFactories;
-        if (!factories) throw new Error("Live Smith UI factories are missing.");
+        if (!factories) throw new Error(t("Live Smith UI factories are missing."));
 
         let applicationState = window.__LIVE_SMITH_STATE__;
         const bridgeConfig = window.__LIVE_SMITH_BRIDGE__;
         const hostAdapter = window.LiveSmithHostAdapter;
-        if (!hostAdapter) throw new Error("Live Smith host adapter is missing.");
+        if (!hostAdapter) throw new Error(t("Live Smith host adapter is missing."));
         delete window.__LIVE_SMITH_STATE__;
         delete window.__LIVE_SMITH_BRIDGE__;
         delete window.LiveSmithHostAdapter;
@@ -38,7 +40,7 @@
           sendInProgress: false,
           skillInProgress: false,
         };
-        const contextTokenFormatter = new Intl.NumberFormat();
+        let contextTokenFormatter = new Intl.NumberFormat(i18n.locale);
         const INSPECTOR_DRAWER_MAX_WIDTH = __INSPECTOR_DRAWER_MAX_WIDTH__;
         const editScopeIds = __EDIT_SCOPES__;
         const editScopeLabels = __EDIT_SCOPE_LABELS__;
@@ -82,28 +84,30 @@
           const presentation = {
             canceledFollowUpCount,
             isError: Boolean(isError),
-            message: String(message || ""),
+            message: message || "",
             source,
             stopPhase: Boolean(stopPhase),
-            trailingMessage: String(trailingMessage || ""),
+            trailingMessage: trailingMessage || "",
           };
           if (source === "event-stream") {
             eventStreamOverlay = presentation.message ? presentation : null;
           } else {
             statusUnderlay = presentation;
           }
+          return renderStatusPresentation();
+        }
+
+        function renderStatusPresentation() {
           const visible = statusUnderlay.stopPhase
             ? statusUnderlay
             : eventStreamOverlay || statusUnderlay;
           const cancellation = visible.canceledFollowUpCount > 0
-            ? `${visible.canceledFollowUpCount} queued follow-up${
-                visible.canceledFollowUpCount === 1 ? "" : "s"
-              } canceled because the target Session is no longer available.`
+            ? (visible.canceledFollowUpCount === 1 ? t("{count} queued follow-up canceled because the target Session is no longer available.", { count: visible.canceledFollowUpCount }) : t("{count} queued follow-ups canceled because the target Session is no longer available.", { count: visible.canceledFollowUpCount }))
             : "";
           const renderedMessage = [
-            visible.message,
+            i18n.text(visible.message),
             cancellation,
-            visible.trailingMessage,
+            i18n.text(visible.trailingMessage),
           ]
             .filter(Boolean)
             .join(" ");
@@ -146,29 +150,32 @@
           }
         }
 
+        function renderAppConfirmation() {
+          if (!activeAppConfirmation) return;
+          const { title, message, acceptLabel, danger } = activeAppConfirmation;
+          document.getElementById("appConfirmationTitle").textContent = i18n.text(title);
+          document.getElementById("appConfirmationMessage").textContent = i18n.text(message);
+          const acceptButton = document.getElementById("appConfirmationAccept");
+          acceptButton.textContent = i18n.text(acceptLabel);
+          acceptButton.classList.toggle("stop", danger);
+          document.getElementById("appConfirmationCancel").textContent = t("Cancel");
+        }
+
         function confirmAction({
           title,
           message,
-          acceptLabel = "Continue",
+          acceptLabel = i18n.message("Continue"),
           danger = false,
         }) {
           if (activeAppConfirmation) return Promise.resolve(false);
           const layer = document.getElementById("appConfirmation");
-          document.getElementById("appConfirmationTitle").textContent = title;
-          document.getElementById("appConfirmationMessage").textContent = message;
-          const acceptButton = document.getElementById("appConfirmationAccept");
-          acceptButton.textContent = acceptLabel;
-          acceptButton.classList.toggle("stop", danger);
           const returnFocus = document.activeElement;
           document.querySelector(".app").setAttribute("inert", "");
           layer.hidden = false;
           return new Promise((resolve) => {
-            activeAppConfirmation = {
-              resolve,
-              returnFocus,
-            };
-            document.getElementById("appConfirmationCancel")
-              .focus({ preventScroll: true });
+            activeAppConfirmation = { resolve, returnFocus, title, message, acceptLabel, danger };
+            renderAppConfirmation();
+            document.getElementById("appConfirmationCancel").focus({ preventScroll: true });
           });
         }
 
@@ -223,7 +230,7 @@
             document.querySelector(".app")?.setAttribute("inert", "");
             presentStatus({
               isError: true,
-              message: "Live Smith received invalid initial state. Close and reopen the window before continuing.",
+              message: t("Live Smith received invalid initial state. Close and reopen the window before continuing."),
               source: "initial-state",
             });
           });
@@ -300,9 +307,9 @@
               "textContent",
               running || commandCanStop
                 ? composerOperationState.commandStopInProgress
-                  ? "Stopping…"
-                  : "Stop"
-                : "Send",
+                  ? t("Stopping…")
+                  : t("Stop")
+                : t("Send"),
             );
           }
           setDataIfChanged(
@@ -313,8 +320,8 @@
           toggleClassIfChanged(button, "stop", running || commandCanStop);
           if (running) {
             setPropertyIfChanged(button, "disabled", false);
-            setAttributeIfChanged(button, "aria-label", "Stop current response");
-            setPropertyIfChanged(button, "title", "Stop current response");
+            setAttributeIfChanged(button, "aria-label", t("Stop current response"));
+            setPropertyIfChanged(button, "title", t("Stop current response"));
             if (button.hasAttribute("aria-keyshortcuts")) {
               button.removeAttribute("aria-keyshortcuts");
             }
@@ -331,15 +338,15 @@
               button,
               "aria-label",
               composerOperationState.commandStopInProgress
-                ? "Stopping current operation"
-                : "Stop current operation",
+                ? t("Stopping current operation")
+                : t("Stop current operation"),
             );
             setPropertyIfChanged(
               button,
               "title",
               composerOperationState.commandStopInProgress
-                ? "Stopping current operation…"
-                : "Stop current operation",
+                ? t("Stopping current operation…")
+                : t("Stop current operation"),
             );
             if (button.hasAttribute("aria-keyshortcuts")) {
               button.removeAttribute("aria-keyshortcuts");
@@ -348,7 +355,7 @@
             return;
           }
 
-          setAttributeIfChanged(button, "aria-label", "Send message");
+          setAttributeIfChanged(button, "aria-label", t("Send message"));
           setAttributeIfChanged(
             button,
             "aria-keyshortcuts",
@@ -368,8 +375,8 @@
             composerBlocked || Boolean(profileGate),
           );
           const title = composerBlocked
-            ? "Wait for the current operation to finish."
-            : profileGate || "Send (Cmd/Ctrl+Enter)";
+            ? t("Wait for the current operation to finish.")
+            : profileGate || t("Send (Cmd/Ctrl+Enter)");
           setPropertyIfChanged(button, "title", title);
           presentProfileGate(composerBlocked ? "" : profileGate);
         }
@@ -384,7 +391,7 @@
           if (indicator.hidden !== !visible) indicator.hidden = !visible;
           const usage = bridgeClient.getContextUsage();
           if (!usage) {
-            const unavailable = "Context usage unavailable for the active Session.";
+            const unavailable = t("Context usage unavailable for the active Session.");
             setDataIfChanged(indicator, "state", "unavailable");
             if (indicator.style.getPropertyValue("--context-usage-offset")) {
               indicator.style.removeProperty("--context-usage-offset");
@@ -399,11 +406,7 @@
             Math.max(0, usage.usedTokens / usage.contextWindowTokens * 100),
           );
           const roundedPercentage = Math.round(percentage);
-          const description = `Context usage: ${
-            contextTokenFormatter.format(usage.usedTokens)
-          } of ${
-            contextTokenFormatter.format(usage.contextWindowTokens)
-          } tokens (${roundedPercentage}%). Latest accepted model turn.`;
+          const description = t("Context usage: {usedTokens} of {totalTokens} tokens ({percentage}%). Latest accepted model turn.", { usedTokens: contextTokenFormatter.format(usage.usedTokens), totalTokens: contextTokenFormatter.format(usage.contextWindowTokens), percentage: roundedPercentage });
           setDataIfChanged(indicator, "state", "exact");
           const offset = String(100 - percentage);
           if (indicator.style.getPropertyValue("--context-usage-offset") !== offset) {
@@ -425,18 +428,18 @@
           const title = available ? context.value.title : context.label;
           const range = available ? context.value.range : undefined;
           const origin = available && context.value.origin !== "object"
-            ? "Opening selection"
-            : "Session object";
+            ? t("Opening selection")
+            : t("Session object");
           const location = range
-            ? "Beats " + range.start + "–" + range.end
-            : available ? "" : "Unavailable";
+            ? t("Beats {start}–{end}", { start: range.start, end: range.end })
+            : available ? "" : t("Unavailable");
           setPropertyIfChanged(document.getElementById("liveContextTitle"), "textContent", title);
           setPropertyIfChanged(document.getElementById("liveContextLocation"), "textContent", location);
           const description = available
             ? [origin, title, location, ...context.value.details].filter(Boolean).join(" · ")
-            : title + " · Object unavailable. Open Context for details.";
+            : t("{title} · Object unavailable. Open Context for details.", { title });
           setPropertyIfChanged(button, "title", description);
-          setAttributeIfChanged(button, "aria-label", "Session context: " + description);
+          setAttributeIfChanged(button, "aria-label", t("Session context: {description}", { description }));
         }
 
         function renderContextSummary(summary) {
@@ -447,7 +450,7 @@
           header.className = "context-header inspector-scope-header";
           const heading = document.createElement("h2");
           heading.id = "contextHeading";
-          heading.textContent = "Live Context";
+          heading.textContent = t("Live Context");
           header.append(heading);
           const shell = document.createElement("section");
           shell.className = "context-shell settings-scope";
@@ -461,7 +464,7 @@
           if (!lines.length) {
             const empty = document.createElement("p");
             empty.className = "context-empty";
-            empty.textContent = "No Live context is available for this Session.";
+            empty.textContent = t("No Live context is available for this Session.");
             shell.append(empty);
             context.replaceChildren(shell);
             return;
@@ -534,19 +537,19 @@
         }
 
         function reasoningLabel(reasoning) {
-          if (!reasoning || reasoning.mode === "default") return "Default";
-          if (reasoning.mode === "disabled") return "Off";
-          if (!reasoning.effort) return "Enabled";
+          if (!reasoning || reasoning.mode === "default") return t("Default");
+          if (reasoning.mode === "disabled") return t("Off");
+          if (!reasoning.effort) return t("Enabled");
           const labels = {
-            minimal: "Minimal",
-            low: "Low",
-            medium: "Medium",
-            high: "High",
-            xhigh: "XHigh",
-            max: "Max",
-            ultra: "Ultra",
+            minimal: t("Minimal"),
+            low: t("Low"),
+            medium: t("Medium"),
+            high: t("High"),
+            xhigh: t("XHigh"),
+            max: t("Max"),
+            ultra: t("Ultra"),
           };
-          return labels[reasoning.effort] || "Enabled";
+          return labels[reasoning.effort] || t("Enabled");
         }
 
         function renderSelectOptions(select, rows) {
@@ -584,8 +587,8 @@
             if (!runtime || configuredModels.length === 0) {
               modelRows.push({
                 label: subscriptionCatalogPending
-                  ? "Load models…"
-                  : "Set up Profile",
+                  ? t("Load models…")
+                  : t("Set up Profile"),
                 value: "",
               });
             }
@@ -612,19 +615,19 @@
             );
             const reasoningRows = [];
             if (subscriptionCatalogPending) {
-              reasoningRows.push({ label: "Load capabilities…", value: "" });
+              reasoningRows.push({ label: t("Load capabilities…"), value: "" });
             } else if (efforts.length) {
               reasoningRows.push({
                 label: reasoning?.effort
-                  ? "Default"
+                  ? t("Default")
                   : reasoningLabel(reasoning),
                 value: "",
               });
               for (const effort of efforts) {
                 reasoningRows.push({
                   label: effort === "xhigh"
-                    ? "XHigh"
-                    : effort[0].toUpperCase() + effort.slice(1),
+                    ? t("XHigh")
+                    : t(effort[0].toUpperCase() + effort.slice(1)),
                   value: effort,
                 });
               }
@@ -641,7 +644,7 @@
               }
             } else {
               reasoningRows.push({
-                label: runtime ? reasoningLabel(reasoning) : "No Profile",
+                label: runtime ? reasoningLabel(reasoning) : t("No Profile"),
                 value: "",
               });
             }
@@ -680,15 +683,15 @@
           if (syncState) {
             const selectedLabel = configuredModels.find(
               (configured) => configured.model === selectedModel,
-            )?.label || selectedModel || "Set up Profile";
+            )?.label || selectedModel || t("Set up Profile");
             const modelTitle = runtime
               ? subscriptionCatalogPending
-                ? `${runtime.profile.name} · ${selectedLabel} · Open to load capabilities`
+                ? t("{profileName} · {modelLabel} · Open to load capabilities", { profileName: runtime.profile.name, modelLabel: selectedLabel })
                 : `${runtime.profile.name} · ${selectedLabel}`
-              : "Configure a model Profile in Agent";
+              : t("Configure a model Profile in Agent");
             const reasoningTitle = runtime
-              ? `Reasoning · ${reasoningLabel(reasoning)}`
-              : "Reasoning unavailable";
+              ? t("Reasoning · {reasoning}", { reasoning: reasoningLabel(reasoning) })
+              : t("Reasoning unavailable");
             setPropertyIfChanged(modelSelect, "title", modelTitle);
             setPropertyIfChanged(reasoningSelect, "title", reasoningTitle);
           }
@@ -756,8 +759,8 @@
           pane.hidden = sessionsPaneCollapsed;
           toggle.setAttribute("aria-expanded", String(!sessionsPaneCollapsed));
           const label = sessionsPaneCollapsed
-            ? "Show Sessions"
-            : "Collapse Sessions";
+            ? t("Show Sessions")
+            : t("Collapse Sessions");
           toggle.setAttribute("aria-label", label);
           toggle.title = label;
           if (sessionsPaneCollapsed && focusWasInside) {
@@ -794,7 +797,7 @@
           settingsButton.setAttribute("aria-expanded", String(open));
           settingsButton.setAttribute(
             "aria-label",
-            open ? "Close Inspector" : "Open Inspector",
+            open ? t("Close Inspector") : t("Open Inspector"),
           );
           synchronizeInspectorDrawerIsolation();
           if (focusWasInside) settingsButton.focus({ preventScroll: true });
@@ -817,25 +820,23 @@
           const draftDirty = profileEditor.getDraftState().dirty;
           const queuedFollowUpCount = bridgeClient.getQueuedFollowUpCount();
           const queuedFollowUpWarning = queuedFollowUpCount
-            ? ` ${queuedFollowUpCount} queued follow-up${
-                queuedFollowUpCount === 1 ? "" : "s"
-              } will be discarded.`
+            ? (queuedFollowUpCount === 1 ? i18n.message(" {count} queued follow-up will be discarded.", { count: queuedFollowUpCount }) : i18n.message(" {count} queued follow-ups will be discarded.", { count: queuedFollowUpCount }))
             : "";
           const warning = operationActive && draftDirty
-            ? `Close Live Smith and discard unsaved Profile changes? The current operation will stop where possible; completed changes stay saved.${queuedFollowUpWarning}`
+            ? i18n.message("Close Live Smith and discard unsaved Profile changes? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning: queuedFollowUpWarning })
             : operationActive
-              ? `Close Live Smith? The current operation will stop where possible; completed changes stay saved.${queuedFollowUpWarning}`
+              ? i18n.message("Close Live Smith? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning: queuedFollowUpWarning })
               : draftDirty
-                ? "Discard unsaved Profile changes and close Live Smith?"
+                ? i18n.message("Discard unsaved Profile changes and close Live Smith?")
                 : "";
           if (warning) {
             bridgeClient.setCloseDecisionPending(true);
             let accepted = false;
             try {
               accepted = await confirmAction({
-                title: "Close Live Smith?",
+                title: window.LiveSmithI18n.message("Close Live Smith?"),
                 message: warning,
-                acceptLabel: "Close",
+                acceptLabel: window.LiveSmithI18n.message("Close"),
               });
             } finally {
               if (!accepted) bridgeClient.setCloseDecisionPending(false);
@@ -883,10 +884,10 @@
 
         function editScopesSummary(scopes) {
           return scopes.length === editScopeIds.length
-            ? "All"
+            ? t("All")
             : scopes.length === 0
-              ? "Read only"
-              : scopes.map((scope) => editScopeLabels[scope]).join(", ");
+              ? t("Read only")
+              : scopes.map((scope) => t(editScopeLabels[scope])).join(", ");
         }
 
         function closeEditScopes(restoreFocus = true) {
@@ -899,25 +900,43 @@
         }
 
         function renderEditScopes() {
+          for (const scope of editScopeIds) {
+            const control = document.getElementById(`editScope-${scope}`);
+            if (!control) continue;
+            setAttributeIfChanged(control, "aria-label", t(editScopeLabels[scope]));
+            setPropertyIfChanged(control.parentElement, "title", t(editScopeLabels[scope]));
+            const caption = control.parentElement.querySelector("[data-scope-caption]");
+            if (caption) setPropertyIfChanged(caption, "textContent", t(editScopeShortLabels[scope]));
+          }
+          for (const [id, message] of [
+            ["editScopeDevicesHelp", "Instruments, effects, Racks, Drum Pads, and Simpler sample changes."],
+            ["editScopeStructureHelp", "Tracks, Scenes, Cue Points, Take Lanes, and tempo. Deleting or duplicating a container also needs permission for its contents."],
+          ]) {
+            const help = document.getElementById(id);
+            if (help) {
+              setAttributeIfChanged(help, "aria-label", t(message));
+              setDataIfChanged(help, "tooltip", t(message));
+            }
+          }
           const sessionId = getState().activeSessionId;
           if (permissionsSessionId && permissionsSessionId !== sessionId) {
             closeEditScopes(false);
           }
           const scopes = savedEditScopes();
           const summary = editScopesSummary(scopes);
-          const label = !scopes.length ? "Read only"
-            : scopes.length === editScopeIds.length ? "All scopes"
-              : scopes.length === 1 ? editScopeShortLabels[scopes[0]] : `${scopes.length} scopes`;
+          const label = !scopes.length ? t("Read only")
+            : scopes.length === editScopeIds.length ? t("All scopes")
+              : scopes.length === 1 ? t(editScopeShortLabels[scopes[0]]) : t("{count} scopes", { count: scopes.length });
           const accessibleSummary = scopes.length === editScopeIds.length ? label
             : scopes.length > 1 ? `${label} (${summary})` : summary;
           const button = document.getElementById("editScopeButton");
           setPropertyIfChanged(button, "textContent", label);
-          setAttributeIfChanged(button, "aria-label", `Edit scope: ${accessibleSummary}`);
-          setAttributeIfChanged(button, "title", `Edit scope: ${summary}`);
+          setAttributeIfChanged(button, "aria-label", t("Edit scope: {summary}", { summary: accessibleSummary }));
+          setAttributeIfChanged(button, "title", t("Edit scope: {summary}", { summary: summary }));
           setPropertyIfChanged(
             document.getElementById("editScopeSavedSummary"),
             "textContent",
-            `Saved: ${summary}`,
+            t("Saved: {summary}", { summary: summary }),
           );
           const displayedScopes = pendingEditScopes?.sessionId === sessionId
             ? pendingEditScopes.scopes : scopes;
@@ -945,7 +964,7 @@
           setAttributeIfChanged(document.getElementById("editScopeReadOnlyButton"), "aria-disabled",
             String(disabled || scopeSaving || scopes.length === 0));
           const status = document.getElementById("permissionsSaveStatus");
-          setPropertyIfChanged(status, "textContent", scopeSaving ? "Saving…" : "");
+          setPropertyIfChanged(status, "textContent", scopeSaving ? t("Saving…") : "");
           setPropertyIfChanged(status, "hidden", !scopeSaving);
         }
 
@@ -1004,20 +1023,23 @@
             control.id = `editScope-${scope}`;
             control.name = "editScopes";
             control.value = scope;
-            control.setAttribute("aria-label", editScopeLabels[scope]);
-            label.title = editScopeLabels[scope];
+            control.setAttribute("aria-label", t(editScopeLabels[scope]));
+            label.title = t(editScopeLabels[scope]);
             control.addEventListener("change", () => {
               if (control.disabled) return;
               void saveEditScopes(editScopeIds.filter((id) =>
                 document.getElementById(`editScope-${id}`).checked
               ), control);
             });
-            label.append(control, document.createTextNode(editScopeShortLabels[scope]));
+            const caption = document.createElement("span");
+            caption.dataset.scopeCaption = scope;
+            caption.textContent = t(editScopeShortLabels[scope]);
+            label.append(control, caption);
             row.append(label);
             const helpText = scope === "devices"
-              ? "Instruments, effects, Racks, Drum Pads, and Simpler sample changes."
+              ? t("Instruments, effects, Racks, Drum Pads, and Simpler sample changes.")
               : scope === "structure"
-                ? "Tracks, Scenes, Cue Points, Take Lanes, and tempo. Deleting or duplicating a container also needs permission for its contents."
+                ? t("Tracks, Scenes, Cue Points, Take Lanes, and tempo. Deleting or duplicating a container also needs permission for its contents.")
                 : null;
             if (helpText) {
               const help = document.createElement("span");
@@ -1060,8 +1082,21 @@
           document.addEventListener("click", dismissEditScopesOutside);
         }
 
-        function renderApplication() {
-          renderStateStatus();
+        function renderApplication({ preserveStatus = false } = {}) {
+          const localeChanged = i18n.configure(getState().settings?.uiLanguage ?? "system");
+          if (localeChanged) {
+            i18n.apply();
+            renderAppConfirmation();
+            renderedContextSummary = null;
+            contextTokenFormatter = new Intl.NumberFormat(i18n.locale);
+            profileEditor.refreshLocale?.();
+            composerInput.refreshLocale();
+            setInspectorOpen(!document.getElementById("inspectorPane").hidden);
+            setSessionsPaneCollapsed(sessionsPaneCollapsed);
+            renderActiveCommandFeedback();
+          }
+          if (preserveStatus) renderStatusPresentation();
+          else renderStateStatus();
           renderContextSummary(getState().contextSummary || "");
           renderLiveContext();
           renderComposerRuntimeControls();
@@ -1170,83 +1205,83 @@
           }
         }
 
-        const commandFeedback = {
+        const commandFeedback = () => ({
           save_profile: {
             controlId: "saveProfileButton",
-            busyLabel: "Saving…",
-            status: "Saving Profile…",
+            busyLabel: t("Saving…"),
+            status: t("Saving Profile…"),
           },
           discover_models: {
             controlId: "discoverModelsButton",
-            busyLabel: "Loading…",
-            status: "Loading Models…",
+            busyLabel: t("Loading…"),
+            status: t("Loading Models…"),
           },
           delete_profile: {
             controlId: "deleteProfileButton",
-            busyLabel: "Deleting…",
-            status: "Deleting Profile…",
+            busyLabel: t("Deleting…"),
+            status: t("Deleting Profile…"),
           },
           activate_profile: {
-            busyAriaLabel: "Switching Profile…",
+            busyAriaLabel: t("Switching Profile…"),
             controlId: "profileSelector",
-            status: "Switching Profile…",
+            status: t("Switching Profile…"),
           },
           set_session_approval_mode: {
-            busyAriaLabel: "Saving Approval Mode…",
+            busyAriaLabel: t("Saving Approval Mode…"),
             controlId: "approvalMode",
           },
           set_session_edit_scopes: {
-            busyAriaLabel: "Saving Edit Scope…",
+            busyAriaLabel: t("Saving Edit Scope…"),
           },
           set_session_model_selection: {
-            busyAriaLabel: "Saving Session model selection…",
+            busyAriaLabel: t("Saving Session model selection…"),
           },
           session_model_selection_refresh: {
-            status: "Refreshing the Session model after an external change…",
+            status: t("Refreshing the Session model after an external change…"),
           },
           global_state_refresh: {
-            status: "Refreshing settings and Skills after an external change…",
+            status: t("Refreshing settings and Skills after an external change…"),
           },
           event_stream_refresh: {},
           save_global_settings: {
-            status: "Saving settings…",
+            status: t("Saving settings…"),
           },
           start_oauth_login: {
             controlId: "oauthSignInButton",
-            busyLabel: "Starting…",
-            status: "Starting account sign-in…",
+            busyLabel: t("Starting…"),
+            status: t("Starting account sign-in…"),
           },
           refresh_oauth_account: {
             controlId: "oauthCheckAccountButton",
-            busyLabel: "Checking…",
-            status: "Checking account sign-in…",
+            busyLabel: t("Checking…"),
+            status: t("Checking account sign-in…"),
           },
           open_oauth_authorization: {
-            status: "Opening the account page…",
+            status: t("Opening the account page…"),
           },
           submit_oauth_authorization_code: {
             controlId: "oauthSubmitCodeButton",
-            busyLabel: "Submitting…",
-            status: "Submitting Antigravity authorization code…",
+            busyLabel: t("Submitting…"),
+            status: t("Submitting Antigravity authorization code…"),
           },
           logout_oauth: {
             controlId: "oauthLogoutButton",
-            busyLabel: "Signing out…",
-            status: "Ending the account session…",
+            busyLabel: t("Signing out…"),
+            status: t("Ending the account session…"),
           },
           new_session: {
             busyLabel: "…",
             controlId: "newSessionButton",
-            status: "Creating Session…",
+            status: t("Creating Session…"),
           },
-          compact_session: { status: "Compacting Session context…" },
-          restore_session: { busyLabel: "Restoring…", status: "Restoring Session…" },
-          delete_session: { status: "Deleting Session…" },
-          rename_session: { status: "Renaming Session…" },
-          archive_session: { status: "Archiving Session…" },
-          unarchive_session: { status: "Returning Session…" },
-          set_session_skills: { status: "Updating Session Skills…" },
-        };
+          compact_session: { status: t("Compacting Session context…") },
+          restore_session: { busyLabel: t("Restoring…"), status: t("Restoring Session…") },
+          delete_session: { status: t("Deleting Session…") },
+          rename_session: { status: t("Renaming Session…") },
+          archive_session: { status: t("Archiving Session…") },
+          unarchive_session: { status: t("Returning Session…") },
+          set_session_skills: { status: t("Updating Session Skills…") },
+        });
         let activeCommandControl = null;
         let activeCommandAriaLabel = null;
         let activeCommandAriaWasChanged = false;
@@ -1301,11 +1336,28 @@
           }
         }
 
+        function renderActiveCommandFeedback() {
+          const feedback = activeCommandKind ? commandFeedback()[activeCommandKind] : null;
+          if (!feedback) return;
+          if (activeCommandControl) {
+            const source = activeCommandControl.dataset.i18n;
+            if (activeCommandControl.dataset.commandIdleLabel) {
+              activeCommandControl.dataset.commandIdleLabel = activeCommandControl.dataset.idleLabel ||
+                (source ? t(source) : activeCommandControl.dataset.commandIdleLabel);
+            }
+            const label = activeCommandControl.dataset.busyLabel
+              ? t(activeCommandControl.dataset.busyLabel) : feedback.busyLabel;
+            if (label) activeCommandControl.textContent = label;
+            if (feedback.busyAriaLabel) activeCommandControl.setAttribute("aria-label", feedback.busyAriaLabel);
+          }
+          if (feedback.status) bridgeClient.showStatus(feedback.status);
+        }
+
         function updateCommandFeedback(kind) {
           if (kind === activeCommandKind) return;
           restoreCommandFeedback();
           activeCommandKind = kind;
-          const feedback = kind ? commandFeedback[kind] : null;
+          const feedback = kind ? commandFeedback()[kind] : null;
           if (!feedback) return;
           const scopeChange = kind === "set_session_edit_scopes" ? pendingEditScopes : null;
           const focusedControl = scopeChange?.control || (document.activeElement?.matches(
@@ -1326,7 +1378,7 @@
               scopeChange,
             };
           }
-          const busyLabel = activeCommandControl?.dataset.busyLabel ||
+          const busyLabel = activeCommandControl?.dataset.busyLabel ? t(activeCommandControl.dataset.busyLabel) :
             feedback.busyLabel;
           if (activeCommandControl && busyLabel) {
             activeCommandControl.dataset.commandIdleLabel =
@@ -1351,6 +1403,7 @@
           sendInProgress,
           skillInProgress,
           networkProxyDirty,
+          uiLanguageSaving,
         }) {
           composerOperationState = {
             attachmentInProgress,
@@ -1403,6 +1456,8 @@
           syncProfileSettingsLock(settingsBusy);
           const sessionSettingDisabled = Boolean(commandKind) || attachmentInProgress ||
             skillInProgress;
+          setPropertyIfChanged(document.getElementById("uiLanguage"), "disabled",
+            sessionSettingDisabled || uiLanguageSaving);
           if (approvalMode.disabled !== sessionSettingDisabled) {
             approvalMode.disabled = sessionSettingDisabled;
           }
@@ -1525,6 +1580,7 @@
           saveApprovalMode: profileEditor.saveApprovalMode,
           saveContextUsageVisibility: bridgeClient.saveContextUsageVisibility,
           saveDefaultFollowUpBehavior: bridgeClient.saveDefaultFollowUpBehavior,
+          setUiLanguage: bridgeClient.setUiLanguage,
           saveNetworkProxySettings: bridgeClient.saveNetworkProxySettings,
           saveProfile: profileEditor.saveProfile,
           submitOAuthAuthorizationCode:
@@ -1551,6 +1607,9 @@
           setInspectorOpen(Boolean(getState().openSettingsOnLoad || !activeProfile()));
           sessionTimeline.switchInspectorTab("agent");
           window.addEventListener("resize", synchronizeInspectorDrawerIsolation);
+          window.addEventListener("languagechange", () => {
+            if (i18n.preference === "system") renderApplication({ preserveStatus: true });
+          });
           const prompt = document.getElementById("prompt");
           prompt.value = "";
           prompt.addEventListener("input", bridgeClient.handleComposerInput);

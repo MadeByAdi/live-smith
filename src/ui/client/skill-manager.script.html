@@ -8,6 +8,7 @@
         showStatus,
         updateComposerAutocomplete,
       }) {
+      const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const maxActiveSkills = __MAX_ACTIVE_SKILL_COUNT__;
       const maxSkillFileBytes = __MAX_SKILL_FILE_BYTES__;
       const builtInDefinitions = new Map(
@@ -74,7 +75,7 @@
         if (!definition) return;
         const body = document.getElementById("skillViewerBody");
         document.getElementById("skillViewerId").textContent = definition.id;
-        document.getElementById("skillViewerDescription").textContent = definition.description;
+        document.getElementById("skillViewerDescription").textContent = t(definition.description);
         try {
           const renderer = window.LiveSmithMarkdown;
           if (typeof renderer?.renderInto !== "function") throw new Error("Markdown unavailable");
@@ -112,7 +113,7 @@
         const toggle = document.createElement("input");
         toggle.type = "checkbox";
         toggle.checked = active.has(skill.id);
-        toggle.setAttribute("aria-label", `Use Skill ${skill.id} in this Session`);
+        toggle.setAttribute("aria-label", t("Use Skill {id} in this Session", { id: skill.id }));
         toggle.addEventListener("change", () => {
           void toggleSkill(skill.id, toggle.checked);
         });
@@ -122,7 +123,7 @@
         id.setAttribute("translate", "no");
         id.textContent = skill.id;
         const description = document.createElement("span");
-        description.textContent = skill.description;
+        description.textContent = skill.source === "built-in" ? t(skill.description) : skill.description;
         copy.append(id, description);
         toggleLabel.append(toggle, copy);
         row.append(toggleLabel);
@@ -131,8 +132,8 @@
           const view = document.createElement("button");
           view.type = "button";
           view.className = "skill-view secondary";
-          view.textContent = "View";
-          view.setAttribute("aria-label", `View Skill ${skill.id}`);
+          view.textContent = t("View");
+          view.setAttribute("aria-label", t("View Skill {id}", { id: skill.id }));
           view.addEventListener("click", () => openSkillViewer(skill.id));
           row.append(view);
         }
@@ -141,15 +142,15 @@
           remove.type = "button";
           remove.className = "skill-delete secondary";
           const inUse = usedSkillIds.has(skill.id);
-          remove.textContent = inUse ? "Disable" : "Delete";
+          remove.textContent = inUse ? t("Disable") : t("Delete");
           remove.title = inUse
-            ? "Disable this Skill in every Session before deleting it."
-            : `Delete Skill ${skill.id}`;
+            ? t("Disable this Skill in every Session before deleting it.")
+            : t("Delete Skill {id}", { id: skill.id });
           remove.setAttribute(
             "aria-label",
             inUse
-              ? `Disable Skill ${skill.id} in every Session`
-              : `Delete Skill ${skill.id}`,
+              ? t("Disable Skill {id} in every Session", { id: skill.id })
+              : t("Delete Skill {id}", { id: skill.id }),
           );
           remove.addEventListener("click", () => {
             if (inUse) void disableSkillEverywhere(skill.id);
@@ -174,6 +175,7 @@
           allSessions().flatMap((session) => session.activeSkillIds || []),
         );
         const renderKey = JSON.stringify({
+          locale: window.LiveSmithI18n.locale,
           available,
           activeSkillIds: [...(state.activeSkillIds || [])].sort(),
           usedSkillIds: [...usedSkillIds].sort(),
@@ -228,7 +230,7 @@
         if (enabled) current.add(skillId);
         else current.delete(skillId);
         if (current.size > maxActiveSkills) {
-          showStatus(`A Session can use at most ${maxActiveSkills} Skills.`, true);
+          showStatus(t("A Session can use at most {maxActiveSkills} Skills.", { maxActiveSkills: maxActiveSkills }), true);
           render(true);
           return;
         }
@@ -241,14 +243,14 @@
 
       async function removeSkill(skillId) {
         if (skillIsUsed(skillId)) {
-          showStatus("Remove this Skill from every Session before deleting it.", true);
+          showStatus(t("Remove this Skill from every Session before deleting it."), true);
           render(true);
           return;
         }
         if (!(await confirmAction({
-          title: "Delete Skill?",
-          message: `Delete installed Skill ${skillId}? This cannot be undone.`,
-          acceptLabel: "Delete",
+          title: window.LiveSmithI18n.message("Delete Skill?"),
+          message: window.LiveSmithI18n.message("Delete installed Skill {skillId}? This cannot be undone.", { skillId: skillId }),
+          acceptLabel: window.LiveSmithI18n.message("Delete"),
           danger: true,
         }))) return;
         try {
@@ -258,8 +260,8 @@
           );
           showStatus(
             builtInRestored
-              ? `User Skill ${skillId} deleted. The built-in Skill is available again.`
-              : `User Skill ${skillId} deleted.`,
+              ? t("User Skill {skillId} deleted. The built-in Skill is available again.", { skillId: skillId })
+              : t("User Skill {skillId} deleted.", { skillId: skillId }),
           );
         } catch (error) {
           showStatus(error.message || String(error), true);
@@ -275,11 +277,11 @@
           return;
         }
         if (!(await confirmAction({
-          title: "Disable Skill everywhere?",
-          message: `Disable Skill ${skillId} in ${sessions.length} Session${
-            sessions.length === 1 ? "" : "s"
-          }?`,
-          acceptLabel: "Disable",
+          title: window.LiveSmithI18n.message("Disable Skill everywhere?"),
+          message: sessions.length === 1
+            ? window.LiveSmithI18n.message("Disable Skill {skillId} in {count} Session?", { skillId, count: sessions.length })
+            : window.LiveSmithI18n.message("Disable Skill {skillId} in {count} Sessions?", { skillId, count: sessions.length }),
+          acceptLabel: window.LiveSmithI18n.message("Disable"),
         }))) return;
         for (const session of sessions) {
           const changed = await runCommand("set_session_skills", {
@@ -290,31 +292,31 @@
           });
           if (!changed) return;
         }
-        showStatus(`Skill ${skillId} disabled in every Session.`);
+        showStatus(t("Skill {skillId} disabled in every Session.", { skillId: skillId }));
       }
 
       async function importSkillFile(file) {
         if (!file) return null;
         if (file.size === 0 || file.size > maxSkillFileBytes) {
           showStatus(
-            `SKILL.md must contain 1-${maxSkillFileBytes} UTF-8 bytes.`,
+            t("SKILL.md must contain 1-{maxSkillFileBytes} UTF-8 bytes.", { maxSkillFileBytes: maxSkillFileBytes }),
             true,
           );
           return null;
         }
         try {
           const receipt = await installSkill(file, false);
-          showStatus(`Skill ${receipt.id} installed.`);
+          showStatus(t("Skill {id} installed.", { id: receipt.id }));
           return receipt;
         } catch (error) {
           if (error.httpStatus === 409 && (await confirmAction({
-            title: "Replace installed Skill?",
-            message: "A Skill with this ID is already installed. Replace it with the incoming definition?",
-            acceptLabel: "Replace",
+            title: window.LiveSmithI18n.message("Replace installed Skill?"),
+            message: window.LiveSmithI18n.message("A Skill with this ID is already installed. Replace it with the incoming definition?"),
+            acceptLabel: window.LiveSmithI18n.message("Replace"),
           }))) {
             try {
               const receipt = await installSkill(file, true);
-              showStatus(`Skill ${receipt.id} replaced.`);
+              showStatus(t("Skill {id} replaced.", { id: receipt.id }));
               return receipt;
             } catch (replacementError) {
               showStatus(replacementError.message || String(replacementError), true);
@@ -425,7 +427,7 @@
           dropZone.classList.remove("drop-target");
           if (busy) return;
           if (files.length !== 1) {
-            showStatus("Drop one SKILL.md file at a time.", true);
+            showStatus(t("Drop one SKILL.md file at a time."), true);
             return;
           }
           void importSkillFile(files[0]);

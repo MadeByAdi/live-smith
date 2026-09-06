@@ -2138,6 +2138,8 @@ export async function runAgentFlow(
                   }
                 : "showContextUsage" in commandInput
                 ? { showContextUsage: commandInput.showContextUsage }
+                : "uiLanguage" in commandInput
+                ? { uiLanguage: commandInput.uiLanguage }
                 : { networkProxy: commandInput.networkProxy },
             );
             publishGlobalSettingsChange(storageDirectory, {
@@ -2149,6 +2151,8 @@ export async function runAgentFlow(
                 settings.contextUsageVisibilityRevision,
               networkProxy: settings.networkProxy,
               networkProxyRevision: settings.networkProxyRevision,
+              uiLanguage: settings.uiLanguage,
+              uiLanguageRevision: settings.uiLanguageRevision,
               commandId: commandContext.commandId,
             });
             status = "Global settings saved.";
@@ -2169,6 +2173,8 @@ export async function runAgentFlow(
                   settings.contextUsageVisibilityRevision,
                 networkProxy: settings.networkProxy,
                 networkProxyRevision: settings.networkProxyRevision,
+                uiLanguage: settings.uiLanguage,
+                uiLanguageRevision: settings.uiLanguageRevision,
                 commandId: commandContext.commandId,
               });
             } catch {

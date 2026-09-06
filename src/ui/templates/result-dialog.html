@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#292929" />
-    <title>Live Smith Result</title>
+    <title data-i18n="Live Smith Result">Live Smith Result</title>
     <script>
       __HOST_ADAPTER_SCRIPT__
+      __I18N_SCRIPT__
     </script>
     <style>
       :root {
@@ -93,7 +94,7 @@
       <h1>__TITLE__</h1>
       <pre>__BODY__</pre>
       <div class="actions">
-        <button type="button" onclick="LiveSmithHostAdapter.closeWithResult({ closed: true })">Close</button>
+        <button type="button" onclick="LiveSmithHostAdapter.closeWithResult({ closed: true })" data-i18n="Close">Close</button>
       </div>
     </main>
   </body>

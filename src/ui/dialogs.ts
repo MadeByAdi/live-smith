@@ -8,6 +8,8 @@ import bridgeClientScript from "./client/bridge-client.script.html";
 import sessionTimelineScript from "./client/session-timeline.script.html";
 import skillManagerScript from "./client/skill-manager.script.html";
 import actionPreviewScript from "./client/action-preview.script.html";
+import i18nScript from "./client/i18n.script.html";
+import { serializeUiI18nData } from "./i18n/messages.js";
 import bootstrapScript from "./client/bootstrap.script.html";
 import type { ChatBridgeState } from "./chat-state.js";
 import { composeChatDocument } from "./chat-document.js";
@@ -18,6 +20,7 @@ export function resultUrl(title: string, body: string): string {
   return toDataUrl(
     resultDialog
       .replace("__HOST_ADAPTER_SCRIPT__", () => hostAdapterScript)
+      .replace("__I18N_SCRIPT__", () => i18nScript.replace("__UI_I18N__", () => serializeUiI18nData()))
       .replace("__TITLE__", () => escapeHtml(title))
       .replace("__BODY__", () => escapeHtml(body)),
   );
@@ -29,6 +32,7 @@ export function chatHtml(
 ): string {
   return composeChatDocument(chatDialog, state, bridge, {
     actionPreview: actionPreviewScript,
+    i18n: i18nScript,
     attachments: attachmentsScript,
     bootstrap: bootstrapScript,
     bridgeClient: bridgeClientScript,

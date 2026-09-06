@@ -54,6 +54,14 @@ compatibility before writing the bundle to `dist/extension.js`.
 
 ## Verification
 
+To add an interface language, register its canonical locale ID, native name, and
+system-language aliases in `src/i18n/languages.ts`, then add its message catalog to
+`uiCatalogs` in `src/ui/i18n/messages.ts`. Preserve named interpolation fields and
+keep raw object names and model content out of translation keys. The language
+picker, settings type, and client/server validation derive from the registry;
+they do not need per-language changes. Catalog tests check translated coverage
+and interpolation fields for every registered non-English locale.
+
 Run the required checks before handing off changes:
 
 ```sh
@@ -71,7 +79,7 @@ credentials or call a model provider. Focused suites are available as
 After editing dialog client fragments, also check the composed JavaScript:
 
 ```sh
-node -e "const fs=require('fs');const files=['host-adapter','profile-editor','attachments','composer-input','skill-manager','bridge-client','session-timeline','action-preview','bootstrap'];new Function(files.map((name)=>fs.readFileSync('src/ui/client/'+name+'.script.html','utf8')).join('\\n'));"
+node -e "const fs=require('fs');const files=['host-adapter','i18n','profile-editor','attachments','composer-input','skill-manager','bridge-client','session-timeline','action-preview','bootstrap'];new Function(files.map((name)=>fs.readFileSync('src/ui/client/'+name+'.script.html','utf8')).join('\\n'));"
 ```
 
 DOM tests prove interaction and state behavior, not rendered geometry or live

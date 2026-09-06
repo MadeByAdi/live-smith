@@ -826,7 +826,7 @@ for imported files, so a failed later step may leave an unused project copy.
 
 Only profile CRUD/activation and the dedicated global-settings command write the
 settings file. The global command owns the default Queue/Steer follow-up
-behavior, context-usage visibility, and network proxy selection. It applies exactly one setting per
+behavior, context-usage visibility, interface language, and network proxy selection. It applies exactly one setting per
 transaction, advances only that setting's revision, and is allowed while sends
 are active. It broadcasts the complete committed global settings to every open
 dialog for the same storage directory. Sending,
@@ -841,6 +841,35 @@ recomputes it from the current same-ID record before replacement. The dialog
 state projects only the active Profile's revision, so unrelated Profile saves do
 not conflict. A mismatch is recoverable, and one window cannot silently erase
 models or parameters saved by another.
+
+### Interface language
+
+The UI language preference (`system` or a registered locale) has its own decimal revision
+and uses the existing one-setting global command and complete settings events.
+Missing historical language fields resolve to `system` and revision `0` without
+rewriting settings on read. Language never changes model prompts, connection
+configuration, authorization, or Session ownership.
+
+`src/i18n/languages.ts` is the single language registry. It defines canonical
+locale IDs, native picker labels, system-language aliases, and the fallback
+locale; settings types and validation derive from it. The same registry is
+injected with per-locale catalogs into the client, so its picker and wire
+validation accept the same language IDs. Locale resolution checks exact tags and
+then less-specific tags against the registry. Missing translations fall back to
+the English source message.
+
+`src/ui/i18n/` owns source-message catalogs with named interpolation fields. The
+composed client injects escaped catalog data into a dedicated translator. Only
+explicitly marked authored template nodes and UI rendering calls are translated;
+user/model content, SDK names, Skill bodies and raw provider/SDK output remain
+data. Locale refresh updates presentation without replacing drafts. Confirmation
+copy binds interpolation values when the decision opens and can translate those
+same values again while preserving its pending decision.
+
+Language refresh retains Session menu and deletion controls, keyboard focus,
+running status, and command-outcome warnings. Global language values are reapplied
+after Session-causal state merging, and the shared operation state owns the
+language selector's lock.
 
 ### Cross-dialog settings invalidation
 

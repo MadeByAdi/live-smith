@@ -1,3 +1,4 @@
+import { serializeUiI18nData } from "./i18n/messages.js";
 import {
   MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES,
   serializeChatStateForHtml,
@@ -42,6 +43,7 @@ export const INSPECTOR_DRAWER_MAX_WIDTH = 1038;
 
 export interface ChatClientScripts {
   actionPreview: string;
+  i18n: string;
   attachments: string;
   bootstrap: string;
   bridgeClient: string;
@@ -211,6 +213,7 @@ export function composeChatDocument(
     __STATE__: JSON.stringify(serializeChatStateForHtml(state)),
     __BRIDGE__: JSON.stringify(bridge),
     __HOST_ADAPTER_SCRIPT__: scripts.hostAdapter,
+    __I18N_SCRIPT__: scripts.i18n.replace("__UI_I18N__", () => serializeUiI18nData()),
     __PROFILE_EDITOR_SCRIPT__: profileEditorScript,
     __ATTACHMENTS_SCRIPT__: attachmentsScript,
     __COMPOSER_INPUT_SCRIPT__: scripts.composerInput,

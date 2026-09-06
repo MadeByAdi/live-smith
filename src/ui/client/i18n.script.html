@@ -1,0 +1,84 @@
+      window.LiveSmithI18n = (() => {
+        const { defaultLocale, languages: registeredLanguages, catalogs } = __UI_I18N__;
+        let locale;
+        let preference;
+        let staticTargets = null;
+        const attributeMarkers = {
+          "data-i18n-title": "title",
+          "data-i18n-placeholder": "placeholder",
+          "data-i18n-aria-label": "aria-label",
+          "data-i18n-data-tooltip": "data-tooltip",
+          "data-i18n-data-label": "data-label",
+          "data-i18n-data-idle-label": "data-idle-label",
+        };
+        function isLanguage(value) {
+          return value === "system" || registeredLanguages.some(language => language.id === value);
+        }
+        function resolve(value) {
+          if (value !== "system" && isLanguage(value)) return value;
+          const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
+          for (const language of languages) {
+            let candidate = String(language || "").toLowerCase();
+            while (candidate) {
+              const match = registeredLanguages.find(entry => entry.id.toLowerCase() === candidate) ||
+                registeredLanguages.find(entry => entry.aliases.some(alias => alias.toLowerCase() === candidate));
+              if (match) return match.id;
+              const separator = candidate.lastIndexOf("-");
+              candidate = separator < 0 ? "" : candidate.slice(0, separator);
+            }
+          }
+          return defaultLocale;
+        }
+        function configure(value = "system") {
+          preference = isLanguage(value) ? value : "system";
+          const next = resolve(preference);
+          const changed = next !== locale;
+          locale = next;
+          document.documentElement.lang = locale;
+          return changed;
+        }
+        function t(source, values = {}) {
+          const messages = catalogs[locale] || {};
+          const translated = Object.hasOwn(messages, source) ? messages[source] : source;
+          return translated.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g,
+            (match, key) => Object.hasOwn(values, key) ? String(values[key] ?? "") : match);
+        }
+        function message(source, values = {}) {
+          const captured = Object.fromEntries(Object.entries(values).map(([key, value]) =>
+            [key, typeof value === "function" ? value : String(value ?? "")]));
+          return () => t(source, Object.fromEntries(Object.entries(captured).map(([key, value]) =>
+            [key, typeof value === "function" ? value() : value])));
+        }
+        function text(value) { return typeof value === "function" ? value() : String(value ?? ""); }
+        function apply() {
+          if (staticTargets === null) {
+            const picker = document.getElementById("uiLanguage");
+            if (picker) {
+              for (const language of registeredLanguages) {
+                const option = document.createElement("option");
+                option.value = language.id;
+                option.textContent = language.nativeName;
+                picker.append(option);
+              }
+            }
+            const selectors = ["[data-i18n]", ...Object.keys(attributeMarkers).map(key => `[${key}]`)];
+            // Register only authored template nodes, before messages or Skill content render.
+            staticTargets = [...document.querySelectorAll(selectors.join(","))];
+          }
+          for (const node of staticTargets) {
+            if (!node.isConnected) continue;
+            if (node.hasAttribute("data-i18n")) {
+              const text = t(node.getAttribute("data-i18n"));
+              if (node.textContent !== text) node.textContent = text;
+            }
+            for (const [marker, attribute] of Object.entries(attributeMarkers)) {
+              if (!node.hasAttribute(marker)) continue;
+              const text = t(node.getAttribute(marker));
+              if (node.getAttribute(attribute) !== text) node.setAttribute(attribute, text);
+            }
+          }
+        }
+        configure(window.__LIVE_SMITH_STATE__?.settings?.uiLanguage ?? "system");
+        window.addEventListener("DOMContentLoaded", apply, { once: true });
+        return { t, message, text, configure, apply, isLanguage, get locale() { return locale; }, get preference() { return preference; } };
+      })();
