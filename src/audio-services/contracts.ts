@@ -134,7 +134,9 @@ export interface AudioJob {
   sourceAssetId?: string;
   remoteSourceId?: string;
   remoteTaskId?: string;
-  /** Final result shape acknowledged before collecting task-based generation. */
+  /** Immutable remote identities acknowledged before collection; never include URLs. */
+  expectedOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
+  /** Historical result shape, used only when the original remote identities were not saved. */
   expectedOutputRoles?: GeneratedAudioOutput["role"][];
   outputAssets: AudioAsset[];
   message?: string;

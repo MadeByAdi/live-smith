@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
 import { createSession } from "../storage/sessions.js";
 import { saveGlobalSettings } from "../storage/settings.js";
-import { listAudioJobs, updateAudioJob } from "../storage/audio-jobs.js";
-import { waveBytes } from "../storage/audio-storage-test-helpers.js";
+import { listAudioJobs, loadAudioJob, updateAudioJob } from "../storage/audio-jobs.js";
+import { waveBytes, overwriteJson } from "../storage/audio-storage-test-helpers.js";
 import { generateAudio } from "./audio-generation.js";
 import { audioJobViews, resumeAudioJob } from "./audio-processing.js";
 
@@ -20,7 +21,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   const controller = new AbortController();
   const calls: Array<{ url: string; method: string }> = [];
   let inspectCount = 0;
-  const mode = { failSecond: false, failFirst: false, inspectOffline: false, onlyOne: false, stopAfterReceipt: false };
+  const mode = { failSecond: false, failFirst: false, inspectOffline: false, onlyOne: false, stopAfterReceipt: false,
+    replaceFirstId: false, reverseOrder: false, renewUrls: false };
   const generationAdapter = createSunoApiAudioAdapter(apiKey, { callbackUrl, fetchImpl: (async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -38,16 +40,17 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
       assert.ok(url.endsWith("taskId=task-one"));
       inspectCount++;
       if (inspectCount === 1) return Response.json({ code: 200, msg: "success", data: { taskId: "task-one", status: "PENDING", response: null } });
-      return Response.json({ code: 200, msg: "success", data: { taskId: "task-one", status: "SUCCESS", response: {
-        taskId: "task-one", sunoData: [
+      const tracks = [
           ...(mode.onlyOne ? [] : [{ id: "track-b", audio_url: "https://file.aiquickdraw.com/second.wav" }]),
-          { id: "track-a", audio_url: "https://file.aiquickdraw.com/first.wav" },
-        ],
+          { id: mode.replaceFirstId ? "track-c" : "track-a", audio_url: "https://file.aiquickdraw.com/first.wav" },
+      ].map((track) => ({ ...track, audio_url: track.audio_url + (mode.renewUrls ? "?version=renewed" : "") }));
+      return Response.json({ code: 200, msg: "success", data: { taskId: "task-one", status: "SUCCESS", response: {
+        taskId: "task-one", sunoData: mode.reverseOrder ? tracks.reverse() : tracks,
       } } });
     }
     assert.equal(new Headers(init?.headers).has("Authorization"), false);
-    if (url.endsWith("first.wav") && mode.failFirst) return new Response("offline", { status: 503 });
-    if (url.endsWith("second.wav") && mode.failSecond) return new Response("offline", { status: 503 });
+    if (url.includes("/first.wav") && mode.failFirst) return new Response("offline", { status: 503 });
+    if (url.includes("/second.wav") && mode.failSecond) return new Response("offline", { status: 503 });
     return new Response(waveBytes().slice().buffer, { headers: { "content-type": "audio/wav" } });
   }) as typeof fetch });
   const context = { storageDirectory: directory, sessionId: session.id, signal: controller.signal,
@@ -71,6 +74,61 @@ test("Suno task results retain partial audio and Resume downloads only the missi
   assert.equal(h.calls.filter((call) => call.url.endsWith("first.wav")).length, 1);
   assert.doesNotMatch(JSON.stringify(await audioJobViews(h.directory, h.session.id)), /fixture-third-party|hooks\.example|file\.aiquickdraw|task-one/);
 });
+
+test("Suno Resume rejects changed output identities before downloading and can recover when originals return", async (t) => {
+  const h = await harness(t);
+  h.mode.failFirst = true;
+  const first = await generateAudio(h.context, "suno-connection", { operation: "generate_music", prompt: "Original piano idea", instrumental: true });
+  assert.equal(first.status, "partial");
+  const before = h.calls.filter((call) => call.url.includes("file.aiquickdraw.com")).length;
+  h.mode.replaceFirstId = true;
+  h.mode.failFirst = false;
+  const rejected = await resumeAudioJob(h.context, first.id);
+  assert.equal(rejected.status, "partial");
+  assert.match(rejected.message!, /identity|identities/);
+  assert.deepEqual(rejected.outputAssets, first.outputAssets);
+  assert.equal(h.calls.filter((call) => call.url.includes("file.aiquickdraw.com")).length, before);
+  h.mode.replaceFirstId = false;
+  h.mode.reverseOrder = true;
+  h.mode.renewUrls = true;
+  const completed = await resumeAudioJob(h.context, first.id);
+  assert.equal(completed.status, "completed");
+  assert.equal(h.calls.filter((call) => call.url.includes("/second.wav")).length, 1);
+  assert.ok(h.calls.some((call) => call.url.endsWith("/first.wav?version=renewed")));
+  assert.equal(h.calls.filter((call) => call.method === "POST").length, 1);
+  assert.doesNotMatch(JSON.stringify(await audioJobViews(h.directory, h.session.id)), /track-a|track-b|file\.aiquickdraw/);
+});
+
+for (const saved of ["none", "partial", "complete"] as const) {
+  test(`historical role-only Suno record with ${saved} local results preserves safe recovery`, async (t) => {
+    const h = await harness(t);
+    h.mode.failFirst = saved !== "complete";
+    h.mode.failSecond = saved === "none";
+    const first = await generateAudio(h.context, "suno-connection", { operation: "generate_music", prompt: "Original piano idea", instrumental: true });
+    const { expectedOutputs: _mapping, ...legacy } = first;
+    await overwriteJson(path.join(h.directory, "live-smith-audio", h.session.id, `${first.id}.job.json`), {
+      ...legacy, status: "collecting", expectedOutputRoles: ["music", "music_alternative"],
+    });
+    const before = h.calls.length;
+    h.mode.failFirst = false; h.mode.failSecond = false;
+    const recovered = await resumeAudioJob(h.context, first.id);
+    if (saved === "partial") {
+      assert.equal(recovered.status, "partial");
+      assert.match(recovered.message!, /identity|identities/);
+      assert.deepEqual(recovered.outputAssets, first.outputAssets);
+      assert.ok(h.calls.slice(before).every((call) => !call.url.includes("file.aiquickdraw.com")));
+    } else {
+      assert.equal(recovered.status, "completed");
+      if (saved === "complete") assert.equal(h.calls.length, before);
+      else {
+        const current = await loadAudioJob(h.directory, h.session.id, first.id);
+        assert.deepEqual(current.expectedOutputs, [{ key: "track-a", role: "music" }, { key: "track-b", role: "music_alternative" }]);
+        assert.equal(Object.hasOwn(current, "expectedOutputRoles"), false, "new mapping replaces the legacy representation");
+      }
+    }
+    assert.equal(h.calls.filter((call) => call.method === "POST").length, 1);
+  });
+}
 
 test("failure of the first variant never prevents saving a later available variant", async (t) => {
   const h = await harness(t);

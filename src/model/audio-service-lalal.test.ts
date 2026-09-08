@@ -271,11 +271,24 @@ test("completed results require the full selected stem set and exactly one resid
     [tracks()[0], { ...tracks()[1], label: "bass" }, tracks()[2]],
     [tracks()[0], tracks()[1], { ...tracks()[2], type: "stem" }],
     [tracks()[0], tracks()[1], { ...tracks()[2], url: undefined }],
-    [tracks()[0], tracks()[1], { ...tracks()[2], size: MAX_AUDIO_ASSET_BYTES + 1 }],
+    ...[0, -1, 1.5, "100", Number.MAX_SAFE_INTEGER + 1].map((size) =>
+      [tracks()[0], tracks()[1], { ...tracks()[2], size }]),
     [tracks()[0], tracks()[1], { ...tracks()[2], playlist_file: {} }],
   ]) await safeFailure(replay(successResponse(outputTracks)).adapter.inspect(TASK_ID, STEMS, signal()));
   for (const duration of [-1, 1.5, 901, "18", null]) {
     await safeFailure(replay(successResponse(tracks(), duration)).adapter.inspect(TASK_ID, STEMS, signal()));
+  }
+});
+
+test("optional output size metadata does not apply the local per-file download cap to the task", async () => {
+  for (const size of [undefined, null, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_BYTES + 1, Number.MAX_SAFE_INTEGER]) {
+    const outputTracks = [tracks()[0], tracks()[1], { ...tracks()[2], size }];
+    const { adapter, requests } = replay(successResponse(outputTracks));
+    const result = await adapter.inspect(TASK_ID, STEMS, signal());
+    assert.equal(result.status, "completed");
+    if (result.status !== "completed") assert.fail("Expected completed output locators");
+    assert.deepEqual(result.outputs.map((output) => output.role), ["vocals", "drums", "residual"]);
+    assert.equal(requests.length, 1);
   }
 });
 

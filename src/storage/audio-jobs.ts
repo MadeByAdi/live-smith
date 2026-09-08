@@ -45,13 +45,13 @@ type JobConfiguration = Pick<AudioJob,
 const jobFields = [
   "id", "sessionId", ...jobConfigurationFields,
   "status", "createdAt", "updatedAt", "sourceAssetId", "remoteSourceId",
-  "remoteTaskId", "expectedOutputRoles", "outputAssets", "message",
+  "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "outputAssets", "message",
 ];
 const updateFields = [
-  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "outputAssets", "message",
+  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "outputAssets", "message",
 ];
 type JobUpdate = Partial<Pick<AudioJob,
-  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "outputAssets" | "message"
+  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "expectedOutputs" | "outputAssets" | "message"
 >>;
 
 export class AudioStorageError extends Error {
@@ -132,12 +132,18 @@ export async function updateAudioJob(
   return withStorageTransaction(storageDirectory, async (transaction) => {
     await requireAudioSession(storageDirectory, sessionId, transaction);
     const current = await loadAudioJob(storageDirectory, sessionId, jobId);
-    if (current.expectedOutputRoles && patch.expectedOutputRoles &&
-      !isDeepStrictEqual(current.expectedOutputRoles, patch.expectedOutputRoles)) {
+    const job = { ...current, ...patch, updatedAt: new Date().toISOString() };
+    // A first identity mapping replaces, rather than duplicates, the historical shape.
+    if (patch.expectedOutputs && !Object.hasOwn(patch, "expectedOutputRoles")) delete job.expectedOutputRoles;
+    if (!isAudioJob(job)) throw new AudioStorageError("Audio job update is invalid.");
+    if (current.expectedOutputs && (current.remoteTaskId !== job.remoteTaskId ||
+      !isDeepStrictEqual(current.expectedOutputs, job.expectedOutputs))) {
+      throw new AudioStorageError("The confirmed audio output identities changed.");
+    }
+    if (current.expectedOutputRoles && !isDeepStrictEqual(current.expectedOutputRoles,
+      job.expectedOutputs?.map((output) => output.role) ?? job.expectedOutputRoles)) {
       throw new AudioStorageError("The confirmed audio result shape changed.");
     }
-    const job = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    if (!isAudioJob(job)) throw new AudioStorageError("Audio job update is invalid.");
     assertAudioJsonSize(job, MAX_AUDIO_JOB_METADATA_BYTES);
     const directory = (await bindAudioDirectory(storageDirectory, sessionId))!;
     await verifyJobAssets(directory, job);
@@ -183,7 +189,9 @@ function isAudioJob(value: unknown): value is AudioJob {
     (!Object.hasOwn(value, "remoteSourceId") ||
       (value.operation === "separate_stems" && validProviderIdentifier(value.remoteSourceId))) &&
     (!Object.hasOwn(value, "remoteTaskId") || validProviderIdentifier(value.remoteTaskId)) &&
-    (!Object.hasOwn(value, "expectedOutputRoles") || validExpectedOutputRoles(value)) &&
+    (!Object.hasOwn(value, "expectedOutputRoles") ||
+      (!Object.hasOwn(value, "expectedOutputs") && validExpectedOutputRoles(value, value.expectedOutputRoles))) &&
+    (!Object.hasOwn(value, "expectedOutputs") || validExpectedOutputs(value)) &&
     (!Object.hasOwn(value, "message") || boundedAudioText(value.message, 1024, true)) &&
     Array.isArray(value.outputAssets) && value.outputAssets.length <= MAX_AUDIO_JOB_OUTPUTS &&
     value.outputAssets.every((asset: unknown) => isAudioAsset(asset) &&
@@ -203,8 +211,7 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
     (value.operation === "separate_stems" ? validStems(value.stems) : Array.isArray(value.stems) && value.stems.length === 0);
 }
 
-function validExpectedOutputRoles(job: Record<string, unknown> & JobConfiguration): boolean {
-  const roles = job.expectedOutputRoles;
+function validExpectedOutputRoles(job: JobConfiguration, roles: unknown): boolean {
   if (!Array.isArray(roles)) return false;
   if (job.operation === "generate_sound_effect") return roles.length === 1 && roles[0] === "sound_effect";
   return job.operation === "generate_music" && roles[0] === "music" &&
@@ -212,9 +219,20 @@ function validExpectedOutputRoles(job: Record<string, unknown> & JobConfiguratio
       roles.length === 2 && roles[1] === "music_alternative");
 }
 
+function validExpectedOutputs(job: Record<string, unknown> & JobConfiguration): boolean {
+  const outputs = job.expectedOutputs;
+  return validProviderIdentifier(job.remoteTaskId) && Array.isArray(outputs) &&
+    outputs.every((output: unknown) => audioRecordHasOnly(output, ["key", "role"]) &&
+      typeof output.key === "string" && /^[A-Za-z0-9_.:-]{1,256}$/.test(output.key)) &&
+    new Set(outputs.map((output) => output.key)).size === outputs.length &&
+    validExpectedOutputRoles(job, outputs.map((output) => output.role));
+}
+
 export function audioJobOwnsAssetRole(
-  job: Pick<AudioJob, "provider" | "operation" | "stems"> & { expectedOutputRoles?: unknown }, role: AudioAsset["role"],
+  job: Pick<AudioJob, "provider" | "operation" | "stems"> & { expectedOutputRoles?: unknown; expectedOutputs?: unknown }, role: AudioAsset["role"],
 ): boolean {
+  if (job.expectedOutputs !== undefined &&
+    (!Array.isArray(job.expectedOutputs) || !job.expectedOutputs.some((output) => output.role === role))) return false;
   if (job.expectedOutputRoles !== undefined &&
     (!Array.isArray(job.expectedOutputRoles) || !job.expectedOutputRoles.includes(role))) return false;
   switch (job.operation) {

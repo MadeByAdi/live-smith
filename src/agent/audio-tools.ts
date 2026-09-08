@@ -1,5 +1,6 @@
 import { SEPARATION_STEMS, type SeparationStem } from "../audio-services/contracts.js";
 import { AUDIO_SERVICE_CAPABILITIES, audioServiceSupports, type AudioServiceChoice } from "../audio-services/capabilities.js";
+import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
 import type { ModelFunctionTool } from "../model/provider.js";
 import { isSafeStorageId } from "../storage/id.js";
 
@@ -58,14 +59,14 @@ export function audioProcessingTools(services: readonly AudioServiceChoice[]): M
       },
     }] : []),
     ...generationTools(services),
-    ...(services.some((entry) => AUDIO_SERVICE_CAPABILITIES[entry.provider].operations.length) ? [{
+    {
       type: "function" as const,
       function: {
         name: "resume_audio_job",
-        description: "Check an existing audio job using its original saved connection and retrieve missing outputs. Does not submit new processing or change Live. Use a jobId from list_audio_jobs. A job with unknown submission outcome and no remote ticket cannot be resumed.",
+        description: "Recover an existing audio job using a jobId from list_audio_jobs. Fully saved audio can finish local recovery without an enabled connection or remote ticket. Retrieving missing outputs requires the original saved connection and a confirmed remote task ID. Never resubmits processing or changes Live; a lost provider response cannot be regenerated through this tool.",
         parameters: { type: "object", properties: { jobId: stringField }, required: ["jobId"], additionalProperties: false },
       },
-    }] : []),
+    },
     {
       type: "function",
       function: {
@@ -124,7 +125,7 @@ export function validateAudioServiceRequest(request: AudioToolRequest, services:
   const service = services.find((entry) => entry.id === request.serviceId);
   if (!service || !audioServiceSupports(service.provider, request.kind)) throw new Error("Unavailable audio connection or operation.");
   const capability = AUDIO_SERVICE_CAPABILITIES[service.provider];
-  if (request.kind === "generate_music" && (request.prompt.length > capability.musicPromptCharacters ||
+  if (request.kind === "generate_music" && (exceedsAudioPromptLimit(request.prompt, capability.musicPromptCharacters) ||
     (!capability.musicDuration && request.durationSeconds !== undefined))) {
     throw new Error("This connection does not support those music generation parameters.");
   }
@@ -144,7 +145,7 @@ export function parseAudioToolRequest(name: string, argumentsJson: string): Audi
     const value = record(args);
     const music = name === "generate_music";
     only(value, ["serviceId", "prompt", "durationSeconds", music ? "instrumental" : "loop"]);
-    if (typeof value.prompt !== "string" || !value.prompt.trim() || value.prompt.length > 4100 || value.prompt.includes("\0")) {
+    if (typeof value.prompt !== "string" || !value.prompt.trim() || exceedsAudioPromptLimit(value.prompt, 4100) || value.prompt.includes("\0")) {
       throw new Error("Audio generation needs a non-empty prompt of at most 4100 characters.");
     }
     const option = music ? value.instrumental : value.loop;

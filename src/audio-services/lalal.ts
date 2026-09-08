@@ -114,9 +114,11 @@ export function createLalalAudioAdapter(
         if (!role || roles.has(role) || !optionalString(track.name) ||
             !optionalString(track.playlist_file) || !optionalString(track.waveform) ||
             (track.size != null && (!Number.isSafeInteger(track.size) ||
-              (track.size as number) <= 0 || (track.size as number) > MAX_AUDIO_ASSET_BYTES))) {
+              (track.size as number) <= 0))) {
           throw lalalError("invalid or duplicate output track.");
         }
+        // Optional provider metadata must not reject usable sibling outputs.
+        // Each download independently enforces the actual response byte limit.
         roles.add(role);
         return { key: `${track.type}:${track.label}`, role, url: lalalOutputUrl(track.url, apiKey) };
       });

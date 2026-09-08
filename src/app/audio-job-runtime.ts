@@ -34,7 +34,7 @@ export async function reconcileLocalAudioJob(
   for (const asset of job.outputAssets) expected.set(asset.id, asset);
   for (const asset of expected.values()) await readExpectedAudioAsset(storageDirectory, sessionId, asset, signal);
   const roles = job.operation === "separate_stems" ? [...job.stems, "residual"]
-    : job.expectedOutputRoles ?? (job.provider === "elevenlabs"
+    : job.expectedOutputs?.map((output) => output.role) ?? job.expectedOutputRoles ?? (job.provider === "elevenlabs"
       ? [job.operation === "generate_sound_effect" ? "sound_effect" : "music"] : undefined);
   const complete = roles?.every((role) => assets.some((asset) => asset.role === role));
   if (!complete && assets.every((asset) => job.outputAssets.some((existing) => existing.id === asset.id))) return job;

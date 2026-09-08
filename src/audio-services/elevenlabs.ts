@@ -1,5 +1,6 @@
 import type { AudioGenerationAdapter, AudioGenerationRequest } from "./contracts.js";
 import { assertElevenLabsActive, createElevenLabsHttp, elevenLabsError } from "./elevenlabs-http.js";
+import { exceedsAudioPromptLimit } from "./prompt.js";
 
 /**
  * Official REST contracts: /docs/api-reference/music/compose and
@@ -51,10 +52,7 @@ function validateRequest(request: AudioGenerationRequest): void {
     throw elevenLabsError("a non-empty generation prompt is required.");
   }
   if (request.operation === "generate_music") {
-    let characters = 0;
-    for (const _character of request.prompt) {
-      if (++characters > 4100) throw elevenLabsError("music prompt exceeds 4100 characters.");
-    }
+    if (exceedsAudioPromptLimit(request.prompt, 4100)) throw elevenLabsError("music prompt exceeds 4100 characters.");
     if (typeof request.instrumental !== "boolean") {
       throw elevenLabsError("music instrumental must be a boolean.");
     }

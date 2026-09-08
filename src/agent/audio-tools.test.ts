@@ -4,7 +4,7 @@ import { audioProcessingTools, parseAudioToolRequest, validateAudioServiceReques
 import { AgentExternalToolReportingError, runAgentLoop } from "./loop.js";
 
 test("audio tools project supported combinations and strictly parse bounded source locators", () => {
-  assert.deepEqual(audioProcessingTools([]).map((tool) => tool.function.name), ["list_audio_jobs"]);
+  assert.deepEqual(audioProcessingTools([]).map((tool) => tool.function.name), ["resume_audio_job", "list_audio_jobs"]);
   assert.equal(audioProcessingTools([{ id: "splitter", name: "Stems", provider: "lalal" }]).length, 3);
   const request = { serviceId: "splitter", source: { kind: "audio_asset", assetRef: "asset_known" }, stems: ["vocals", "drums"] };
   assert.deepEqual(parseAudioToolRequest("separate_stems", JSON.stringify(request)), { kind: "separate_stems", ...request });

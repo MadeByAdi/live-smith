@@ -1,5 +1,6 @@
 import type { AudioGenerationAdapter, RemoteAudioOutput } from "./contracts.js";
 import { createSunoApiHttp } from "./sunoapi-http.js";
+import { exceedsAudioPromptLimit } from "./prompt.js";
 
 const MODELS = ["V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5"];
 const RUNNING = ["PENDING", "TEXT_SUCCESS", "FIRST_SUCCESS"];
@@ -24,10 +25,7 @@ export function createSunoApiAudioAdapter(
       if (request.durationSeconds !== undefined) throw http.fail("duration is not supported in non-custom music mode.");
       if (typeof request.instrumental !== "boolean") throw http.fail("instrumental must be a boolean.");
       if (typeof request.prompt !== "string" || !request.prompt.trim()) throw http.fail("a non-empty prompt is required.");
-      let characters = 0;
-      for (const _character of request.prompt) {
-        if (++characters > 3000) throw http.fail("music prompt exceeds 3000 characters.");
-      }
+      if (exceedsAudioPromptLimit(request.prompt, 3000)) throw http.fail("music prompt exceeds 3000 characters.");
       const value = await http.post({
         customMode: false, instrumental: request.instrumental, model,
         callBackUrl: callbackUrl, prompt: request.prompt,

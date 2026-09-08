@@ -564,6 +564,8 @@ Tools expose only enabled, configured connections that support the requested
 operation. Every new processing request selects an exact `serviceId`; the chat
 model never receives a key, endpoint, or generic HTTP execution tool. The chat
 model needs function-tool support, not native audio generation support.
+Saved-job listing and recovery remain available to the model when no service
+connection is enabled; only new remote operations depend on enabled connections.
 The connection is bound when these tools are admitted for a chat request.
 Changing that connection before upload or paid submission stops the operation;
 send a new request to use the changed configuration. Editing another connection
@@ -574,7 +576,9 @@ does not invalidate this request.
 ElevenLabs supports `generate_music` and `generate_sound_effect` using its official
 [music](https://elevenlabs.io/docs/api-reference/music/compose) and
 [sound-effect](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert)
-REST endpoints. Music accepts a description, an instrumental flag, and an optional
+REST endpoints. Prompt character limits count Unicode code points, including
+supplementary characters as one, consistently from the chat tool to the adapter.
+Music accepts a description, an instrumental flag, and an optional
 3–600 second duration. The integration defaults to `music_v2`; an optional saved
 music model ID replaces that value. Sound effects accept a description, a
 0.5–30 second duration, and a loop flag, and use `eleven_text_to_sound_v2`
@@ -606,8 +610,11 @@ instrumental flag and up to 3,000 prompt characters. The integration defaults to
 Explicit duration, custom lyric mode, covers and extensions are not part of this
 operation. Returned task IDs are persisted before polling. One or two final
 tracks are saved as music results; Resume uses the original task, not a new
-generation. The published protocol has no cancellation operation, so Stop ends
-the local wait without claiming a refund or remote cancellation.
+generation. The first completed response binds each result role to its remote
+track ID. Resume rejects changed track identities while allowing reordered
+responses and refreshed download URLs. The published protocol has no
+cancellation operation, so Stop ends the local wait without claiming a refund
+or remote cancellation.
 
 Downloads accept HTTPS on the documented `file.aiquickdraw.com` audio host,
 without the API key or redirects. An unrecognized CDN is rejected and the job
@@ -668,7 +675,12 @@ or its key changed. Successful stems or generated variants survive a failure to
 download or validate another output. Submission is never automatically replayed
 after an unknown outcome. A task without a confirmed remote ID can only finish
 recovering already committed local audio; it cannot retrieve a lost provider
-response. Metadata is committed before its audio file, and an incomplete file
+response. Historical Suno jobs that saved only result roles, without track IDs,
+still support complete local recovery. If such a job has only some results saved,
+they remain usable, but missing files cannot be safely matched to new remote
+results; Resume retains the existing files and explains that limitation. An old
+job with no saved outputs can acknowledge its first identity mapping.
+Metadata is committed before its audio file, and an incomplete file
 is not presented as an available result. LALAL.AI currently limits status checks
 to 24 hours after task creation, so remote recovery can expire even though downloaded local results
 remain available.

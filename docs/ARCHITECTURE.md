@@ -873,8 +873,14 @@ automatically. Resume first reconciles and verifies complete local results,
 even if the connection has been disabled, removed, or replaced. Only an
 incomplete local result proceeds to saved-connection authorization and the
 original credential fingerprint check before querying the existing task.
-Task-based generation acknowledges its final output roles before collection, so one- and two-track
-results can finish local bookkeeping even when the remote service is offline.
+Task-based generation acknowledges an immutable remote output ID/role mapping
+before collection. Downloads may refresh their URLs, but cannot change the
+confirmed output identities during recovery. Required roles derive from that
+mapping, so one- and two-track results can finish local bookkeeping even when
+the remote service is offline. Historical role-only records remain readable;
+complete local results recover normally, while incomplete records with saved
+outputs cannot acquire unverified replacement identities. An old record with no
+saved outputs can adopt its first mapping without changing its confirmed shape.
 One failed download or invalid audio output does not prevent collecting other
 available outputs; systemic storage failures end the current collection attempt.
 One process-local owner excludes concurrent execution of the

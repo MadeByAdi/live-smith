@@ -121,6 +121,7 @@ async function ownJob(
   // Receipt ownership must not depend on the subsequent filesystem commit.
   let acceptedTaskId = initial.remoteTaskId;
   let submissionStarted = false;
+  let recordingFailure: unknown;
   const update = async (patch: Parameters<typeof updateAudioJob>[3]): Promise<void> => {
     job = await updateAudioJob(context.storageDirectory, context.sessionId, job.id, patch);
     // The owning send publishes progress and its final state. Invalidating the
@@ -223,7 +224,6 @@ async function ownJob(
           ? "Stopped while submitting audio processing. The remote submission outcome is unknown; no automatic resubmission will occur."
           : "Audio processing stopped before a confirmed remote task was created."
       : safeAudioFailure(error, settings.apiKey);
-    let recordingFailure: unknown;
     try {
       await update({
         ...(taskId ? { remoteTaskId: taskId } : {}),
@@ -233,14 +233,17 @@ async function ownJob(
       });
     } catch (failure) {
       recordingFailure = failure;
-    } finally {
-      if ((context.signal.aborted || recordingFailure) && taskId && adapter.cancel) {
-        await cancelRemoteBestEffort(adapter, taskId);
-      }
     }
     if (recordingFailure) throw recordingFailure;
-    throwIfAborted(context.signal);
     return job;
+  } finally {
+    // Stop may arrive during an awaited progress update or terminal bookkeeping.
+    // Every exit owns cancellation, including an ordinary wait-deadline return.
+    const taskId = acceptedTaskId ?? job.remoteTaskId;
+    if ((context.signal.aborted || recordingFailure) && taskId && adapter.cancel) {
+      await cancelRemoteBestEffort(adapter, taskId);
+    }
+    if (!recordingFailure) throwIfAborted(context.signal);
   }
 }
 

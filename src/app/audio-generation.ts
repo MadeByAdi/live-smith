@@ -5,6 +5,7 @@ import type {
   GeneratedAudioOutput,
 } from "../audio-services/contracts.js";
 import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
+import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
 import { AttachmentProcessingError } from "../attachments/contracts.js";
 import { createElevenLabsAudioAdapter } from "../audio-services/elevenlabs.js";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
@@ -41,7 +42,7 @@ export async function generateAudio(
 ): Promise<AudioJob> {
   throwIfAborted(context.signal);
   const settings = await resolveAudioService(context.storageDirectory, serviceId, request.operation, context.admittedConnections);
-  if (request.operation === "generate_music" && request.prompt.length > AUDIO_SERVICE_CAPABILITIES[settings.provider].musicPromptCharacters) {
+  if (request.operation === "generate_music" && exceedsAudioPromptLimit(request.prompt, AUDIO_SERVICE_CAPABILITIES[settings.provider].musicPromptCharacters)) {
     throw new Error("The music prompt exceeds this service's supported limit.");
   }
   if (request.operation === "generate_music" && request.durationSeconds !== undefined &&
@@ -130,7 +131,11 @@ async function runGeneration(
       if (remote.status === "completed") {
         const roles = remote.outputs.map((output) => output.role);
         if (roles.some((role) => !["music", "music_alternative", "sound_effect"].includes(role))) throw new Error("Unexpected generated audio role.");
-        await retryLocalCommit(() => update({ status: "collecting", expectedOutputRoles: roles as GeneratedAudioOutput["role"][] }));
+        if (!job.expectedOutputs && job.outputAssets.length) {
+          throw new Error("This historical partial result has no saved remote output identities. Existing audio is retained, but missing files cannot be safely matched.");
+        }
+        const expectedOutputs = remote.outputs.map(({ key, role }) => ({ key, role: role as GeneratedAudioOutput["role"] }));
+        await retryLocalCommit(() => update({ status: "collecting", expectedOutputs }));
         const failures: string[] = [];
         for (const output of remote.outputs) {
           if (job.outputAssets.some((asset) => asset.role === output.role)) continue;
