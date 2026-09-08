@@ -73,6 +73,12 @@ names, and raw provider/SDK output stay in their original language.
 - **Generate with a Suno service.** The explicitly labeled SunoAPI.org
   third-party connection supports prompt-based music generation with its own
   API key and your public callback URL. It is not Suno subscription access.
+- **Connect a Suno.com account.** Open Suno in your system's default browser,
+  then explicitly import its `__client` Cookie in the local connection form.
+  Live Smith verifies and privately saves it without a browser extension or
+  access to your Google credentials. This experimental connection does not yet
+  enable subscription-based generation. See the
+  [website sign-in workflow](docs/MODEL_PROVIDERS.md#sunocom-website-sign-in).
 - **Separate audio into stems.** Add a LALAL.AI connection, then ask to extract vocals, drums, bass, piano, or guitars from
   an audio attachment or an isolated Arrangement Audio Clip range. Saved results
   can be previewed, reused in later requests, and imported through ordinary Live

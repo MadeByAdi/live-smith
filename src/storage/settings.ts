@@ -31,9 +31,11 @@ import {
   ensurePrivateFile,
   withStorageTransaction,
   writeJsonAtomically,
+  StorageCommitOutcomeUnknownError,
 } from "./persistence.js";
 import { decodeAgentSettings } from "./settings-migrations.js";
 import { prepareOAuthCredentialStoreInTransaction } from "./oauth-credentials.js";
+import { SunoSessions } from "./suno-sessions.js";
 
 export type { AgentSettings, SavedProfile } from "../model/profile.js";
 export { activeSavedProfile } from "../model/profile.js";
@@ -309,7 +311,7 @@ export async function saveGlobalSettings(
   if (audioPatch && !storageDirectory) {
     throw new ProfileValidationError("audioServices", "Audio tools require persistent private storage.");
   }
-  return withStorageTransaction(storageDirectory, async () => {
+  return withStorageTransaction(storageDirectory, async (transaction) => {
     const settings = await loadAgentSettingsUnlocked(storageDirectory);
     if (audioPatch) {
       const revision = settings.audioServices?.revision ?? "0";
@@ -332,9 +334,21 @@ export async function saveGlobalSettings(
         if (index < 0) connections.push(connection);
         else connections[index] = connection;
       }
-      return persistSettings(storageDirectory, { ...settings,
-        audioServices: normalizeAudioServicesSettings({ connections,
-          revision: incrementNetworkProxyRevision(revision) }) });
+      const audioServices = normalizeAudioServicesSettings({ connections,
+        revision: incrementNetworkProxyRevision(revision) });
+      const previous = settings.audioServices?.connections.find((connection) => connection.id === serviceId);
+      const next = audioServices.connections.find((connection) => connection.id === serviceId);
+      const clearedSession = previous?.provider === "suno" && next?.provider !== "suno"
+        ? await new SunoSessions(storageDirectory).clear(previous.id, transaction) : false;
+      try {
+        return await persistSettings(storageDirectory, { ...settings, audioServices });
+      } catch (error) {
+        // The credential may already be gone even when the settings rename failed.
+        // Preserve the compound command's partial outcome for authoritative readback.
+        if (clearedSession) throw new StorageCommitOutcomeUnknownError(
+          new Error("Suno Cookie was removed before audio connection settings could be saved."));
+        throw error;
+      }
     }
     return persistSettings(storageDirectory, {
       ...settings,

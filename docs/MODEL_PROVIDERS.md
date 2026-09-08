@@ -621,12 +621,64 @@ without the API key or redirects. An unrecognized CDN is rejected and the job
 remains available for investigation/recovery; the client never follows an
 arbitrary provider-supplied URL to a local or private service.
 
-The [official Suno Platform](https://platform.suno.com/) advertises a REST API,
-but an implementable public protocol and third-party subscription authorization
-flow have not been verified. **Suno** is therefore shown as unavailable rather
-than offering a simulated sign-in. A Suno Pro/Premier subscription is not a
-credential for the SunoAPI.org connector. Website login sessions and cookies
-are not imported into Live Smith.
+A Suno Pro/Premier subscription is not a credential for the SunoAPI.org connector.
+Website subscription sign-in is a separate connection, described below.
+
+### Suno.com website sign-in
+
+**Suno.com (experimental)** uses the ordinary `suno.com` account, not Suno
+Platform or SunoAPI.org. It requires no browser extension or particular browser.
+On macOS and Windows, the website action opens `https://suno.com/create` using
+the system default browser and its existing login state. Google login and any
+verification remain in that normal browser, under the user's control.
+
+This is a manual Cookie import, not an automatic OAuth callback:
+
+1. Add a Suno connection in **Inspector → App → Audio tools** and open Suno.
+   Opening the website does not require saving the connection first.
+2. In the browser's developer tools, locate the `__client` Cookie for
+   `auth.suno.com` under Storage/Application → Cookies. If the authentication
+   domain is not shown there, inspect a request to `auth.suno.com/v1/client`
+   in Network after reloading the Suno page and locate that Cookie.
+3. Copy only the `__client` value into Live Smith's private Suno Cookie field.
+   A raw value or an exact `__client=value` assignment is accepted. Full Cookie
+   headers, Google Cookies, passwords and arbitrary scripts are not accepted.
+4. Connect the account. If the named connection is still a draft, Live Smith
+   saves it first and imports only after a confirmed save. Import verifies the
+   active Suno session before privately saving the credential. The input is
+   cleared on submission; failed replacement does not overwrite a saved Cookie.
+
+Treat the Cookie like a password. Enter it only in the local settings form,
+never in a chat message, terminal command, screenshot or shared file. The app
+sends the normalized Cookie only to the fixed Suno authentication host for
+verification and stores it in private local files, not in the model's context,
+public settings or UI state. Local files are access-restricted but are not
+additionally encrypted by Live Smith. Each saved audio connection owns its own
+Cookie, so multiple Suno accounts can coexist without new browser profiles.
+To connect a different account, log into it in the browser/profile of your choice
+and explicitly import its own Cookie into a different named connection.
+
+Successful verification displays account identity. Open dialogs share verification
+results within one extension activation, including failures; closing a dialog
+does not discard that evidence. After the extension host restarts, a saved
+connection is not presented as freshly verified until checked again.
+Expired sessions require a fresh Cookie import; network failures are not reported
+as successful sign-in. Website traffic uses the browser's network configuration;
+app verification uses Live Smith's saved API proxy setting.
+
+Disconnect removes only that connection's local Cookie. It does not sign out the
+browser or revoke the remote Suno session. Removing the connection or changing
+its provider also clears its saved Cookie; cleanup failure prevents the ownership
+change. A later settings-write failure can leave the old connection disconnected.
+Closing Live Smith does not close the browser. Legacy managed browser directories
+are not read, imported or deleted by this workflow.
+
+**Cookie verification does not enable music generation tools.** Subscription
+generation and download remain unavailable to the chat model. Session identity
+does not prove plan entitlements or available credits. This is experimental
+website-session integration, not an official Suno SDK or OAuth grant. Site
+changes may invalidate it. There is no browser automation, CAPTCHA solver,
+security-check bypass or automatic subscription-credit consumption.
 
 ### Stem separation
 

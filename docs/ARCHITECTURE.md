@@ -175,6 +175,9 @@ src/
       dependencies.
 
   runtime/
+    system-browser.ts
+      Opens a caller-validated HTTPS destination using the fixed macOS or
+      Windows default-browser handler, without owning a browser process.
     oauth-browser.ts
       Opens one allowlisted pending OAuth HTTPS URL through fixed macOS or
       Windows default-browser commands after provider login acquisition succeeds.
@@ -270,7 +273,7 @@ Web APIs, while the runtime suite sends real direct and CONNECT-proxy requests
 through an equivalent restricted VM. A successful Node import alone is not
 proof of Extension Host compatibility. Production child processes are limited
 to the fixed macOS and Windows default-browser commands in
-`runtime/oauth-browser.ts` and the fixed read-only macOS/Windows system-proxy
+`runtime/system-browser.ts` and the fixed read-only macOS/Windows system-proxy
 queries in `runtime/system-proxy.ts`; the build rejects `node:child_process`
 everywhere else.
 
@@ -857,6 +860,29 @@ work, and adapters retain the admitted connection rather than reloading a new
 account. Changes to unrelated connections do not invalidate the request.
 `audio-job-runtime.ts` shares active-job exclusion and verified local recovery
 across operations.
+`runtime/suno-website.ts` opens only `https://suno.com/create` through the system
+default-browser handler. Website navigation is independent of saved connections
+and is never evidence of authentication. No browser process, profile directory,
+extension or debugging connection is owned by Live Smith.
+`app/suno-session-manager.ts` binds explicitly imported Suno Cookies to exact
+saved audio connection IDs. Import and refresh use the bounded Suno-only
+`audio-services/suno-session.ts` verifier through proxy-aware Fetch. The adapter
+reads the current Clerk client/session identity; it never automates Google
+login, extracts browser data or submits generation.
+`storage/suno-sessions.ts` owns private per-connection credentials outside public
+settings. Global settings changes clear the prior credential owner only after
+validation and revision checks, before persistence, under the same global-settings
+fence as import/refresh/disconnect. Cleanup uses the current storage transaction
+rather than nesting it. Failed imports preserve a previously saved credential.
+Credential-free verification evidence is shared per storage scope across dialogs,
+so one window's failed refresh invalidates the others' status for that credential.
+Local views do not trigger network requests and do not present disk-only identity
+as freshly verified authentication after an extension-host restart. `sunoAccounts` projects only bounded account
+identity and status, never a Cookie; it must not confer a generation capability.
+Closing a dialog neither disconnects the saved account nor closes a user's browser.
+If credential cleanup succeeds but the following settings write fails, the
+compound command reports an uncertain/partial outcome, invalidates peer state
+and returns an authoritative readback instead of claiming that nothing changed.
 This is an external-effect tool category, separate from Live observations and
 Live mutation recovery. Chat transports continue to exchange ordinary function
 calls and textual results. When an enabled processing service can consume the

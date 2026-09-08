@@ -46,6 +46,31 @@
         view = nextView;
       }
 
+      function bindSunoCookieControls() {
+        const cookieInput = document.getElementById("sunoSessionValue");
+        if (cookieInput.oninput) return;
+        cookieInput.oninput = renderAudioTools;
+        cookieInput.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || event.isComposing) return;
+          event.preventDefault();
+          event.stopPropagation();
+          void importSunoCookie();
+        });
+        document.getElementById("closeButton").addEventListener("click", clearSunoCookieInput, true);
+        window.addEventListener("pagehide", clearSunoCookieInput);
+        window.addEventListener("beforeunload", clearSunoCookieInput);
+        const cookieVisibility = new MutationObserver((changes) => {
+          if (changes.some(({ target, attributeName }) => attributeName === "hidden" ? target.hidden : !target.open)) {
+            clearSunoCookieInput();
+            renderAudioTools();
+          }
+        });
+        for (const id of ["inspectorPane", "appPanel"]) {
+          cookieVisibility.observe(document.getElementById(id), { attributes: true, attributeFilter: ["hidden"] });
+        }
+        cookieVisibility.observe(document.getElementById("audioServiceFields"), { attributes: true, attributeFilter: ["open"] });
+      }
+
       function requireView() {
         if (!view) throw new Error(t("Bridge client is not connected to the UI."));
         return view;
@@ -123,6 +148,11 @@
         "resume_audio_job",
       ]);
       let confirmedAudioServices = getState().audioServices || null;
+      let confirmedSunoAccounts = getState().sunoAccounts || [];
+      let sunoAccountsRevision = getState().bridgeStateRevision;
+      let sunoAccountsCoveredThroughRevision = getState().bridgeStateCoveredThroughRevision;
+      const sunoLoginCommands = new Set(["open_suno_website", "import_suno_session", "refresh_suno_login", "logout_suno"]);
+      let sunoInputRevision = 0;
       const audioSettingsDrafts = new Map();
       let selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
       let audioSettingsSubmitting = false;
@@ -2779,6 +2809,22 @@
           (origin.sourceAssetId === undefined || isWireStorageId(origin.sourceAssetId));
       }
 
+      function isWireSunoAccounts(value, services) {
+        return Array.isArray(value) && value.length <= __MAX_AUDIO_SERVICES__ &&
+          value.every((account) => isWireRecord(account) &&
+            hasOnlyWireKeys(account, ["serviceId", "status", "accountId", "accountName"]) &&
+            isWireStorageId(account.serviceId) &&
+            services?.connections.some((service) => service.id === account.serviceId && service.provider === "suno") &&
+            ["signed_out", "saved", "signed_in", "expired", "unavailable"].includes(account.status) &&
+            (!Object.hasOwn(account, "accountId") || ["signed_in", "saved"].includes(account.status) &&
+              typeof account.accountId === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(account.accountId)) &&
+            (!Object.hasOwn(account, "accountName") || ["signed_in", "saved"].includes(account.status) &&
+              typeof account.accountName === "string" && account.accountName.trim().length > 0 &&
+              account.accountName.length <= 160 && !/[\x00-\x1f\x7f-\x9f]/.test(account.accountName) &&
+              !/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(account.accountName))) &&
+          new Set(value.map((account) => account.serviceId)).size === value.length;
+      }
+
       function isWireAudioJobs(jobs, sessionId) {
         return Array.isArray(jobs) && jobs.length <= __MAX_AUDIO_SESSION_JOBS__ &&
           new Set(jobs.map((job) => job?.id)).size === jobs.length && jobs.every((job) =>
@@ -2812,6 +2858,7 @@
           !hasOnlyWireKeys(value, [
             "contextSummary",
             "audioServices",
+            "sunoAccounts",
             "audioJobs",
             "liveContext",
             "sessionContinueTarget",
@@ -2846,6 +2893,7 @@
           ]) ||
           typeof value.contextSummary !== "string" ||
           (value.audioServices !== undefined && !isWireAudioServices(value.audioServices)) ||
+          (value.sunoAccounts !== undefined && !isWireSunoAccounts(value.sunoAccounts, value.audioServices)) ||
           (value.audioJobs !== undefined && !isWireAudioJobs(value.audioJobs, value.activeSessionId)) ||
           !isWireLiveContext(value.liveContext) ||
           !isWireRecord(value.sessionContinueTarget) ||
@@ -3383,6 +3431,7 @@
         state.settings.uiLanguage = optimisticUiLanguage?.language ?? confirmedUiLanguage;
         state.settings.uiLanguageRevision = confirmedUiLanguageRevision;
         if (confirmedAudioServices) state.audioServices = { ...confirmedAudioServices };
+        state.sunoAccounts = confirmedSunoAccounts.map((account) => ({ ...account }));
         return state;
       }
 
@@ -3395,18 +3444,36 @@
           // original collection revision; presence flags cannot prove credential identity.
           if (draft.baseConnection || next) {
             draft.conflict = true;
-            if (id === selectedAudioServiceId) document.getElementById("audioServiceApiKey").value = "";
+            if (id === selectedAudioServiceId) {
+              document.getElementById("audioServiceApiKey").value = "";
+              document.getElementById("sunoSessionValue").value = "";
+            }
           } else if (!draft.conflict) {
             draft.expectedRevision = value.revision;
           }
         }
         confirmedAudioServices = { revision: value.revision, connections: value.connections.map((service) => ({ ...service })) };
+        confirmedSunoAccounts = confirmedSunoAccounts.filter((account) =>
+          value.connections.some((service) => service.id === account.serviceId && service.provider === "suno"));
         if (!audioSettingsDrafts.has(selectedAudioServiceId) &&
           !value.connections.some((service) => service.id === selectedAudioServiceId)) {
           selectedAudioServiceId = value.connections[0]?.id || null;
           document.getElementById("audioServiceApiKey").value = "";
         }
         return true;
+      }
+
+      function adoptSunoAccountsFromState(state) {
+        // Snapshot coverage precedes publication order: a delayed request may
+        // publish later while still describing an older Cookie verification.
+        const coverageOrder = compareDecimalRevisions(
+          state.bridgeStateCoveredThroughRevision, sunoAccountsCoveredThroughRevision);
+        if (coverageOrder < 0 || coverageOrder === 0 &&
+          compareDecimalRevisions(state.bridgeStateRevision, sunoAccountsRevision) <= 0 ||
+          confirmedAudioServices && state.audioServices?.revision !== confirmedAudioServices.revision) return;
+        confirmedSunoAccounts = (state.sunoAccounts || []).map((account) => ({ ...account }));
+        sunoAccountsRevision = state.bridgeStateRevision;
+        sunoAccountsCoveredThroughRevision = state.bridgeStateCoveredThroughRevision;
       }
 
       function adoptUiLanguage(language, revision, commandId) {
@@ -4218,12 +4285,13 @@
             commandError = outcome.error;
             if (
               kind === "save_profile" && outcome.error.httpStatus === 409 ||
-              kind === "save_global_settings" && payload.audioServices && outcome.error.field === "audioServices"
+              kind === "save_global_settings" && payload.audioServices && outcome.error.field === "audioServices" ||
+              kind === "refresh_suno_login"
             ) {
               try {
-                await refreshState(attempt, kind === "save_profile" ? "save_profile_conflict" : "save_global_settings");
+                await refreshState(attempt, kind === "save_profile" ? "save_profile_conflict" : kind);
               } catch {
-                // The conflict remains explicit; reopening Settings can refresh it.
+                // Preserve the original command error if the state read fails.
               }
             }
             if (outcome.error.reconciliationRequired) {
@@ -4231,6 +4299,10 @@
             }
           }
         } finally {
+          if (kind === "import_suno_session") {
+            delete payload.sessionValue;
+            delete extra.sessionValue;
+          }
           if (activeCommandAttempt === attempt) activeCommandAttempt = null;
           commandInProgress = null;
           syncOperationState();
@@ -4570,6 +4642,8 @@
         if (!isWireChatBridgeState(state)) return false;
         const previousSettings = getState().settings;
         captureOwnedPendingAttachmentAdditions(causalAttempt, state);
+        adoptAudioServices(state.audioServices);
+        adoptSunoAccountsFromState(state);
         adoptGlobalSettingsFromState(state);
         const reconciledState = causalAttempt
           ? preserveNewerCausalState(state, causalAttempt)
@@ -4681,6 +4755,8 @@
         const previousSettings = previousState.settings;
         // Global settings have their own monotonic revisions; Session ownership
         // below remains scoped to this send so an older terminal cannot prune peers.
+        adoptAudioServices(state.audioServices);
+        adoptSunoAccountsFromState(state);
         adoptGlobalSettingsFromState(state);
         const visible =
           attempt.sessionId === activeSessionId() &&
@@ -5487,9 +5563,12 @@
       }
 
       function handleAudioServiceSelection(id) {
-        if (audioSettingsBusy || audioSettingsSubmitting) return;
+        if (audioSettingsSubmitting || audioSettingsBusy && !sunoLoginCommands.has(commandInProgress)) return;
         if (!savedAudioConnection(id) && !audioSettingsDrafts.has(id)) return;
-        if (id !== selectedAudioServiceId) document.getElementById("audioServiceApiKey").value = "";
+        if (id !== selectedAudioServiceId) {
+          document.getElementById("audioServiceApiKey").value = "";
+          clearSunoCookieInput();
+        }
         selectedAudioServiceId = id;
         document.getElementById("audioServiceFields").open = true;
         renderAudioTools();
@@ -5502,8 +5581,9 @@
         if (count >= __MAX_AUDIO_SERVICES__) return;
         const id = createCorrelationId("audio-service");
         const provider = Object.keys(audioServiceCapabilities).find((provider) =>
-          audioServiceCapabilities[provider].operations.length > 0);
+          audioServiceCapabilities[provider].operations.length > 0 || audioServiceCapabilities[provider].sessionImport);
         if (!provider) return;
+        clearSunoCookieInput();
         document.getElementById("audioServiceApiKey").value = "";
         audioSettingsDrafts.set(id, { connection: { id, name: "", provider, enabled: false },
           baseConnection: null, expectedRevision: confirmedAudioServices?.revision || "0", conflict: false });
@@ -5516,6 +5596,7 @@
       function reloadAudioService() {
         if (audioSettingsBusy || audioSettingsSubmitting) return;
         audioSettingsDrafts.delete(selectedAudioServiceId);
+        clearSunoCookieInput();
         document.getElementById("audioServiceApiKey").value = "";
         if (!savedAudioConnection()) selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
         renderAudioTools();
@@ -5528,6 +5609,7 @@
         const provider = document.getElementById("audioServiceProvider").value;
         const providerChanged = provider !== (previous?.connection.provider || saved?.provider);
         if (providerChanged) {
+          clearSunoCookieInput();
           document.getElementById("audioServiceApiKey").value = "";
           document.getElementById("audioServiceEnabled").checked = false;
           document.getElementById("audioServiceModel").value = "";
@@ -5535,10 +5617,12 @@
         }
         const modelId = document.getElementById("audioServiceModel").value.trim();
         const callbackUrl = document.getElementById("audioServiceCallback").value;
+        const supported = audioServiceCapabilities[provider].operations;
         audioSettingsDrafts.set(selectedAudioServiceId, {
           connection: { id: selectedAudioServiceId, name: document.getElementById("audioServiceName").value,
-            provider, enabled: document.getElementById("audioServiceEnabled").checked,
-            ...(modelId ? { modelId } : {}), ...(provider === "sunoapi" && callbackUrl ? { callbackUrl } : {}) },
+            provider, enabled: supported.length > 0 && document.getElementById("audioServiceEnabled").checked,
+            ...(supported.includes("generate_music") && modelId ? { modelId } : {}),
+            ...(provider === "sunoapi" && callbackUrl ? { callbackUrl } : {}) },
           baseConnection: previous ? previous.baseConnection : saved,
           expectedRevision: previous?.expectedRevision || confirmedAudioServices?.revision || "0",
           conflict: previous?.conflict || false,
@@ -5552,18 +5636,21 @@
         const saved = savedAudioConnection(id);
         const draft = audioSettingsDrafts.get(id);
         if (draft?.conflict || (!clear && !draft) || (clear && !saved)) return false;
+        if (clear && audioServiceCapabilities[saved.provider].sessionImport) return false;
         if (clear && !(await confirmAudioConnectionChange("clear", saved))) return false;
         // Clear acts on the saved connection, so a provider draft cannot redirect it.
         const connection = clear ? { ...audioConnectionFields(saved), enabled: false }
           : { ...draft.connection, name: draft.connection.name.trim() };
         const key = document.getElementById("audioServiceApiKey");
+        const sessionImport = audioServiceCapabilities[connection.provider].sessionImport === true;
+        if (sessionImport) key.value = "";
         if (!connection.name || (confirmedAudioServices?.connections || []).some((service) =>
           service.id !== id && service.name.toLowerCase() === connection.name.toLowerCase())) {
           showStatus(t("Enter a unique connection name."), true);
           document.getElementById("audioServiceName").focus();
           return false;
         }
-        if (connection.enabled && !key.value &&
+        if (connection.enabled && !sessionImport && !key.value &&
           !(saved?.provider === connection.provider && saved.apiKeyConfigured)) {
           showStatus(t("Enter an API key before enabling this connection."), true);
           key.focus();
@@ -5586,18 +5673,22 @@
         key.value = "";
         audioSettingsSubmitting = true;
         renderAudioTools();
+        let savedRevision = null;
         try {
-          const result = await runCommand("save_global_settings", { audioServices: patch }, {
+          await runCommand("save_global_settings", { audioServices: patch }, {
             onOutcome: (outcome) => {
               const current = savedAudioConnection(id);
               if (outcome.known && outcome.succeeded && current &&
                 compareDecimalRevisions(confirmedAudioServices.revision, patch.expectedRevision) > 0 &&
                 sameJsonValue(audioConnectionFields(current), connection) &&
                 current.apiKeyConfigured === (clear ? false : Boolean(patch.connection.apiKey ||
-                  saved?.provider === connection.provider && saved.apiKeyConfigured))) audioSettingsDrafts.delete(id);
+                  saved?.provider === connection.provider && saved.apiKeyConfigured))) {
+                audioSettingsDrafts.delete(id);
+                savedRevision = confirmedAudioServices.revision;
+              }
             },
           });
-          return result;
+          return savedRevision;
         } finally {
           audioSettingsSubmitting = false;
           renderAudioTools();
@@ -5614,6 +5705,7 @@
           return true;
         }
         if (!(await confirmAudioConnectionChange("remove", savedAudioConnection(id)))) return false;
+        clearSunoCookieInput();
         document.getElementById("audioServiceApiKey").value = "";
         audioSettingsSubmitting = true;
         renderAudioTools();
@@ -5646,6 +5738,85 @@
           selectedAudioServiceId === service.id && confirmedAudioServices?.revision === revision;
       }
 
+      function sunoAccountStatus(serviceId) {
+        const status = confirmedSunoAccounts.find((account) => account.serviceId === serviceId)?.status;
+        return t({ signed_out: "Not connected", saved: "Cookie saved; refresh to verify",
+          signed_in: "Connected to Suno.com", expired: "Cookie expired; import a fresh Suno Cookie",
+          unavailable: "Suno verification unavailable; try again later" }[status] || "No verified Suno connection");
+      }
+
+      function clearSunoCookieInput() {
+        document.getElementById("sunoSessionValue").value = "";
+        sunoInputRevision += 1;
+      }
+
+      function canMaintainSunoSession(serviceId) {
+        const account = confirmedSunoAccounts.find((entry) => entry.serviceId === serviceId);
+        // Retry is not credential evidence; the backend rechecks local storage.
+        return ["saved", "signed_in", "expired", "unavailable"].includes(account?.status);
+      }
+
+      async function importSunoCookie() {
+        const input = document.getElementById("sunoSessionValue");
+        let sessionValue = input.value;
+        input.value = "";
+        const id = selectedAudioServiceId;
+        const draft = audioSettingsDrafts.get(id);
+        const connection = draft?.connection || savedAudioConnection(id);
+        const inputRevision = sunoInputRevision;
+        const expectedRevision = draft?.expectedRevision;
+        try {
+          if (audioSettingsBusy || audioSettingsSubmitting || draft?.conflict || connection?.provider !== "suno") return false;
+          if (sessionValue.length > 8192 || !/^(?:__client=)?[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(sessionValue)) {
+            showStatus(t("Paste only the Suno __client Cookie value or exactly __client=value (maximum 8192 characters), never a full Cookie header."), true);
+            input.focus();
+            return false;
+          }
+          if (draft) {
+            const savedRevision = await saveAudioServiceSettings();
+            if (!savedRevision || savedRevision !== (BigInt(expectedRevision) + 1n).toString() ||
+              confirmedAudioServices.revision !== savedRevision) return false;
+          }
+          if (inputRevision !== sunoInputRevision || selectedAudioServiceId !== id || audioSettingsDrafts.has(id) ||
+            audioSettingsBusy || audioSettingsSubmitting || closeDecisionPending ||
+            !sameJsonValue(audioConnectionFields(savedAudioConnection(id) || {}),
+              { ...audioConnectionFields(connection), name: connection.name.trim() })) return false;
+          return await runCommand("import_suno_session", { serviceId: id, sessionValue });
+        } finally {
+          sessionValue = "";
+          renderAudioTools();
+        }
+      }
+
+      async function runSunoLoginCommand(kind) {
+        const id = selectedAudioServiceId;
+        const service = savedAudioConnection(id);
+        if (kind === "open_suno_website") {
+          if (audioSettingsBusy || audioSettingsSubmitting) return false;
+          return runCommand(kind, undefined, { onOutcome: (outcome) => {
+            if (outcome.known && outcome.succeeded) {
+              showStatus(t("Suno opened in your default browser. Import its Cookie to connect Live Smith."));
+            }
+          } });
+        }
+        const canRun = () => !audioSettingsBusy && !audioSettingsSubmitting &&
+          selectedAudioServiceId === id && !audioSettingsDrafts.has(id) &&
+          savedAudioConnection(id)?.provider === "suno" && canMaintainSunoSession(id);
+        if (!["refresh_suno_login", "logout_suno"].includes(kind) || !canRun()) return false;
+        if (kind === "logout_suno") {
+          const revision = confirmedAudioServices.revision;
+          const accepted = await confirmAction({
+            title: window.LiveSmithI18n.message("Clear local Suno Cookie?"),
+            message: window.LiveSmithI18n.message("Remove only the Cookie saved locally for “{name}”? Your Suno browser login and browser windows stay open. Reconnect by importing a Suno Cookie again.", { name: service.name }),
+            acceptLabel: window.LiveSmithI18n.message("Clear local Cookie"), danger: true,
+          });
+          if (!accepted || !canRun() || confirmedAudioServices.revision !== revision) return false;
+          clearSunoCookieInput();
+        }
+        // Capture the saved identity before awaiting; selection remains navigable.
+        return runCommand(kind, { serviceId: id });
+      }
+
       function setAudioToolsBusy(settingsBusy, resumeBusy) {
         audioSettingsBusy = settingsBusy;
         audioResumeBusy = resumeBusy;
@@ -5653,10 +5824,20 @@
       }
 
       function renderAudioTools() {
+        bindSunoCookieControls();
         const saved = savedAudioConnection();
         const draft = audioSettingsDrafts.get(selectedAudioServiceId);
         const service = draft?.connection || saved;
         const busy = audioSettingsBusy || audioSettingsSubmitting;
+        const cookie = document.getElementById("sunoSessionValue");
+        const cookieOwner = service ? service.id + ":" + service.provider : "";
+        if (cookie.dataset.connection !== cookieOwner) {
+          clearSunoCookieInput();
+          cookie.dataset.connection = cookieOwner;
+          document.getElementById("sunoCookieHelp").open = false;
+        }
+        document.getElementById("sunoAccountName").textContent = "";
+        document.getElementById("sunoAccountName").hidden = true;
         const picker = document.getElementById("audioServiceSelector");
         const choices = new Map((confirmedAudioServices?.connections || []).map((connection) => [connection.id, connection]));
         for (const [id, value] of audioSettingsDrafts) choices.set(id, value.connection);
@@ -5677,12 +5858,13 @@
           const pending = audioSettingsDrafts.has(id);
           const configured = savedAudioConnection(id);
           row.children[0].children[0].textContent = value.name || t("New audio connection");
-          row.children[0].children[1].textContent = audioServiceCapabilities[value.provider].label;
-          row.children[1].textContent = pending ? t("Unsaved changes") : !configured?.apiKeyConfigured
+          row.children[0].children[1].textContent = t(audioServiceCapabilities[value.provider].label);
+          row.children[1].textContent = pending ? t("Unsaved changes") : audioServiceCapabilities[value.provider].sessionImport
+            ? sunoAccountStatus(id) : !configured?.apiKeyConfigured
             ? t("Needs setup") : configured.enabled ? t("Enabled") : t("Disabled");
           row.children[1].dataset.pending = String(pending);
-          row.title = (value.name || t("New audio connection")) + " · " + audioServiceCapabilities[value.provider].label;
-          row.disabled = busy;
+          row.title = (value.name || t("New audio connection")) + " · " + t(audioServiceCapabilities[value.provider].label);
+          row.disabled = audioSettingsSubmitting || audioSettingsBusy && !sunoLoginCommands.has(commandInProgress);
           row.setAttribute("aria-pressed", String(id === selectedAudioServiceId));
         }
         picker.hidden = !choices.size;
@@ -5692,8 +5874,9 @@
         const provider = document.getElementById("audioServiceProvider");
         provider.replaceChildren();
         for (const [id, capability] of Object.entries(audioServiceCapabilities)) {
-          const option = new Option(capability.label + (capability.operations.length ? "" : " · " + t("Unavailable")), id);
-          option.disabled = !capability.operations.length;
+          const selectable = capability.operations.length > 0 || capability.sessionImport === true;
+          const option = new Option(t(capability.label) + (selectable ? "" : " · " + t("Unavailable")), id);
+          option.disabled = !selectable;
           provider.add(option);
         }
         if (service) {
@@ -5705,6 +5888,7 @@
             modelOptions.open = Boolean(service.modelId);
           }
           const supported = audioServiceCapabilities[service.provider].operations;
+          const sessionImport = audioServiceCapabilities[service.provider].sessionImport === true;
           const enabled = document.getElementById("audioServiceEnabled");
           const key = document.getElementById("audioServiceApiKey");
           document.getElementById("audioServiceName").value = service.name;
@@ -5713,20 +5897,55 @@
           const callback = document.getElementById("audioServiceCallback");
           callback.value = service.callbackUrl || "";
           callback.required = service.provider === "sunoapi" && service.enabled;
-          enabled.checked = service.enabled;
+          enabled.checked = supported.length > 0 && service.enabled;
           for (const id of ["audioServiceName", "audioServiceProvider", "audioServiceModel", "audioServiceCallback", "audioServiceApiKey"]) {
             document.getElementById(id).disabled = busy || Boolean(draft?.conflict);
           }
           document.getElementById("audioServiceModelField").hidden = !supported.includes("generate_music");
           document.getElementById("audioServiceCallbackField").hidden = service.provider !== "sunoapi";
+          document.getElementById("audioServiceEnabledField").hidden = !supported.length;
+          document.getElementById("audioServiceKeyField").hidden = sessionImport;
+          if (sessionImport) { key.value = ""; key.disabled = true; }
+          document.getElementById("sunoLoginControls").hidden = !sessionImport;
+          document.getElementById("sunoLoginStatus").textContent = !saved || draft
+            ? t("Connect will save this connection before importing its Suno Cookie.") : sunoAccountStatus(service.id);
+          const account = sessionImport && !draft && confirmedSunoAccounts.find((entry) => entry.serviceId === service.id);
+          const accountName = document.getElementById("sunoAccountName");
+          accountName.textContent = ["signed_in", "saved"].includes(account?.status) && account.accountName
+            ? t("Suno account: {accountName}", { accountName: account.accountName }) : "";
+          accountName.hidden = !accountName.textContent;
+          cookie.disabled = busy || Boolean(draft?.conflict) || !sessionImport;
+          const connect = document.getElementById("connectSunoButton");
+          connect.textContent = t(draft ? "Save and connect" : "Connect");
+          connect.disabled = cookie.disabled || !cookie.value;
+          connect.onclick = importSunoCookie;
+          const openWebsite = document.getElementById("openSunoWebsiteButton");
+          openWebsite.disabled = busy || !sessionImport;
+          openWebsite.onclick = () => runSunoLoginCommand("open_suno_website");
+          const refresh = document.getElementById("refreshSunoLoginButton");
+          const refreshLabel = account?.status === "unavailable" ? "Retry verification" : "Refresh connection";
+          refresh.dataset.i18n = refreshLabel;
+          refresh.textContent = t(refreshLabel);
+          for (const [id, kind] of [
+            ["refreshSunoLoginButton", "refresh_suno_login"],
+            ["logoutSunoButton", "logout_suno"],
+          ]) {
+            const button = document.getElementById(id);
+            const canMaintain = canMaintainSunoSession(service.id);
+            button.hidden = !canMaintain;
+            button.disabled = busy || Boolean(draft) || saved?.provider !== "suno" || !sessionImport || !canMaintain;
+            button.onclick = () => runSunoLoginCommand(kind);
+          }
           document.getElementById("audioServiceModelHint").textContent = service.provider === "sunoapi"
             ? t("Leave blank to use V4_5ALL. This integration uses prompt-based generation without custom mode or a duration setting.")
             : t("Leave blank to use the integration default. Sound effects use a dedicated model.");
           enabled.disabled = busy || Boolean(draft?.conflict) || !supported.length;
-          document.getElementById("audioServiceOperations").textContent = supported.length
+          document.getElementById("audioServiceOperations").textContent = sessionImport
+            ? t("Cookie connection only. Music generation is not available in Live Smith.") : supported.length
             ? supported.map(audioOperationLabel).join(" · ")
             : t("Unavailable: no verified public API protocol is configured for this provider.");
-          document.getElementById("audioServiceDisclosure").textContent = service.provider === "sunoapi"
+          document.getElementById("audioServiceDisclosure").textContent = sessionImport
+            ? t("Manually import your Suno Cookie even if you are already signed in in your browser. This nonofficial, experimental connection does not enable music generation. Cookies can expire; import a fresh one to reconnect. Live Smith does not collect Google credentials.") : service.provider === "sunoapi"
             ? t("SunoAPI.org is a third-party API service with its own key and billing. It is not Suno's official API or a Suno website subscription. Your prompt is sent to SunoAPI.org.")
             : supported.includes("separate_stems")
             ? t("Selected audio is sent to this external service. Stem separation uses processing minutes for each requested stem.")
@@ -5741,6 +5960,7 @@
         document.getElementById("reloadAudioServiceButton").disabled = busy;
         document.getElementById("saveAudioServiceButton").disabled = busy || conflict || !draft;
         document.getElementById("clearAudioServiceButton").disabled = busy || conflict || !saved?.apiKeyConfigured;
+        document.getElementById("clearAudioServiceButton").hidden = Boolean(service && audioServiceCapabilities[service.provider].sessionImport);
         document.getElementById("removeAudioServiceButton").disabled = busy || conflict || !service;
         renderAudioJobs();
       }
@@ -8691,6 +8911,7 @@
         submitComposer,
         setCloseDecisionPending: (pending) => {
           closeDecisionPending = Boolean(pending);
+          if (closeDecisionPending) clearSunoCookieInput();
           if (!closeDecisionPending) startQueuedFollowUpsForIdleSessions();
         },
         showStatus,

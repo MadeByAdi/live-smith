@@ -139,7 +139,7 @@ function verifyNetworkRuntimeBundleInputs(metafile: esbuild.Metafile): void {
 function verifySourceRuntimeBoundaries(sourceDirectory: string): void {
   const violations: string[] = [];
   const childProcessBoundaries = new Set([
-    "src/runtime/oauth-browser.ts",
+    "src/runtime/system-browser.ts",
     "src/runtime/system-proxy.ts",
   ].map(path.normalize));
   for (const file of sourceFiles(sourceDirectory)) {

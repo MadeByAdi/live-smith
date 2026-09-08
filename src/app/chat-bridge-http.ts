@@ -178,6 +178,10 @@ export type ChatBridgeCommandInput =
       networkProxy?: never;
     }
   | { kind: "resume_audio_job"; sessionId: string; jobId: string }
+  | { kind: "open_suno_website" }
+  | { kind: "import_suno_session"; serviceId: string; sessionValue: string }
+  | { kind: "refresh_suno_login"; serviceId: string }
+  | { kind: "logout_suno"; serviceId: string }
   | {
       kind: "set_session_approval_mode";
       sessionId: string;
@@ -956,6 +960,24 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       }
       throw error;
     }
+  }
+  if (kind === "open_suno_website") {
+    assertOnlyInputKeys(input, ["kind"], "open_suno_website command");
+    return { kind };
+  }
+  if (kind === "import_suno_session") {
+    assertOnlyInputKeys(input, ["kind", "serviceId", "sessionValue"], "import_suno_session command");
+    if (!isSafeStorageId(input.serviceId)) throw new ChatBridgeRequestValidationError("Suno connection ID must be a safe storage ID.");
+    if (typeof input.sessionValue !== "string" || !input.sessionValue.trim() || input.sessionValue.length > 8192 ||
+      /[\u0000-\u001f\u007f]/u.test(input.sessionValue)) {
+      throw new ChatBridgeRequestValidationError("Enter only the Suno __client Cookie value (up to 8192 characters).");
+    }
+    return { kind, serviceId: input.serviceId, sessionValue: input.sessionValue };
+  }
+  if (kind === "refresh_suno_login" || kind === "logout_suno") {
+    assertOnlyInputKeys(input, ["kind", "serviceId"], `${kind} command`);
+    if (!isSafeStorageId(input.serviceId)) throw new ChatBridgeRequestValidationError("Suno connection ID must be a safe storage ID.");
+    return { kind, serviceId: input.serviceId };
   }
   if (kind === "resume_audio_job") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "jobId"], "resume_audio_job command");

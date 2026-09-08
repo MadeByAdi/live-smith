@@ -1,5 +1,6 @@
 import { safeAttachmentDisplayFileName } from "../attachments/contracts.js";
 import type { AudioServicesView, AudioJobView } from "../audio-services/contracts.js";
+import type { SunoAccountView } from "../audio-services/suno-session-contracts.js";
 import type { LiveContextPresentation } from "../live/context.js";
 import type { ConversationScope } from "../model/contracts.js";
 import type {
@@ -71,6 +72,8 @@ export interface ChatDialogState {
   settings: AgentSettings;
   audioServices?: AudioServicesView;
   audioJobs?: AudioJobView[];
+  /** Imported website-session evidence, not a generation capability or credential. */
+  sunoAccounts?: SunoAccountView[];
   /** Credential-free state for the selected native OAuth provider. */
   oauthAuth?: OAuthAuthState;
   oauthAuthProfileId?: string;
@@ -121,6 +124,11 @@ export function chatDialogStateForWire<State extends ChatDialogState>(
   return {
     ...state,
     ...(settings ? { settings } : {}),
+    ...(state.sunoAccounts === undefined ? {} : { sunoAccounts: state.sunoAccounts.map(({ serviceId, status, accountId, accountName }) => ({
+      serviceId, status,
+      ...((status === "signed_in" || status === "saved") && accountId ? { accountId } : {}),
+      ...((status === "signed_in" || status === "saved") && accountName ? { accountName } : {}),
+    })) }),
     ...(state.audioServices === undefined ? {} : { audioServices: {
       revision: state.audioServices.revision,
       connections: state.audioServices.connections.map(({ id, name, provider, enabled, apiKeyConfigured, modelId, callbackUrl }) => ({

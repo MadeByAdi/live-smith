@@ -125,6 +125,21 @@ Processing tests use injected services and local audio fixtures; they do not
 upload user audio or consume generation credits or processing minutes. Real-service validation requires
 an explicitly configured account. Verify separated-stem timing, Warp settings,
 playback, Stop, and import behavior separately in the Ableton host.
+Suno Cookie tests use synthetic credentials, captured HTTP requests and injected
+default-browser handlers. They do not read browser profiles or log into real
+accounts. The runtime opens the website through the OS default handler, without
+browser discovery, extensions, automation flags or bundled browser dependencies.
+Explicitly imported Cookies are stored in private `suno-session-<serviceId>.json`
+files in the extension storage directory, separately per audio connection, and must
+never enter source, fixtures, logs, screenshots or shared artifacts. See the
+[Cookie connection workflow](MODEL_PROVIDERS.md#sunocom-website-sign-in) for
+import, validation, expiry and disconnect semantics. Real-provider verification
+requires the owner to enter a Cookie in the local form; passing fixture tests
+does not establish live authentication, subscription generation or download support.
+Legacy `suno-browser/<serviceId>/` directories may contain private browser data;
+the current runtime leaves them untouched. Close any old managed browser window
+before manually cleaning up a known legacy directory. Never delete or migrate
+these directories automatically.
 Built-in Skills are bundled and do not create imported Skill files.
 
 Do not commit, share, cloud-sync, or delete private development data without the

@@ -7,10 +7,12 @@ export const AUDIO_SERVICE_CAPABILITIES: Record<AudioProvider, {
   musicDuration: boolean;
   generationOutputCount: number;
   musicPromptCharacters: number;
+  /** Website authentication can be available before generation is supported. */
+  sessionImport?: boolean;
 }> = {
   lalal: { label: "LALAL.AI", operations: ["separate_stems"], musicDuration: false, generationOutputCount: 0, musicPromptCharacters: 0 },
   elevenlabs: { label: "ElevenLabs", operations: ["generate_music", "generate_sound_effect"], musicDuration: true, generationOutputCount: 1, musicPromptCharacters: 4100 },
-  suno: { label: "Suno", operations: [], musicDuration: false, generationOutputCount: 0, musicPromptCharacters: 0 },
+  suno: { label: "Suno.com (experimental)", operations: [], musicDuration: false, generationOutputCount: 0, musicPromptCharacters: 0, sessionImport: true },
   sunoapi: { label: "Suno via SunoAPI.org (third-party)", operations: ["generate_music"], musicDuration: false, generationOutputCount: 2, musicPromptCharacters: 3000 },
 };
 

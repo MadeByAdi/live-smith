@@ -2,6 +2,10 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 import { createHash } from "node:crypto";
 
 import { audioJobViews, resumeAudioJob } from "./audio-processing.js";
+import { SunoSessionManager } from "./suno-session-manager.js";
+import { createSunoSessionVerifier } from "../audio-services/suno-session.js";
+import type { SunoSessionVerifier } from "../audio-services/suno-session-contracts.js";
+import { openSunoWebsite } from "../runtime/suno-website.js";
 import { audioServicesView } from "../storage/settings.js";
 import { readAudioAsset, deleteSessionAudio, listSessionAudioDirectoryIds } from "../storage/audio-assets.js";
 import { listAudioJobs } from "../storage/audio-jobs.js";
@@ -290,6 +294,9 @@ function effectiveSessionModelSelection(
 }
 
 export interface AgentFlowDependencies {
+  /** Test seams; production uses the OS default browser and a Suno-only verifier. */
+  openSunoWebsite?: typeof openSunoWebsite;
+  verifySunoSession?: SunoSessionVerifier;
   appendSessionEvent?: typeof appendSessionEvent;
   deleteSession?: typeof deleteSession;
   getOrCreateDefaultSession?: typeof getOrCreateDefaultSession;
@@ -377,6 +384,8 @@ export async function runAgentFlow(
     ? undefined
     : await canonicalStorageDirectory(context.environment.storageDirectory);
   const providerFetch = providerFetchForStorage(storageDirectory);
+  const sunoSessions = new SunoSessionManager(storageDirectory,
+    dependencies.verifySunoSession ?? createSunoSessionVerifier(providerFetch));
   const modelAuthSendFenceFor = (
     profileId: string,
   ): ModelAuthSendFence => dependencies.modelAuthSendFence ??
@@ -1399,6 +1408,7 @@ export async function runAgentFlow(
         pendingAttachments,
         ...(settings.audioServices ? { audioServices: audioServicesView(settings.audioServices) } : {}),
         audioJobs: await audioJobViews(storageDirectory, activeSession.id),
+        sunoAccounts: await sunoSessions.views(settings.audioServices?.connections ?? []),
         availableSkills: storageSnapshot.availableSkills,
         activeSkillIds: [...(activeSession.activeSkillIds ?? [])],
         capabilities: capabilityPreview.capabilities,
@@ -2124,6 +2134,28 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
+    if (commandInput.kind === "open_suno_website") {
+      await (dependencies.openSunoWebsite ?? openSunoWebsite)(signal);
+      status = undefined;
+      return buildStateAfterCommandMutation();
+    }
+
+    if (commandInput.kind === "import_suno_session" || commandInput.kind === "refresh_suno_login" || commandInput.kind === "logout_suno") {
+      return globalSettingsMutationFence.run(sessionMutationFenceKey(storageDirectory, "global-settings"), signal, async () => {
+        try {
+          if (commandInput.kind === "import_suno_session") {
+            await sunoSessions.importSession(commandInput.serviceId, commandInput.sessionValue, signal);
+          } else if (commandInput.kind === "refresh_suno_login") {
+            await sunoSessions.refresh(commandInput.serviceId, signal);
+          } else {
+            await sunoSessions.clear(commandInput.serviceId);
+          }
+          status = undefined;
+          return await buildStateAfterCommandMutation();
+        } finally { notifyGlobalStateChanged(); }
+      });
+    }
+
     if (commandInput.kind === "save_global_settings") {
       return globalSettingsMutationFence.run(
         sessionMutationFenceKey(
@@ -2171,6 +2203,7 @@ export async function runAgentFlow(
           } catch (cause) {
             if (!isStorageCommitOutcomeUnknownError(cause)) throw cause;
 
+            if ("audioServices" in commandInput) notifyGlobalStateChanged();
             try {
               const settings = await loadAgentSettings(
                 storageDirectory,

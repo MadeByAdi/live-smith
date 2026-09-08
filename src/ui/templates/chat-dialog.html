@@ -2379,6 +2379,7 @@
       }
       .audio-job h4, .audio-job p { margin: 0 0 8px; }
       .audio-job audio { display: block; width: 100%; margin-bottom: 10px; }
+      #audioSettingsSection [hidden] { display: none; }
       .audio-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
       .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
       .audio-section-heading h3 { margin: 0; }
@@ -2399,6 +2400,9 @@
       .audio-editor-body { display: grid; gap: 10px; padding: 0 10px 12px; }
       .audio-editor-body .field { margin: 0; }
       .audio-editor-body .field-hint { line-height: 1.5; }
+      #sunoAccountName { overflow-wrap: anywhere; }
+      #sunoCookieHelp { margin-top: 12px; }
+      #sunoCookieHelp li + li { margin-top: 8px; }
       .audio-model-options { border-top: 1px solid var(--line-soft); padding-top: 8px; }
       .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: 11px; padding-block: 5px; }
       .audio-model-options > .field { margin-top: 8px; }
@@ -4191,7 +4195,7 @@
                   <button id="addAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.addAudioService()" data-i18n="Add service">Add service</button>
                 </div>
                 <div id="audioServiceSelector" class="audio-service-list" role="group" aria-label="Audio connections" data-i18n-aria-label="Audio connections"></div>
-                <p id="audioServiceEmpty" class="field-hint" data-i18n="Add a named connection to separate stems or generate audio. Each connection keeps its own API key.">Add a named connection to separate stems or generate audio. Each connection keeps its own API key.</p>
+                <p id="audioServiceEmpty" class="field-hint" data-i18n="Add a named connection for audio tools or a Suno Cookie. Each connection keeps its own local setup.">Add a named connection for audio tools or a Suno Cookie. Each connection keeps its own local setup.</p>
                 <details id="audioServiceFields" class="audio-connection-editor" hidden>
                   <summary id="audioServiceEditorSummary" data-i18n="Connection settings">Connection settings</summary>
                   <div class="audio-editor-body">
@@ -4218,11 +4222,40 @@
                     <span id="audioServiceCallbackHint" class="field-hint" data-i18n="Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.">Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.</span>
                   </div>
                   <p class="field-hint" id="audioServiceDisclosure"></p>
-                  <label class="context-usage-setting" for="audioServiceEnabled">
+                  <div id="sunoLoginControls" hidden>
+                    <div class="audio-settings-actions">
+                      <button id="openSunoWebsiteButton" class="secondary" type="button" data-i18n="Open Suno in default browser">Open Suno in default browser</button>
+                    </div>
+                    <details id="sunoCookieHelp" class="audio-model-options">
+                      <summary data-i18n="How to find your Suno Cookie">How to find your Suno Cookie</summary>
+                      <ol class="field-hint">
+                        <li data-i18n="Open Suno and sign in yourself in your browser. No browser extension is needed.">Open Suno and sign in yourself in your browser. No browser extension is needed.</li>
+                        <li data-i18n="Open browser developer tools → Application or Storage → Cookies → auth.suno.com. Find __client and copy only its value.">Open browser developer tools → Application or Storage → Cookies → auth.suno.com. Find __client and copy only its value.</li>
+                        <li data-i18n="If it is not listed, open Network, reload Suno, and select the client request to auth.suno.com. In its request Cookies, copy only the Suno __client value, never the whole Cookie header.">If it is not listed, open Network, reload Suno, and select the client request to auth.suno.com. In its request Cookies, copy only the Suno __client value, never the whole Cookie header.</li>
+                        <li data-i18n="Paste it into the local Suno Cookie field below and choose Connect. Never paste it into chat or share it. Do not paste browser exports or other cookies.">Paste it into the local Suno Cookie field below and choose Connect. Never paste it into chat or share it. Do not paste browser exports or other cookies.</li>
+                      </ol>
+                    </details>
+                    <div class="field">
+                      <label for="sunoSessionValue" data-i18n="Suno Cookie (__client)">Suno Cookie (__client)</label>
+                      <input id="sunoSessionValue" type="password" maxlength="8192" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure sunoCookieHint" />
+                      <span id="sunoCookieHint" class="field-hint" data-i18n="Only the __client value or exactly __client=value, up to 8192 characters. Saved privately for this connection; the field clears when submitted.">Only the __client value or exactly __client=value, up to 8192 characters. Saved privately for this connection; the field clears when submitted.</span>
+                    </div>
+                    <div class="audio-settings-actions">
+                      <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
+                    </div>
+                    <p id="sunoLoginStatus" class="field-hint" role="status" aria-live="polite"></p>
+                    <p id="sunoAccountName" class="field-hint" hidden></p>
+                    <div class="audio-settings-actions audio-maintenance">
+                      <button id="refreshSunoLoginButton" class="secondary" type="button" data-i18n="Refresh connection" disabled>Refresh connection</button>
+                      <button id="logoutSunoButton" class="secondary" type="button" data-i18n="Clear local Cookie" disabled>Clear local Cookie</button>
+                    </div>
+                    <p class="field-hint" data-i18n="Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.">Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.</p>
+                  </div>
+                  <label id="audioServiceEnabledField" class="context-usage-setting" for="audioServiceEnabled">
                     <input id="audioServiceEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
                     <span data-i18n="Enable connection">Enable connection</span>
                   </label>
-                  <div class="field">
+                  <div class="field" id="audioServiceKeyField">
                     <label for="audioServiceApiKey" data-i18n="API key">API key</label>
                     <input id="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
                     <span id="audioServiceKeyStatus" class="field-hint" role="status" aria-live="polite"></span>

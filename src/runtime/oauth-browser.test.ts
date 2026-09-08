@@ -122,7 +122,7 @@ test("OAuth browser launch failures do not echo the target URL", async () => {
     (error: unknown) => {
       assert.equal(
         error instanceof Error ? error.message : String(error),
-        "The OAuth browser could not be opened.",
+        "The system browser could not be opened.",
       );
       return true;
     },

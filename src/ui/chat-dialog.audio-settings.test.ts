@@ -241,12 +241,21 @@ for (const [isNew, withState] of [[false, false], [false, true], [true, false], 
   });
 }
 
-test("unavailable Suno is not selectable or enableable and explains the missing public protocol", async () => {
+test("Suno supports Cookie connection without enabling generation", async () => {
   const harness = await createDialogHarness(audioState([{ ...service, provider: "suno", enabled: false, apiKeyConfigured: false }]));
   try {
-    assert.equal(harness.document.querySelector<HTMLOptionElement>('#audioServiceProvider option[value="suno"]')!.disabled, true);
+    assert.equal(harness.document.querySelector<HTMLOptionElement>('#audioServiceProvider option[value="suno"]')!.disabled, false);
     assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceEnabled")!.disabled, true);
-    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /no verified public API protocol/);
+    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceEnabledField")!.hidden, true);
+    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceKeyField")!.hidden, true);
+    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceModelField")!.hidden, true);
+    for (const selector of ["#audioServiceCallbackField", "#clearAudioServiceButton"]) {
+      assert.equal(harness.document.querySelector<HTMLElement>(selector)!.hidden, true, selector);
+    }
+    assert.equal(harness.document.querySelector<HTMLElement>("#sunoLoginControls")!.hidden, false);
+    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Music generation is not available/);
+    assert.equal(harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!.type, "password");
+    assert.equal(harness.document.querySelector<HTMLButtonElement>("#openSunoWebsiteButton")!.disabled, false);
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
 });
