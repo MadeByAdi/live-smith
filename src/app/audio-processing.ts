@@ -18,7 +18,7 @@ import {
 } from "../storage/audio-jobs.js";
 import { providerFetchForStorage } from "./provider-fetch.js";
 import { audioServiceSupports } from "../audio-services/capabilities.js";
-import { audioConnectionFingerprint, availableAudioServices, resolveAudioService } from "./audio-service-connections.js";
+import { audioConnectionFingerprint, availableAudioServices, resolveAudioService, type RuntimeAudioServiceConnection } from "./audio-service-connections.js";
 import { acquireAudioJob, audioJobIsActive, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { resumeAudioGeneration } from "./audio-generation.js";
 export { audioConnectionFingerprint } from "./audio-service-connections.js";
@@ -28,7 +28,7 @@ export interface AudioProcessingContext {
   sessionId: string;
   signal: AbortSignal;
   /** Saved connections captured before this request advertises audio tools. */
-  admittedConnections?: readonly AudioServiceConnection[];
+  admittedConnections?: readonly RuntimeAudioServiceConnection[];
   onProgress?(message: string): Promise<void> | void;
   /** Injected service and wait are used by protocol-independent lifecycle tests. */
   adapter?: AudioServiceAdapter;
@@ -260,7 +260,8 @@ async function cancelRemoteBestEffort(adapter: AudioServiceAdapter, taskId: stri
 }
 
 export function audioJobResultText(job: AudioJob): string {
-  return JSON.stringify(audioJobView(job));
+  return JSON.stringify({ ...audioJobView(job), ...(job.provider === "suno" && job.expectedOutputs
+    ? { musicClips: job.expectedOutputs.map(({ key, role }) => ({ clipId: key, role })) } : {}) });
 }
 
 export function audioAssetsFromJobs(jobs: readonly AudioJob[]): AudioAsset[] {

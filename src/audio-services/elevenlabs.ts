@@ -46,12 +46,14 @@ export function createElevenLabsAudioAdapter(
   };
 }
 
-function validateRequest(request: AudioGenerationRequest): void {
+function validateRequest(request: AudioGenerationRequest): asserts request is Extract<AudioGenerationRequest, { operation: "generate_music" | "generate_sound_effect" }> {
   if (!request || typeof request !== "object" ||
+      (request.operation !== "generate_music" && request.operation !== "generate_sound_effect") ||
       typeof request.prompt !== "string" || !request.prompt.trim()) {
     throw elevenLabsError("a non-empty generation prompt is required.");
   }
   if (request.operation === "generate_music") {
+    if (request.options !== undefined) throw elevenLabsError("custom music options are not supported.");
     if (exceedsAudioPromptLimit(request.prompt, 4100)) throw elevenLabsError("music prompt exceeds 4100 characters.");
     if (typeof request.instrumental !== "boolean") {
       throw elevenLabsError("music instrumental must be a boolean.");

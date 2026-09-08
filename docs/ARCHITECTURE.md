@@ -100,6 +100,10 @@ src/
     sunoapi.ts, sunoapi-http.ts
       Explicit third-party SunoAPI.org submission, polling, and allowed-CDN
       downloads; no official Suno subscription credentials.
+    suno.ts, suno-catalog.ts, suno-http.ts
+      Experimental Suno.com account-bound generation, custom parameters,
+      extension/whole-song requests, bounded catalog/library reads, short-lived
+      session-token exchange and allowlisted CDN downloads. No browser impersonation.
     response-bytes.ts
       Shared bounded decoded-body reads with periodic cancellation yields and
       exact Content-Length checks only for unencoded responses.
@@ -868,7 +872,8 @@ extension or debugging connection is owned by Live Smith.
 saved audio connection IDs. Import and refresh use the bounded Suno-only
 `audio-services/suno-session.ts` verifier through proxy-aware Fetch. The adapter
 reads the current Clerk client/session identity; it never automates Google
-login, extracts browser data or submits generation.
+login or extracts browser data. Generation uses a separate private HTTP client
+that mints short-lived account/session-bound tokens only when needed for a request.
 `storage/suno-sessions.ts` owns private per-connection credentials outside public
 settings. Global settings changes clear the prior credential owner only after
 validation and revision checks, before persistence, under the same global-settings
@@ -878,7 +883,17 @@ Credential-free verification evidence is shared per storage scope across dialogs
 so one window's failed refresh invalidates the others' status for that credential.
 Local views do not trigger network requests and do not present disk-only identity
 as freshly verified authentication after an extension-host restart. `sunoAccounts` projects only bounded account
-identity and status, never a Cookie; it must not confer a generation capability.
+identity and status, never a Cookie. Explicit saved enablement and a private
+credential are required for tool admission; UI identity is not runtime authority.
+Private admission snapshots include exact Suno credentials, while recovery
+fingerprints bind verified account IDs so rotating a Cookie does not orphan
+accepted tasks. Custom options are typed, capability-gated and validated against
+the selected account's model catalog. Read-only preparation and challenge checks
+precede the paid submission boundary. A multi-clip receipt is persisted atomically
+before polling and has immutable ID/role associations, including failed siblings.
+Only library/job-observed clip IDs on the selected connection can be used by the
+chat tools for extension/whole-song requests. Remote text is bounded untrusted
+data; no generic HTTP tool or credential-bearing locator reaches the chat model.
 Closing a dialog neither disconnects the saved account nor closes a user's browser.
 If credential cleanup succeeds but the following settings write fails, the
 compound command reports an uncertain/partial outcome, invalidates peer state

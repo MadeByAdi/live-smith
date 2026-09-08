@@ -13,7 +13,7 @@ export const MAX_AUDIO_SERVICES = 20;
 export const LEGACY_AUDIO_SERVICE_ID = "audio-service-lalal";
 export const AUDIO_PROVIDERS = ["lalal", "elevenlabs", "suno", "sunoapi"] as const;
 export type AudioProvider = (typeof AUDIO_PROVIDERS)[number];
-export type AudioOperation = "separate_stems" | "generate_music" | "generate_sound_effect";
+export type AudioOperation = "separate_stems" | "generate_music" | "generate_sound_effect" | "extend_music" | "get_whole_song";
 
 export interface AudioServiceConnection {
   id: string;
@@ -45,8 +45,20 @@ export type AudioServicesSettingsPatch =
   | { action: "upsert"; expectedRevision: string; connection: Omit<AudioServiceConnection, "apiKey"> & { apiKey?: string } }
   | { action: "remove"; expectedRevision: string; serviceId: string };
 
+export interface MusicGenerationOptions {
+  mode: "custom";
+  title?: string;
+  styles?: string;
+  negativeStyles?: string;
+  weirdness?: number;
+  styleInfluence?: number;
+  personaId?: string;
+}
+
 export type AudioGenerationRequest =
-  | { operation: "generate_music"; prompt: string; durationSeconds?: number; instrumental: boolean }
+  | { operation: "generate_music"; prompt: string; durationSeconds?: number; instrumental: boolean; options?: MusicGenerationOptions }
+  | { operation: "extend_music"; clipId: string; startSeconds: number; prompt: string; instrumental: boolean; options?: MusicGenerationOptions }
+  | { operation: "get_whole_song"; clipId: string }
   | { operation: "generate_sound_effect"; prompt: string; durationSeconds: number; loop: boolean };
 
 export interface GeneratedAudioOutput {
@@ -56,12 +68,14 @@ export interface GeneratedAudioOutput {
 
 export type AudioGenerationSubmission =
   | { kind: "audio"; outputs: GeneratedAudioOutput[] }
-  | { kind: "task"; taskId: string };
+  | { kind: "task"; taskId: string; expectedOutputs?: AudioJob["expectedOutputs"] };
 
 export interface AudioGenerationAdapter {
   readonly provider: "elevenlabs" | "suno" | "sunoapi";
+  /** Read-only validation and challenge preflight, before the paid submission boundary. */
+  prepare?(request: AudioGenerationRequest, signal: AbortSignal): Promise<void>;
   submit(request: AudioGenerationRequest, signal: AbortSignal): Promise<AudioGenerationSubmission>;
-  inspect?(taskId: string, signal: AbortSignal): Promise<RemoteAudioStatus>;
+  inspect?(taskId: string, signal: AbortSignal, expectedOutputs?: AudioJob["expectedOutputs"]): Promise<RemoteAudioStatus>;
   download?(output: RemoteAudioOutput, signal: AbortSignal): Promise<Uint8Array>;
   cancel?(taskId: string, signal: AbortSignal): Promise<void>;
 }
@@ -99,7 +113,7 @@ export interface RemoteAudioOutput {
 
 export type RemoteAudioStatus =
   | { status: "running"; progress?: number }
-  | { status: "completed"; outputs: RemoteAudioOutput[] }
+  | { status: "completed"; outputs: RemoteAudioOutput[]; failedOutputKeys?: string[] }
   | { status: "failed"; message: string }
   | { status: "cancelled" };
 
@@ -124,7 +138,7 @@ export interface AudioJob {
   provider: AudioProvider;
   serviceId: string;
   modelId?: string;
-  /** Fingerprint of the exact saved credential; no secret is stored here. */
+  /** Credential owner fingerprint; Suno binds the verified account, not its rotating Cookie. */
   connectionFingerprint: string;
   operation: AudioOperation;
   stems: SeparationStem[];

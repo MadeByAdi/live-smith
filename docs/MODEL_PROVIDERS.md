@@ -647,11 +647,14 @@ This is a manual Cookie import, not an automatic OAuth callback:
    saves it first and imports only after a confirmed save. Import verifies the
    active Suno session before privately saving the credential. The input is
    cleared on submission; failed replacement does not overwrite a saved Cookie.
+5. Select **Enable connection** and save. Connecting alone does not enable paid
+   tools. An enabled connection without a saved Cookie remains unavailable to
+   chat requests. Multiple named Suno accounts can be enabled independently.
 
 Treat the Cookie like a password. Enter it only in the local settings form,
 never in a chat message, terminal command, screenshot or shared file. The app
 sends the normalized Cookie only to the fixed Suno authentication host for
-verification and stores it in private local files, not in the model's context,
+verification and short-lived API token exchange, and stores it in private local files, not in the model's context,
 public settings or UI state. Local files are access-restricted but are not
 additionally encrypted by Live Smith. Each saved audio connection owns its own
 Cookie, so multiple Suno accounts can coexist without new browser profiles.
@@ -664,7 +667,7 @@ does not discard that evidence. After the extension host restarts, a saved
 connection is not presented as freshly verified until checked again.
 Expired sessions require a fresh Cookie import; network failures are not reported
 as successful sign-in. Website traffic uses the browser's network configuration;
-app verification uses Live Smith's saved API proxy setting.
+app verification and music requests use Live Smith's saved API proxy setting.
 
 Disconnect removes only that connection's local Cookie. It does not sign out the
 browser or revoke the remote Suno session. Removing the connection or changing
@@ -673,12 +676,49 @@ change. A later settings-write failure can leave the old connection disconnected
 Closing Live Smith does not close the browser. Legacy managed browser directories
 are not read, imported or deleted by this workflow.
 
-**Cookie verification does not enable music generation tools.** Subscription
-generation and download remain unavailable to the chat model. Session identity
-does not prove plan entitlements or available credits. This is experimental
-website-session integration, not an official Suno SDK or OAuth grant. Site
-changes may invalidate it. There is no browser automation, CAPTCHA solver,
-security-check bypass or automatic subscription-credit consumption.
+The experimental tools use the Suno.com account directly. No official Suno SDK
+or OAuth grant is implied, and no SDK dependency is bundled. The adapter follows
+the [source-backed v2-web contract](https://github.com/paperfoot/suno-cli/tree/f0dea4d4e0ef998a508e73f05749eb2b138a253d/src/api),
+which is unofficial and may change. Synthetic protocol tests do not establish
+that a particular live account can generate. Cookie identity alone does not
+prove plan entitlements, sufficient credits or freedom from security challenges.
+
+- `generate_music`: description mode (up to 3000 characters), or `options.mode:
+  "custom"` with literal lyrics (up to 5000, empty for instrumentals), title
+  (80), styles and excluded styles (1000 each), Weirdness and Style Influence
+  (0–100), and an existing Persona ID. Account model limits can be lower and are
+  checked before submission. Sliders map to their structured fields, not prompt
+  suffixes. Instrumental and lyric intent are separate from a style description.
+- `inspect_music_service`: current account model/credit catalog, one bounded
+  library page (20 songs with opaque pagination), or one Persona by ID. It does
+  not enumerate all Voices or train/register a new voice. Returned text is data,
+  not instructions; media URLs and credentials never enter the model context.
+- `extend_music`: lyrics/styles for a completed, observed song starting at an
+  explicit second before its end. `get_whole_song` joins one extension's
+  existing lineage, not an arbitrary collection of audio files. These operations
+  can consume credits and never import to Live without a separate scoped Apply.
+
+Leave the connection's model override blank to use the account's usable default,
+or use an exact model ID returned by the catalog. There is no model-name guessing
+or fallback to a different account/provider. Every generation is preceded by
+account/parameter validation and a CAPTCHA check; only an explicit no-challenge
+response permits submission. Verification challenges stop the operation and
+require manual action on Suno. There is no browser/device impersonation, CAPTCHA
+solver, challenge bypass, or automatic replay of a paid submission. Stop allows
+a bounded receipt-read grace period; it is not a remote cancellation or refund.
+
+Suno returns individual clip IDs. All acknowledged IDs and their output roles
+are saved before polling. Missing/pending clips remain pending; successful clips
+are retained when a sibling fails. Recovery uses the same IDs without generating
+again. Renewing a Cookie for the same verified account permits recovery; switching
+the connection to another account does not. Saved files remain recoverable locally.
+
+Not implemented: Sounds/One Shot/Loop/BPM/Key, structured vocal-gender/duration
+controls, upload/recording, Cover/Remaster, Replace Section, Add Vocals/Instrumental,
+Suno stem extraction, Voice enrollment, custom-model training, Inspo/My Taste,
+workspace edits and publishing. These require additional reliable contracts and
+end-to-end validation; they are not simulated with text tags. Use the existing
+LALAL.AI integration for supported stems and ElevenLabs for sound effects.
 
 ### Stem separation
 

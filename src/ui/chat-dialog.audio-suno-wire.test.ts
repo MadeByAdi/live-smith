@@ -67,7 +67,7 @@ test("an older snapshot cut cannot replace newer Suno inspection evidence even i
     assert.equal(harness.document.querySelector("#sunoLoginStatus")!.textContent, "Not connected");
     assert.equal(harness.document.querySelector("#sunoAccountName")!.textContent, "");
     assert.equal(harness.document.querySelector(`[data-audio-service-id="${website.id}"] .audio-service-status`)!.textContent,
-      "Not connected");
+      "Not connected · Disabled");
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
 });

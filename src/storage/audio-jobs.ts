@@ -205,6 +205,7 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
   // availability; a disabled provider's historical jobs remain readable.
   const validOperation = value.provider === "lalal" ? value.operation === "separate_stems"
     : value.provider === "elevenlabs" ? ["generate_music", "generate_sound_effect"].includes(value.operation as string)
+    : value.provider === "suno" ? ["generate_music", "extend_music", "get_whole_song"].includes(value.operation as string)
     : value.provider === "sunoapi" && value.operation === "generate_music";
   return validOperation && isSafeStorageId(value.serviceId) && isAudioHash(value.connectionFingerprint) &&
     (!Object.hasOwn(value, "modelId") || isAudioServiceModelId(value.modelId)) &&
@@ -214,8 +215,8 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
 function validExpectedOutputRoles(job: JobConfiguration, roles: unknown): boolean {
   if (!Array.isArray(roles)) return false;
   if (job.operation === "generate_sound_effect") return roles.length === 1 && roles[0] === "sound_effect";
-  return job.operation === "generate_music" && roles[0] === "music" &&
-    (roles.length === 1 || job.provider === "sunoapi" &&
+  return ["generate_music", "extend_music", "get_whole_song"].includes(job.operation) && roles[0] === "music" &&
+    (roles.length === 1 || job.operation !== "get_whole_song" && ["sunoapi", "suno"].includes(job.provider) &&
       roles.length === 2 && roles[1] === "music_alternative");
 }
 
@@ -239,7 +240,9 @@ export function audioJobOwnsAssetRole(
     case "separate_stems": return job.provider === "lalal" &&
       (role === "source" || role === "residual" || job.stems.some((stem) => stem === role));
     case "generate_music": return (job.provider === "elevenlabs" && role === "music") ||
-      (job.provider === "sunoapi" && (role === "music" || role === "music_alternative"));
+      (["sunoapi", "suno"].includes(job.provider) && (role === "music" || role === "music_alternative"));
+    case "extend_music": return job.provider === "suno" && (role === "music" || role === "music_alternative");
+    case "get_whole_song": return job.provider === "suno" && role === "music";
     case "generate_sound_effect": return job.provider === "elevenlabs" && role === "sound_effect";
   }
 }

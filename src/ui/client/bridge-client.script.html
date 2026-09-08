@@ -2784,7 +2784,7 @@
             (!Object.hasOwn(service, "modelId") || audioServiceCapabilities[service.provider].operations.includes("generate_music")) &&
             isWireAudioCallback(service) &&
             (!service.enabled || audioServiceCapabilities[service.provider].operations.length > 0) &&
-            typeof service.apiKeyConfigured === "boolean" && (!service.enabled || service.apiKeyConfigured)) &&
+            typeof service.apiKeyConfigured === "boolean" && (!service.enabled || service.apiKeyConfigured || audioServiceCapabilities[service.provider].sessionImport)) &&
           new Set(value.connections.map((service) => service.id)).size === value.connections.length &&
           new Set(value.connections.map((service) => service.name.toLowerCase())).size === value.connections.length;
       }
@@ -2841,14 +2841,14 @@
             typeof job.resumable === "boolean" &&
             (!job.resumable || !["completed", "cancelled"].includes(job.status)) &&
             Array.isArray(job.outputs) && job.outputs.length <= __MAX_AUDIO_JOB_OUTPUTS__ &&
-            (job.operation === "separate_stems" || job.outputs.length <= audioServiceCapabilities[job.provider].generationOutputCount) &&
+            (job.operation === "separate_stems" || job.outputs.length <= (job.operation === "get_whole_song" ? 1 : audioServiceCapabilities[job.provider].generationOutputCount)) &&
             new Set(job.outputs.map((asset) => asset?.id)).size === job.outputs.length &&
             new Set(job.outputs.map((asset) => asset?.role)).size === job.outputs.length &&
             job.outputs.every((asset) => isWireAudioAsset(asset, sessionId, job.id) &&
               (job.operation === "separate_stems"
                 ? (job.stems.includes(asset.role) || asset.role === "residual") && asset.origin.kind !== "generated"
-                : asset.origin.kind === "generated" && (job.operation === "generate_music"
-                  ? asset.role === "music" || asset.role === "music_alternative" && audioServiceCapabilities[job.provider].generationOutputCount > 1
+                : asset.origin.kind === "generated" && (job.operation !== "generate_sound_effect"
+                  ? asset.role === "music" || asset.role === "music_alternative" && job.operation !== "get_whole_song" && audioServiceCapabilities[job.provider].generationOutputCount > 1
                   : asset.role === "sound_effect"))));
       }
 
@@ -5559,7 +5559,7 @@
 
       function audioOperationLabel(operation) {
         return t({ separate_stems: "Stem separation", generate_music: "Music generation",
-          generate_sound_effect: "Sound effect generation" }[operation] || operation);
+          generate_sound_effect: "Sound effect generation", extend_music: "Extend song", get_whole_song: "Get Whole Song" }[operation] || operation);
       }
 
       function handleAudioServiceSelection(id) {
@@ -5860,7 +5860,7 @@
           row.children[0].children[0].textContent = value.name || t("New audio connection");
           row.children[0].children[1].textContent = t(audioServiceCapabilities[value.provider].label);
           row.children[1].textContent = pending ? t("Unsaved changes") : audioServiceCapabilities[value.provider].sessionImport
-            ? sunoAccountStatus(id) : !configured?.apiKeyConfigured
+            ? sunoAccountStatus(id) + " · " + t(configured?.enabled ? "Enabled" : "Disabled") : !configured?.apiKeyConfigured
             ? t("Needs setup") : configured.enabled ? t("Enabled") : t("Disabled");
           row.children[1].dataset.pending = String(pending);
           row.title = (value.name || t("New audio connection")) + " · " + t(audioServiceCapabilities[value.provider].label);
@@ -5938,14 +5938,15 @@
           }
           document.getElementById("audioServiceModelHint").textContent = service.provider === "sunoapi"
             ? t("Leave blank to use V4_5ALL. This integration uses prompt-based generation without custom mode or a duration setting.")
+            : sessionImport ? t("Leave blank to use your account's usable default model. Ask in chat to list Suno models and credits; use an exact returned model ID here.")
             : t("Leave blank to use the integration default. Sound effects use a dedicated model.");
           enabled.disabled = busy || Boolean(draft?.conflict) || !supported.length;
           document.getElementById("audioServiceOperations").textContent = sessionImport
-            ? t("Cookie connection only. Music generation is not available in Live Smith.") : supported.length
+            ? t("Music · Custom lyrics and styles · Extend · Get Whole Song · Library") : supported.length
             ? supported.map(audioOperationLabel).join(" · ")
             : t("Unavailable: no verified public API protocol is configured for this provider.");
           document.getElementById("audioServiceDisclosure").textContent = sessionImport
-            ? t("Manually import your Suno Cookie even if you are already signed in in your browser. This nonofficial, experimental connection does not enable music generation. Cookies can expire; import a fresh one to reconnect. Live Smith does not collect Google credentials.") : service.provider === "sunoapi"
+            ? t("Experimental Suno.com subscription connection. Import your Cookie, then enable and save this connection to expose music tools in chat. Generation uses your Suno credits. Security challenges require manual action on Suno; failed or unknown submissions are never retried automatically.") : service.provider === "sunoapi"
             ? t("SunoAPI.org is a third-party API service with its own key and billing. It is not Suno's official API or a Suno website subscription. Your prompt is sent to SunoAPI.org.")
             : supported.includes("separate_stems")
             ? t("Selected audio is sent to this external service. Stem separation uses processing minutes for each requested stem.")

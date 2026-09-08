@@ -23,13 +23,14 @@ test("audio tools expose distinct operations only for eligible named connections
     { id: "stems", name: "Separation account", provider: "lalal" },
     { id: "music-one", name: "Music account A", provider: "elevenlabs" },
     { id: "music-two", name: "Music account B", provider: "elevenlabs" },
-    { id: "unverified", name: "Suno", provider: "suno" },
+    { id: "website", name: "Suno", provider: "suno" },
   ]);
   const music = tools.find((tool) => tool.function.name === "generate_music")!;
   assert.ok(music);
   assert.match(JSON.stringify(music.function.parameters), /music-one/);
   assert.match(JSON.stringify(music.function.parameters), /music-two/);
-  assert.doesNotMatch(JSON.stringify(music.function.parameters), /stems|unverified/);
+  assert.doesNotMatch(JSON.stringify(music.function.parameters), /stems/);
+  assert.match(JSON.stringify(music.function.parameters), /website/);
   assert.ok(tools.find((tool) => tool.function.name === "generate_sound_effect"));
 });
 

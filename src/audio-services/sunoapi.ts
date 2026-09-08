@@ -22,6 +22,7 @@ export function createSunoApiAudioAdapter(
     async submit(request, signal) {
       http.active(signal);
       if (!request || request.operation !== "generate_music") throw http.fail("only music generation is supported.");
+      if (request.options !== undefined) throw http.fail("custom music options are not supported by this adapter.");
       if (request.durationSeconds !== undefined) throw http.fail("duration is not supported in non-custom music mode.");
       if (typeof request.instrumental !== "boolean") throw http.fail("instrumental must be a boolean.");
       if (typeof request.prompt !== "string" || !request.prompt.trim()) throw http.fail("a non-empty prompt is required.");

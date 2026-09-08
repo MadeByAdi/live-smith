@@ -1,4 +1,5 @@
-import { SEPARATION_STEMS, type SeparationStem } from "../audio-services/contracts.js";
+import { SEPARATION_STEMS, type SeparationStem, type MusicGenerationOptions } from "../audio-services/contracts.js";
+import { musicOptionsSchema, musicServiceTools, parseMusicOptions, parseMusicServiceRequest, type MusicServiceRequest } from "./music-tools.js";
 import { AUDIO_SERVICE_CAPABILITIES, audioServiceSupports, type AudioServiceChoice } from "../audio-services/capabilities.js";
 import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
 import type { ModelFunctionTool } from "../model/provider.js";
@@ -13,8 +14,9 @@ export type AudioProcessingSource =
     };
 
 export type AudioToolRequest =
+  | MusicServiceRequest
   | { kind: "separate_stems"; serviceId: string; source: AudioProcessingSource; stems: SeparationStem[] }
-  | { kind: "generate_music"; serviceId: string; prompt: string; durationSeconds?: number; instrumental: boolean }
+  | { kind: "generate_music"; serviceId: string; prompt: string; durationSeconds?: number; instrumental: boolean; options?: MusicGenerationOptions }
   | { kind: "generate_sound_effect"; serviceId: string; prompt: string; durationSeconds: number; loop: boolean }
   | { kind: "list_audio_jobs" }
   | { kind: "resume_audio_job"; jobId: string };
@@ -59,6 +61,7 @@ export function audioProcessingTools(services: readonly AudioServiceChoice[]): M
       },
     }] : []),
     ...generationTools(services),
+    ...musicServiceTools(services),
     {
       type: "function" as const,
       function: {
@@ -94,27 +97,30 @@ function generationTools(services: readonly AudioServiceChoice[]): ModelFunction
     return [{ type: "function" as const, function: {
       name: operation,
       description: (music ? "Generate original music from a description." : "Generate a sound effect from a description.") +
+        (music ? " On customMusic connections, options.mode=custom makes prompt literal lyrics (empty for instrumentals); styles, negativeStyles, title, existing personaId and 0–100 weirdness/styleInfluence are available. Without options, prompt is a description, at most 3000 characters on Suno. Do not claim unsupported vocal gender, duration, Sounds, Cover or voice enrollment." : "") +
         " Uses the selected service's paid generation allowance. Only use for the user's requested generation; do not generate speculative variants. Saves audio results without changing Live. Do not repeat a call after an unknown outcome or retry on another account. " + describeServices(eligible),
       parameters: {
         type: "object", additionalProperties: false,
         properties: {
-          serviceId: serviceSchema(eligible), prompt: { type: "string", minLength: 1, maxLength: 4100 },
+          serviceId: serviceSchema(eligible), prompt: { type: "string", minLength: music && eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic) ? 0 : 1, maxLength: music ? 5000 : 4100 },
+          ...(music && eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic) ? { options: musicOptionsSchema } : {}),
           ...(!music || eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].musicDuration)
             ? { durationSeconds: { type: "number", minimum: music ? 3 : 0.5, maximum: music ? 600 : 30 } } : {}),
           ...(music ? { instrumental: { type: "boolean" } } : { loop: { type: "boolean" } }),
         },
         required: music ? ["serviceId", "prompt", "instrumental"] : ["serviceId", "prompt", "durationSeconds", "loop"],
-        oneOf: eligible.map((service) => ({
+        oneOf: eligible.flatMap((service) => (music && AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic ? [false, true] : [false]).map((custom) => ({
           type: "object", additionalProperties: false,
           properties: {
-            serviceId: { const: service.id }, prompt: { type: "string", minLength: 1,
-              maxLength: music ? AUDIO_SERVICE_CAPABILITIES[service.provider].musicPromptCharacters : 4100 },
+            serviceId: { const: service.id }, prompt: { type: "string", minLength: custom ? 0 : 1,
+              maxLength: music ? AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic && !custom ? 3000 : AUDIO_SERVICE_CAPABILITIES[service.provider].musicPromptCharacters : 4100 },
+            ...(custom ? { options: musicOptionsSchema } : {}),
             ...(!music || AUDIO_SERVICE_CAPABILITIES[service.provider].musicDuration
               ? { durationSeconds: { type: "number", minimum: music ? 3 : 0.5, maximum: music ? 600 : 30 } } : {}),
             ...(music ? { instrumental: { type: "boolean" } } : { loop: { type: "boolean" } }),
           },
-          required: music ? ["serviceId", "prompt", "instrumental"] : ["serviceId", "prompt", "durationSeconds", "loop"],
-        })),
+          required: music ? ["serviceId", "prompt", "instrumental", ...(custom ? ["options"] : [])] : ["serviceId", "prompt", "durationSeconds", "loop"],
+        }))),
       },
     } }];
   });
@@ -123,8 +129,14 @@ function generationTools(services: readonly AudioServiceChoice[]): ModelFunction
 export function validateAudioServiceRequest(request: AudioToolRequest, services: readonly AudioServiceChoice[]): void {
   if (request.kind === "list_audio_jobs" || request.kind === "resume_audio_job") return;
   const service = services.find((entry) => entry.id === request.serviceId);
+  if (request.kind === "inspect_music_service") {
+    if (!service || !AUDIO_SERVICE_CAPABILITIES[service.provider].musicLibrary) throw new Error("Music library unavailable.");
+    return;
+  }
   if (!service || !audioServiceSupports(service.provider, request.kind)) throw new Error("Unavailable audio connection or operation.");
   const capability = AUDIO_SERVICE_CAPABILITIES[service.provider];
+  if (request.kind === "generate_music" && request.options && !capability.customMusic) throw new Error("Custom music parameters are unavailable.");
+  if (request.kind === "generate_music" && capability.customMusic && !request.options && exceedsAudioPromptLimit(request.prompt, 3000)) throw new Error("Description exceeds 3000 characters.");
   if (request.kind === "generate_music" && (exceedsAudioPromptLimit(request.prompt, capability.musicPromptCharacters) ||
     (!capability.musicDuration && request.durationSeconds !== undefined))) {
     throw new Error("This connection does not support those music generation parameters.");
@@ -133,6 +145,7 @@ export function validateAudioServiceRequest(request: AudioToolRequest, services:
 
 export function parseAudioToolRequest(name: string, argumentsJson: string): AudioToolRequest {
   const args: unknown = JSON.parse(argumentsJson || "{}");
+  if (["inspect_music_service", "extend_music", "get_whole_song"].includes(name)) return parseMusicServiceRequest(name, args);
   if (name === "list_audio_jobs") {
     const value = record(args); only(value, []);
     return { kind: name };
@@ -144,9 +157,10 @@ export function parseAudioToolRequest(name: string, argumentsJson: string): Audi
   if (name === "generate_music" || name === "generate_sound_effect") {
     const value = record(args);
     const music = name === "generate_music";
-    only(value, ["serviceId", "prompt", "durationSeconds", music ? "instrumental" : "loop"]);
-    if (typeof value.prompt !== "string" || !value.prompt.trim() || exceedsAudioPromptLimit(value.prompt, 4100) || value.prompt.includes("\0")) {
-      throw new Error("Audio generation needs a non-empty prompt of at most 4100 characters.");
+    only(value, ["serviceId", "prompt", "durationSeconds", music ? "instrumental" : "loop", ...(music ? ["options"] : [])]);
+    const options = music && value.options !== undefined ? parseMusicOptions(value.options) : undefined;
+    if (typeof value.prompt !== "string" || (!value.prompt.trim() && !(options && value.instrumental === true)) || exceedsAudioPromptLimit(value.prompt, options ? 5000 : 4100) || value.prompt.includes("\0")) {
+      throw new Error("Invalid audio generation prompt.");
     }
     const option = music ? value.instrumental : value.loop;
     if (typeof option !== "boolean") throw new Error("Invalid audio generation option.");
@@ -156,7 +170,7 @@ export function parseAudioToolRequest(name: string, argumentsJson: string): Audi
     }
     return music
       ? { kind: name, serviceId: id(value.serviceId), prompt: value.prompt,
-        ...(duration === undefined ? {} : { durationSeconds: duration }), instrumental: option }
+        ...(duration === undefined ? {} : { durationSeconds: duration }), instrumental: option, ...(options ? { options } : {}) }
       : { kind: name, serviceId: id(value.serviceId), prompt: value.prompt, durationSeconds: duration!, loop: option };
   }
   if (name !== "separate_stems") throw new Error("Unknown audio tool.");

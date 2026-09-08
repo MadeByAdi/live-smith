@@ -39,9 +39,11 @@ test("settings and job model IDs reject the same empty, oversized, whitespace, c
   assert.equal(Object.hasOwn(await loadAudioJob(h.storage, h.session.id, job.id), "modelId"), false);
 });
 
-test("unimplemented official Suno cannot create jobs while SunoAPI keeps its two-track contract", async (t) => {
+test("native Suno and SunoAPI keep separate owners and two-track contracts", async (t) => {
   const h = await audioStorageHarness(t);
-  await assert.rejects(createAudioJob(h.storage, h.session.id, { ...music, provider: "suno" }), AudioStorageError);
+  const native = await createAudioJob(h.storage, h.session.id, { ...music, provider: "suno" });
+  assert.equal((await loadAudioJob(h.storage, h.session.id, native.id)).provider, "suno");
+  await assert.rejects(createAudioJob(h.storage, h.session.id, { ...music, provider: "suno", operation: "generate_sound_effect" }), AudioStorageError);
   const job = await createAudioJob(h.storage, h.session.id, { ...music, provider: "sunoapi", modelId: "V4_5ALL" });
   const updated = await updateAudioJob(h.storage, h.session.id, job.id, { expectedOutputRoles: ["music", "music_alternative"] });
   assert.deepEqual((await loadAudioJob(h.storage, h.session.id, job.id)).expectedOutputRoles, updated.expectedOutputRoles);

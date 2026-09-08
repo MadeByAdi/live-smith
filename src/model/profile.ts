@@ -235,7 +235,7 @@ export function normalizeAudioServiceConnection(value: unknown): AudioServiceCon
   if (value.enabled && !AUDIO_SERVICE_CAPABILITIES[provider].operations.length) {
     throw new ProfileValidationError("audioServices", "This audio provider has no available public protocol and cannot be enabled.");
   }
-  if (value.enabled && !value.apiKey) {
+  if (value.enabled && !value.apiKey && !AUDIO_SERVICE_CAPABILITIES[provider].sessionImport) {
     throw new ProfileValidationError("audioServices", "An enabled audio connection requires an API key.");
   }
   return { id: value.id, name: value.name.trim(), provider, enabled: value.enabled,

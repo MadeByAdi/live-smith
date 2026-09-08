@@ -241,19 +241,20 @@ for (const [isNew, withState] of [[false, false], [false, true], [true, false], 
   });
 }
 
-test("Suno supports Cookie connection without enabling generation", async () => {
+test("Suno exposes explicit activation separately from Cookie login and lists feature limits", async () => {
   const harness = await createDialogHarness(audioState([{ ...service, provider: "suno", enabled: false, apiKeyConfigured: false }]));
   try {
     assert.equal(harness.document.querySelector<HTMLOptionElement>('#audioServiceProvider option[value="suno"]')!.disabled, false);
-    assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceEnabled")!.disabled, true);
-    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceEnabledField")!.hidden, true);
+    assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceEnabled")!.disabled, false);
+    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceEnabledField")!.hidden, false);
     assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceKeyField")!.hidden, true);
-    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceModelField")!.hidden, true);
+    assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceModelField")!.hidden, false);
     for (const selector of ["#audioServiceCallbackField", "#clearAudioServiceButton"]) {
       assert.equal(harness.document.querySelector<HTMLElement>(selector)!.hidden, true, selector);
     }
     assert.equal(harness.document.querySelector<HTMLElement>("#sunoLoginControls")!.hidden, false);
-    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Music generation is not available/);
+    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Custom lyrics.*Extend.*Library/);
+    assert.match(harness.document.querySelector("#sunoFeatureHelp")!.textContent!, /Not connected: Sounds/);
     assert.equal(harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!.type, "password");
     assert.equal(harness.document.querySelector<HTMLButtonElement>("#openSunoWebsiteButton")!.disabled, false);
     assert.deepEqual(harness.errors, []);

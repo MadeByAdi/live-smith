@@ -140,7 +140,7 @@ test("corrupt collections and connection fields fail without reflecting credenti
     ...[{ id: "../audio" }, { name: " " }, { name: "bad\nname" }, { provider: "other" }, { enabled: true, apiKey: "" },
       { apiKey: "fixture-secret\nheader" }, { modelId: "bad model" }, { modelId: "" },
       { provider: "elevenlabs", modelId: "x".repeat(129) },
-      { endpoint: "fixture-secret" }, { apiKey: "x".repeat(4097) }, { provider: "suno", enabled: true }]
+      { endpoint: "fixture-secret" }, { apiKey: "x".repeat(4097) }]
       .map((fields) => ({ ...valid, connections: [{ ...connection(), ...fields }] }))]) {
     assert.throws(() => decodeAgentSettings({ ...freshEmptyAgentSettings(), audioServices: value }), (error: unknown) => {
       assert.ok(error instanceof Error);
@@ -170,7 +170,7 @@ test("same-provider accounts and multiple providers keep independent credentials
   assert.equal((await stat(file)).mode & 0o777, 0o600);
 });
 
-test("provider switches never inherit a key; disabled unavailable services can be retained", async () => {
+test("provider switches never inherit a key; Cookie-based services do not require API keys", async () => {
   const { save } = await fixture();
   await save(upsert());
   const replacement = { id: "audio-work", name: "Generation", provider: "elevenlabs" as const, enabled: true };
@@ -180,7 +180,9 @@ test("provider switches never inherit a key; disabled unavailable services can b
   await save(upsert("2", { provider: "elevenlabs", apiKey: "fixture-new" }));
   const unavailable = await save(upsert("3", { provider: "suno", enabled: false, apiKey: "" }));
   assert.equal(unavailable.audioServices?.connections[0]!.provider, "suno");
-  await assert.rejects(save(upsert("4", { provider: "suno" })), /cannot be enabled/);
+  const enabled = await save(upsert("4", { provider: "suno", apiKey: "" }));
+  assert.equal(enabled.audioServices?.connections[0]!.enabled, true);
+  assert.equal(enabled.audioServices?.connections[0]!.apiKey, "");
 });
 
 test("stale, invalid and missing-target writes are atomic; concurrency admits only one collection revision", async () => {

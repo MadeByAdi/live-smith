@@ -76,8 +76,10 @@ names, and raw provider/SDK output stay in their original language.
 - **Connect a Suno.com account.** Open Suno in your system's default browser,
   then explicitly import its `__client` Cookie in the local connection form.
   Live Smith verifies and privately saves it without a browser extension or
-  access to your Google credentials. This experimental connection does not yet
-  enable subscription-based generation. See the
+  access to your Google credentials. Enable the saved experimental connection
+  to generate music using your subscription credits, supply lyrics/styles and
+  supported sliders, browse songs/models, extend songs and get whole songs.
+  This is not full Suno website parity; see the supported features and limits in the
   [website sign-in workflow](docs/MODEL_PROVIDERS.md#sunocom-website-sign-in).
 - **Separate audio into stems.** Add a LALAL.AI connection, then ask to extract vocals, drums, bass, piano, or guitars from
   an audio attachment or an isolated Arrangement Audio Clip range. Saved results

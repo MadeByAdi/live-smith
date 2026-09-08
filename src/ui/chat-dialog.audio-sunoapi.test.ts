@@ -223,7 +223,7 @@ test("SunoAPI music job snapshots enforce operation, output roles and asset owne
     harness.click("#sendButton");
     await harness.settle();
     for (const audioJob of [{ ...valid, operation: "generate_sound_effect" },
-      { ...valid, provider: "suno" }, { ...valid, provider: "elevenlabs" },
+      { ...valid, provider: "lalal" }, { ...valid, provider: "elevenlabs" },
       ...[{ role: "sound_effect" }, { role: "vocals" }, { origin: { kind: "attachment" } },
         { sessionId: "foreign" }, { jobId: "foreign" }].map((fields) => ({ ...valid, outputs: [{ ...valid.outputs[0], ...fields }] }))]) {
       harness.emitServerEvent({ type: "done", sendId: harness.sendIds[0], sessionId: state.activeSessionId,
