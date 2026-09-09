@@ -9,6 +9,7 @@ import { MidiTrack } from "@ableton-extensions/sdk";
 
 import type { LiveInteractionContext } from "../live/context.js";
 import { saveSessionAttachment } from "../storage/attachments.js";
+import { createAudioJob } from "../storage/audio-jobs.js";
 import { appendSessionEvent } from "../storage/events.js";
 import { createSession, listSessions, type AgentSession } from "../storage/sessions.js";
 import type { ChatDialogState } from "../ui/chat-state.js";
@@ -106,6 +107,13 @@ test("New Session reuses a pristine Session but not one with history", async (t)
         const repeatedNext = await newSession();
         assert.equal(repeatedNext.activeSessionId, afterAttachment.activeSessionId);
         assert.equal(repeatedNext.sessions.length, 3);
+        await createAudioJob(directory, repeatedNext.activeSessionId, {
+          provider: "suno", serviceId: "suno-fixture", operation: "generate_music", connectionFingerprint: "a".repeat(64), stems: [],
+        });
+        const afterAudio = await newSession();
+        assert.notEqual(afterAudio.activeSessionId, repeatedNext.activeSessionId,
+          "an audio-only Session is not a pristine reusable Session");
+        assert.equal(afterAudio.sessions.find(session => session.id === repeatedNext.activeSessionId)!.hasContent, true);
       },
     },
   };
@@ -114,11 +122,11 @@ test("New Session reuses a pristine Session but not one with history", async (t)
     renderHtml: () => "<html></html>",
   });
 
-  assert.equal((await listSessions(directory)).length, 3);
+  assert.equal((await listSessions(directory)).length, 4);
   const saved = JSON.parse(await fs.readFile(
     path.join(directory, "live-smith-sessions.json"), "utf8",
   )) as AgentSession[];
-  assert.equal(saved.length, 2, "the unused New Session remains transient");
+  assert.equal(saved.length, 3, "the unused New Session remains transient");
 });
 
 test("opening, reopening, and deleting an untouched Session do not save empty history", async (t) => {
@@ -212,6 +220,10 @@ test("Session content summaries ignore timestamps and permission settings withou
     fileName: "reference.png", bytes: referencePng,
     claimedMediaType: "image/png",
   }, { preSavePendingAttachmentRefs: [] });
+  const audioOnly = await createSession(directory, input);
+  await createAudioJob(directory, audioOnly.id, {
+    provider: "suno", serviceId: "suno-fixture", operation: "generate_music", connectionFingerprint: "a".repeat(64), stems: [],
+  });
   const unreadable = await createSession(directory, input);
   await fs.writeFile(
     path.join(directory, "live-smith-events", `${unreadable.id}.json`), "invalid JSON",
@@ -235,6 +247,7 @@ test("Session content summaries ignore timestamps and permission settings withou
         new Map([
           [empty.id, false], [configured.id, false], [modified.id, false],
           [conversation.id, true], [attached.id, true], [unreadable.id, true],
+          [audioOnly.id, true],
         ]));
     } },
   };

@@ -3449,6 +3449,7 @@ export async function runAgentFlow(
               dependencies.loadSessionEvents ?? loadSessionEvents
             )(storageDirectory, current.id);
             if (events.length) return undefined;
+            if (storageDirectory !== undefined && (await listAudioJobs(storageDirectory, current.id)).length) return undefined;
             const attachments = await listPendingSessionAttachments(
               storageDirectory,
               current.id,

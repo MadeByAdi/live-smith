@@ -5,6 +5,7 @@ import type { AgentLoopInitialRecoveryState } from "../agent/loop.js";
 import type { LiveInteractionContext } from "../live/context.js";
 import { throwIfAborted } from "../runtime/host.js";
 import { listSessionAttachments } from "../storage/attachments.js";
+import { listAudioJobs } from "../storage/audio-jobs.js";
 import { loadSessionEvents, type SessionEvent } from "../storage/events.js";
 import { createStorageId } from "../storage/id.js";
 import {
@@ -200,7 +201,8 @@ export async function sessionSummaries(
     if (!hasContent) {
       try {
         hasContent = (await loadSessionEvents(storageDirectory, session.id)).length > 0 ||
-          (await listSessionAttachments(storageDirectory, session.id)).length > 0;
+          (await listSessionAttachments(storageDirectory, session.id)).length > 0 ||
+          storageDirectory !== undefined && (await listAudioJobs(storageDirectory, session.id)).length > 0;
       } catch {
         // Unreadable content is not evidence of emptiness.
         hasContent = true;
