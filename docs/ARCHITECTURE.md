@@ -100,10 +100,11 @@ src/
     sunoapi.ts, sunoapi-http.ts
       Explicit third-party SunoAPI.org submission, polling, and allowed-CDN
       downloads; no official Suno subscription credentials.
-    suno.ts, suno-catalog.ts, suno-http.ts
+    suno.ts, suno-catalog.ts, suno-download.ts, suno-http.ts
       Experimental Suno.com account-bound generation, custom parameters,
       extension/whole-song requests, bounded catalog/library reads, short-lived
-      session-token exchange and allowlisted CDN downloads. No browser impersonation.
+      session-token exchange and authorized MP3 preparation with allowlisted CDN
+      downloads. No browser impersonation or automatic download authorization.
     response-bytes.ts
       Shared bounded decoded-body reads with periodic cancellation yields and
       exact Content-Length checks only for unencoded responses.
@@ -892,9 +893,25 @@ the selected account's model catalog. Read-only preparation and challenge checks
 precede the paid submission boundary. A multi-clip receipt is persisted atomically
 before polling and has immutable ID/role associations, including failed siblings.
 Only library/job-observed clip IDs on the selected connection can be used by the
-chat tools for extension/whole-song requests. Remote text is bounded untrusted
+chat tools for extension/whole-song requests or retrieval of existing songs.
+The explicit retrieval UI instead accepts the user's one or two song links/IDs,
+binds the expected account identity, and runs under the ordinary cancellable
+Session-command fence. `retrieve_music` does not call generation preparation or
+submission: its first durable job record includes the selected immutable clip
+manifest, and collection/recovery uses those same IDs. Repeated retrieval reuses
+an exact existing Session/service/account/manifest job without replacing unknown
+generation outcomes. Remote text is bounded untrusted
 data; no generic HTTP tool or credential-bearing locator reaches the chat model.
 Closing a dialog neither disconnects the saved account nor closes a user's browser.
+`app/suno-model-catalog.ts` owns one modal-only, read-only model catalog for the
+explicit `load_suno_models` command. The saved connection ID and exact private
+session bind its ownership; ordinary display/model/enablement edits do not
+change the account catalog. Publication revalidates that owner and tags the
+current audio-settings revision. Auth lifecycle changes, including a same-Cookie
+reimport in another dialog, invalidate it. Public state contains only bounded
+model IDs, names and explicit availability/default flags, never private
+fingerprints, credentials or raw billing data. Loading never enables a service
+or writes a model selection; the existing settings command owns explicit Save.
 If credential cleanup succeeds but the following settings write fails, the
 compound command reports an uncertain/partial outcome, invalidates peer state
 and returns an authoritative readback instead of claiming that nothing changed.
@@ -924,6 +941,33 @@ outputs cannot acquire unverified replacement identities. An old record with no
 saved outputs can adopt its first mapping without changing its confirmed shape.
 One failed download or invalid audio output does not prevent collecting other
 available outputs; systemic storage failures end the current collection attempt.
+For Suno, remote completion and local collection have separate meanings. A
+`ready` job retains successful `remoteOutputs` as a validated subset of its
+immutable manifest, without creating local assets. Generation, existing-song
+retrieval and Resume stop at this remote result; they never authorize or fetch
+downloads. The UI can lazily open Suno's own embedded player for an exact
+successful clip ID. This cross-origin sandbox has no parent credentials or
+referrer and does not expose its playback data as a SampleSource.
+The active Session's result nodes live in a collapsible shelf above the composer,
+not in global App settings. Collapse and Session switches stop embedded/local
+playback, while ordinary result refreshes retain unchanged player nodes. A
+failed/unknown job opens its diagnostic details without replacing its durable
+record; completed results keep operational detail secondary to Preview/Download.
+Audio jobs count as Session content even without a title or chat events. Such
+Sessions remain visible in history and cannot be recycled by New Session as
+pristine empty drafts. Unreadable content is not evidence of emptiness.
+
+`download_audio_output` is an explicit one-output Session command, separate from
+model tools. It owns the job lock, reconciles existing local results, resolves
+the original account fingerprint, and downloads only a validated successful
+output. Its provider adapter can authorize that single song through Suno's
+normal download endpoint after a fresh explicit locked response, then must
+recheck unlocked permission before preparing the MP3. Already-unlocked songs
+and already-saved local assets do not spend another download allowance. There
+are no quota-purchase routes or automatic authorization retries. Preparation and
+transfer retain a cancellable deadline, strict media hosts and no forbidden or
+playback locator fallback. Download failures preserve remote previews and saved
+siblings; they do not turn completed generation into a failed generation.
 One process-local owner excludes concurrent execution of the
 same job. Remote processing does not acquire the Live mutation queue.
 
@@ -938,8 +982,9 @@ read are coordinated by inode, so parallel readers cannot invalidate each
 other's ctime snapshots. Only pending reads retain coordination entries.
 Callers that need both jobs and recoverable assets reuse one verified metadata
 snapshot; there is no persistent asset cache. Per-file and per-Session limits are
-independent of chat attachment limits. A completed remote job is not locally
-complete until all required outputs are stored; partial results remain usable.
+independent of chat attachment limits. Remote readiness does not imply local
+completion; local completion requires the required outputs to be stored, while
+individual saved results remain usable.
 The job record is authoritative for the UI; conversational tool results describe
 the state observed at that turn and are not rewritten on later recovery.
 
@@ -954,7 +999,15 @@ input snapshot and is not a promise of sample-accurate separation alignment.
 
 Authenticated local audio-result routes validate Session and asset ownership,
 serve verified bytes with byte-range support, and never redirect a WebView to a
-provider download URL. The top-level `audioServices` view is the sole browser
+provider download URL. `open_audio_download` verifies one local asset and opens
+the OS default browser with a short-lived, resource-only ticket. The download
+route accepts only GET/HEAD for that asset, checks the loopback host and request
+origin, and serves an attachment disposition. Tickets expire after two minutes,
+are bounded to 20 per dialog, and are cleared on close; they cannot authenticate
+chat, settings or mutation routes. The dialog's control token never leaves with
+the export. Native WebView download navigation is not used. The
+separate online preview embeds only the fixed Suno player origin on user action,
+without routing or persisting its media. The top-level `audioServices` view is the sole browser
 projection of audio settings; the private settings collection is omitted.
 Saved service keys are omitted from full-state and
 incremental UI projections. Stop or window closure ends local processing and

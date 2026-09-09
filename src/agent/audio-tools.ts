@@ -145,7 +145,7 @@ export function validateAudioServiceRequest(request: AudioToolRequest, services:
 
 export function parseAudioToolRequest(name: string, argumentsJson: string): AudioToolRequest {
   const args: unknown = JSON.parse(argumentsJson || "{}");
-  if (["inspect_music_service", "extend_music", "get_whole_song"].includes(name)) return parseMusicServiceRequest(name, args);
+  if (["inspect_music_service", "extend_music", "get_whole_song", "retrieve_music"].includes(name)) return parseMusicServiceRequest(name, args);
   if (name === "list_audio_jobs") {
     const value = record(args); only(value, []);
     return { kind: name };

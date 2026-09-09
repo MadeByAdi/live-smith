@@ -37,8 +37,26 @@
         --accent: #ff9f1a;
         --accent-soft: rgba(255, 159, 26, 0.12);
         --accent-text: #211503;
+        --accent-hover: #ffb733;
+        --surface-hover: #454545;
+        --line-hover: #686868;
+        --space-1: 4px;
+        --space-2: 8px;
+        --space-3: 12px;
+        --space-4: 16px;
+        --space-6: 24px;
+        --text-small: 11px;
+        --text-label: 12px;
+        --text-body: 13px;
+        --text-heading: 15px;
+        --control-height: 32px;
+        --control-compact: 28px;
+        --radius-control: 4px;
+        --radius-panel: 6px;
+        --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         --composer-control-highlight: rgba(255, 255, 255, 0.055);
-        --focus: #8a8a8a;
+        --focus: var(--accent);
         --focus-soft: rgba(255, 255, 255, 0.07);
         --warn: #ffd166;
         --danger: #ff6e57;
@@ -74,8 +92,8 @@
         margin: 0;
         background: var(--chrome);
         color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        font-size: 13px;
+        font-family: var(--font-ui);
+        font-size: var(--text-body);
       }
 
       .app {
@@ -183,9 +201,8 @@
         padding: 0 12px;
         border-bottom: 1px solid var(--line-soft);
         color: var(--muted);
-        text-transform: uppercase;
-        font-size: 11px;
-        letter-spacing: 0.04em;
+        font-size: var(--text-label);
+        font-weight: 600;
       }
 
       .session-actions {
@@ -228,12 +245,12 @@
         gap: 3px;
         width: 100%;
         min-height: 52px;
-        padding: 9px;
+        padding: var(--space-2) var(--space-3);
         text-align: left;
         color: var(--text);
-        background: var(--pane-2);
-        border: 1px solid var(--line-soft);
-        border-radius: 4px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: var(--radius-control);
       }
 
       .session-entry {
@@ -248,7 +265,7 @@
       }
 
       .session-row[aria-pressed="true"] {
-        border-color: rgba(255, 165, 0, 0.65);
+        border-color: transparent;
         background: var(--accent-soft);
         box-shadow: inset 3px 0 0 var(--accent);
       }
@@ -278,8 +295,8 @@
 
       .session-entry:not([data-selected]) >
       button.session-row:not([aria-pressed="true"]):not(:disabled):hover {
-        border-color: #5e5e5e;
-        background: #565656;
+        border-color: transparent;
+        background: var(--surface-hover);
       }
 
       .session-entry[data-selected] >
@@ -296,12 +313,12 @@
 
       .history-session-row,
       .archived-session-row {
-        background: #484848;
+        background: transparent;
       }
 
       .archived-session-row {
         color: var(--muted);
-        background: #444;
+        background: transparent;
       }
 
       .session-title {
@@ -541,7 +558,7 @@
 
       .chat-pane {
         display: grid;
-        grid-template-rows: minmax(0, 1fr) auto auto;
+        grid-template-rows: minmax(0, 1fr) auto auto auto;
         min-width: 0;
         overflow: hidden;
         background: var(--bg);
@@ -691,7 +708,7 @@
         overflow-x: auto;
         overflow-y: scroll;
         overscroll-behavior: contain;
-        padding: 18px;
+        padding: var(--space-4);
         background: var(--bg);
       }
 
@@ -812,7 +829,7 @@
       }
 
       .message-action:focus-visible {
-        outline: 1px solid var(--accent);
+        outline: 2px solid var(--focus);
         outline-offset: 2px;
         background: var(--focus-soft);
       }
@@ -859,9 +876,7 @@
 
       .timeline-label {
         color: var(--quiet);
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
+        font-size: var(--text-small);
       }
 
       .timeline-content {
@@ -869,9 +884,9 @@
         overflow-wrap: anywhere;
         word-break: break-word;
         line-height: 1.5;
-        padding: 11px 12px;
+        padding: var(--space-3);
         border: 1px solid var(--line-soft);
-        border-radius: 6px;
+        border-radius: var(--radius-panel);
         background: var(--pane-2);
       }
 
@@ -879,9 +894,9 @@
         justify-self: end;
         min-width: 0;
         max-width: 100%;
-        color: var(--accent-text);
-        background: var(--accent);
-        border-color: transparent;
+        color: var(--text);
+        background: var(--pane-2);
+        border-color: var(--line-soft);
       }
 
       .timeline-attachments {
@@ -1435,12 +1450,12 @@
         grid-column: 2;
         width: auto;
         min-width: 92px;
-        height: 30px;
-        padding: 0 11px;
+        height: var(--control-height);
+        padding: 0 var(--space-3);
         color: var(--muted);
         background: var(--pane-2);
         border: 1px solid var(--line-soft);
-        font-size: 10px;
+        font-size: var(--text-label);
         font-weight: 600;
       }
 
@@ -1452,7 +1467,7 @@
       }
 
       .network-proxy-apply:not(:disabled):hover {
-        background: #ffb733;
+        background: var(--accent-hover);
       }
 
       @container networkProxy (max-width: 250px) {
@@ -1809,6 +1824,9 @@
         border-color: var(--focus);
       }
 
+      /* The composer's joined context/input/toolbar border is its focus frame. */
+      .composer > textarea:focus-visible { outline: none; }
+
       .composer > textarea:focus {
         border-bottom-color: transparent;
         box-shadow: none;
@@ -2157,10 +2175,10 @@
       input,
       select {
         width: 100%;
-        border: 1px solid var(--line);
+        border: 1px solid var(--line-soft);
         background: var(--field);
         color: var(--text);
-        border-radius: 4px;
+        border-radius: var(--radius-control);
         font: inherit;
       }
 
@@ -2173,8 +2191,8 @@
 
       input,
       select {
-        height: 30px;
-        padding: 0 8px;
+        height: var(--control-height);
+        padding: 0 var(--space-2);
       }
 
       textarea:focus,
@@ -2186,8 +2204,11 @@
       }
 
       button:focus-visible,
-      summary:focus-visible {
-        outline: 1px solid var(--focus);
+      summary:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid var(--focus);
         outline-offset: 2px;
       }
 
@@ -2201,7 +2222,7 @@
 
       button {
         border: 0;
-        border-radius: 5px;
+        border-radius: var(--radius-control);
         font: inherit;
         cursor: pointer;
         transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
@@ -2215,15 +2236,15 @@
       .primary {
         align-self: end;
         min-width: 82px;
-        height: 34px;
-        padding: 0 13px;
+        height: var(--control-height);
+        padding: 0 var(--space-3);
         color: var(--accent-text);
         background: var(--accent);
-        font-weight: 700;
+        font-weight: 600;
       }
 
       .primary:not(:disabled):hover {
-        background: #ffb733;
+        background: var(--accent-hover);
       }
 
       .primary.stop {
@@ -2244,20 +2265,21 @@
 
       .secondary:not(:disabled):hover,
       .icon-button:not(:disabled):hover {
-        background: #5a5a5a;
-        border-color: #6a6a6a;
+        background: var(--surface-hover);
+        border-color: var(--line-hover);
       }
 
       .secondary {
-        height: 30px;
-        padding: 0 10px;
+        height: var(--control-height);
+        padding: 0 var(--space-3);
+        font-size: var(--text-label);
       }
 
       .icon-button {
         display: grid;
         place-items: center;
-        width: 28px;
-        height: 28px;
+        width: var(--control-compact);
+        height: var(--control-compact);
         padding: 0;
         line-height: 1;
       }
@@ -2277,8 +2299,8 @@
 
       .tab-bar {
         display: flex;
-        gap: 3px;
-        padding: 4px;
+        gap: var(--space-1);
+        padding: var(--space-1);
         border-bottom: 1px solid var(--line-soft);
         background: var(--chrome);
       }
@@ -2286,13 +2308,13 @@
       .tab-bar button {
         flex: 1;
         min-width: 0;
-        height: 28px;
-        padding: 0 8px;
+        height: var(--control-compact);
+        padding: 0 var(--space-2);
         color: var(--quiet);
         background: transparent;
         border: 1px solid transparent;
         border-radius: 4px;
-        font-size: 11px;
+        font-size: var(--text-label);
         text-transform: none;
         letter-spacing: 0;
         transition: color 120ms, background-color 120ms, border-color 120ms;
@@ -2354,8 +2376,8 @@
       }
 
       .settings-scope + .settings-scope {
-        margin-top: 22px;
-        padding-top: 18px;
+        margin-top: var(--space-6);
+        padding-top: var(--space-4);
         border-top: 1px solid var(--line-soft);
       }
 
@@ -2363,57 +2385,93 @@
         position: relative;
         display: flex;
         align-items: center;
-        gap: 6px;
-        padding-left: 10px;
-        border-left: 2px solid var(--accent);
+        gap: var(--space-2);
       }
 
       .settings-scope > .inspector-scope-header {
-        margin-bottom: 12px;
+        margin-bottom: var(--space-4);
       }
 
+      .session-results {
+        min-width: 0;
+        margin: 0 var(--space-3);
+        border-block: 1px solid var(--line-soft);
+        background: var(--pane);
+      }
+      .session-results[hidden] { display: none; }
+      .session-results > summary {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: var(--control-height);
+        padding: var(--space-1) var(--space-2);
+        color: var(--muted);
+        font-size: var(--text-label);
+        cursor: pointer;
+        list-style: none;
+      }
+      .session-results > summary::-webkit-details-marker { display: none; }
+      .session-results > summary::before { content: "›"; font-size: var(--text-heading); }
+      .session-results[open] > summary::before { transform: rotate(90deg); }
+      .session-results > summary:hover { color: var(--text); background: var(--surface-hover); }
+      .session-results .result-count { color: var(--quiet); font-variant-numeric: tabular-nums; }
+      #sessionAudioResultsStatus { margin-left: auto; color: var(--warn); }
+      #audioResultsSection { max-height: min(34vh, 300px); overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3); }
+      #audioJobs [data-audio-remotes]:not([hidden]), #audioJobs [data-audio-local-files]:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+      #audioJobs [data-audio-remotes] > h5, #audioJobs [data-audio-local-files] > h5 { flex-basis: 100%; }
       .audio-job {
         border-top: 1px solid var(--line-soft);
-        padding-block: 10px;
+        padding-block: var(--space-3);
         overflow-wrap: anywhere;
       }
-      .audio-job h4, .audio-job p { margin: 0 0 8px; }
-      .audio-job audio { display: block; width: 100%; margin-bottom: 10px; }
+      .audio-job:first-child { border-top: 0; }
+      .audio-job h4, .audio-job p { margin: 0 0 var(--space-2); }
+      .audio-job h4 { font-size: var(--text-body); font-weight: 600; }
+      .audio-job audio { display: block; width: 100%; margin-bottom: var(--space-2); }
+      .audio-job h5 { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-small); font-weight: 500; }
+      .audio-job [hidden] { display: none; }
+      .audio-remote-output, [data-audio-output] { flex: 1 1 240px; min-width: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-control); background: var(--bg); }
+      .audio-remote-output iframe { display: block; width: 100%; height: 180px; margin-top: var(--space-2); border: 0; border-radius: var(--radius-control); }
+      [data-download-local-audio] { font-size: var(--text-small); }
       #audioSettingsSection [hidden] { display: none; }
-      .audio-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-      .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+      .audio-settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+      .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
       .audio-section-heading h3 { margin: 0; }
-      .audio-service-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; overscroll-behavior: contain; }
-      .audio-service-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 10px; text-align: left; color: var(--text); background: var(--field); border: 1px solid var(--line-soft); border-left: 3px solid transparent; border-radius: 5px; cursor: pointer; }
-      .audio-service-row[aria-pressed="true"] { border-left-color: var(--accent); background: var(--accent-soft); }
-      .audio-service-row:not(:disabled):hover { border-color: var(--quiet); }
-      .audio-service-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+      .audio-service-list { display: grid; gap: var(--space-1); max-height: 230px; overflow-y: auto; overscroll-behavior: contain; }
+      .audio-service-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 52px; padding: var(--space-2) var(--space-3); text-align: left; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; }
+      .audio-service-row[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+      .audio-service-row:not(:disabled):not([aria-pressed="true"]):hover { background: var(--surface-hover); }
       .audio-service-row:disabled { cursor: default; opacity: 0.65; }
       .audio-service-label { flex: 1; min-width: 0; }
-      .audio-service-label strong { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .audio-service-label small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
-      .audio-service-status { flex: 0 0 auto; max-width: 95px; font-size: 10px; color: var(--muted); text-align: right; }
+      .audio-service-label strong { display: block; font-size: var(--text-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .audio-service-label small { display: block; margin-top: var(--space-1); color: var(--muted); font-size: var(--text-small); line-height: 1.4; overflow-wrap: anywhere; }
+      .audio-service-status { flex: 0 0 auto; max-width: 110px; font-size: var(--text-small); color: var(--muted); text-align: right; }
       .audio-service-status[data-pending="true"] { color: var(--warn); }
-      .audio-connection-editor { margin-top: 12px; border: 1px solid var(--line-soft); border-radius: 5px; }
-      .audio-connection-editor > summary { padding: 10px; cursor: pointer; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
-      .audio-connection-editor > summary:focus-visible, .audio-model-options > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-      .audio-editor-body { display: grid; gap: 10px; padding: 0 10px 12px; }
+      .audio-connection-editor { margin-top: var(--space-2); border-block: 1px solid var(--line-soft); }
+      .audio-connection-editor > summary { padding-block: var(--space-3); cursor: pointer; font-size: var(--text-label); font-weight: 600; overflow-wrap: anywhere; }
+      .audio-editor-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-3); }
       .audio-editor-body .field { margin: 0; }
       .audio-editor-body .field-hint { line-height: 1.5; }
-      #sunoAccountName { overflow-wrap: anywhere; }
-      #sunoCookieHelp { margin-top: 12px; }
-      #sunoCookieHelp li + li { margin-top: 8px; }
-      .audio-model-options { border-top: 1px solid var(--line-soft); padding-top: 8px; }
-      .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: 11px; padding-block: 5px; }
-      .audio-model-options > .field { margin-top: 8px; }
-      .audio-maintenance { border-top: 1px solid var(--line-soft); padding-top: 8px; margin-top: 4px; }
-      .audio-output-meta { color: var(--quiet); font-size: 10px; font-variant-numeric: tabular-nums; }
+      #sunoAccountName, #sunoRetrieveAccount { overflow-wrap: anywhere; }
+      #sunoCookieHelp li + li { margin-top: var(--space-2); }
+      .audio-model-options { margin-top: var(--space-2); }
+      .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: var(--text-small); padding-block: var(--space-2); }
+      .settings-disclosure > .field, .audio-model-options > .field { margin-block: var(--space-2); }
+      .settings-group { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line-soft); }
+      .settings-subheading { font-size: var(--text-label); margin: 0 0 var(--space-2); font-weight: 600; }
+      .connection-state { color: var(--muted); font-size: var(--text-label); margin: 0 0 var(--space-1); }
+      .field-with-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; }
+      .field-with-action button { padding-inline: var(--space-2); }
+      #audioServiceModel { font-family: var(--font-code); }
+      .audio-maintenance { padding-top: var(--space-2); margin-top: var(--space-2); }
+      .danger-action { color: var(--danger); background: transparent; border-color: transparent; }
+      .audio-output-meta { color: var(--quiet); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
 
       .inspector-scope-header h2 {
         margin: 0;
         color: var(--text);
-        font-size: 13px;
-        font-weight: 680;
+        font-size: var(--text-heading);
+        font-weight: 600;
         letter-spacing: 0;
         line-height: 1.25;
         text-transform: none;
@@ -2454,8 +2512,8 @@
 
       .field-hint {
         color: var(--quiet);
-        font-size: 10px;
-        line-height: 1.35;
+        font-size: var(--text-small);
+        line-height: 1.5;
       }
 
       .field-label-row {
@@ -2482,12 +2540,12 @@
 
       .settings-section {
         display: grid;
-        gap: 9px;
+        gap: var(--space-3);
       }
 
       .settings-scope .settings-section + .settings-section {
-        margin-top: 14px;
-        padding-top: 14px;
+        margin-top: var(--space-4);
+        padding-top: var(--space-4);
         border-top: 1px solid var(--line-soft);
       }
 
@@ -2503,13 +2561,12 @@
 
       .field {
         display: grid;
-        gap: 4px;
+        gap: var(--space-1);
       }
 
       label {
-        color: var(--quiet);
-        font-size: 11px;
-        text-transform: uppercase;
+        color: var(--muted);
+        font-size: var(--text-label);
       }
 
       .key-row {
@@ -3253,9 +3310,9 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto auto;
         align-items: center;
-        gap: 6px;
-        margin-top: 14px;
-        padding: 10px 0 0;
+        gap: var(--space-2);
+        margin-top: var(--space-4);
+        padding: var(--space-3) 0 0;
         border-top: 1px solid var(--line-soft);
         background: transparent;
       }
@@ -3264,7 +3321,7 @@
       .app-confirmation-actions button,
       .audio-settings-actions button,
       .audio-job > button {
-        height: 32px;
+        height: var(--control-height);
       }
 
       .app-confirmation-actions button {
@@ -3275,28 +3332,28 @@
 
       .advanced-fields {
         display: grid;
-        gap: 9px;
+        gap: var(--space-3);
       }
 
       .settings-disclosure {
         margin: 0;
-        overflow: hidden;
-        background: rgba(255, 255, 255, 0.018);
-        border: 1px solid var(--line-soft);
-        border-radius: 5px;
+        min-width: 0;
+        background: transparent;
+        border: 0;
+        border-top: 1px solid var(--line-soft);
       }
 
       .settings-disclosure > summary {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
-        gap: 10px;
-        min-height: 44px;
-        margin: 0 !important;
-        padding: 8px 9px;
-        color: var(--text) !important;
-        font-weight: 600;
-        border-bottom: 1px solid transparent;
+        gap: var(--space-2);
+        min-height: var(--control-height);
+        margin: 0;
+        padding: var(--space-2) 0;
+        color: var(--muted);
+        font-size: var(--text-small);
+        font-weight: 500;
         list-style: none;
         cursor: pointer;
         transition: background 120ms ease, border-color 120ms ease;
@@ -3307,13 +3364,14 @@
       }
 
       .settings-disclosure > summary:hover {
-        background: rgba(255, 255, 255, 0.045);
+        color: var(--text);
       }
 
       .settings-disclosure[open] > summary {
-        background: rgba(255, 159, 26, 0.07);
-        border-bottom-color: var(--line-soft);
+        color: var(--text);
       }
+      .settings-disclosure > summary:not(:has(.settings-disclosure-chevron))::after { content: "›"; font-size: var(--text-heading); }
+      .settings-disclosure[open] > summary:not(:has(.settings-disclosure-chevron))::after { transform: rotate(90deg); }
 
       .settings-disclosure-copy {
         display: grid;
@@ -3322,8 +3380,8 @@
       }
 
       .settings-disclosure-title {
-        font-size: 12px;
-        font-weight: 650;
+        font-size: var(--text-label);
+        font-weight: 600;
         letter-spacing: 0;
         text-transform: none;
       }
@@ -3351,7 +3409,7 @@
       }
 
       .settings-disclosure > .advanced-fields {
-        padding: 11px 10px 12px;
+        padding: var(--space-2) 0 var(--space-3);
       }
 
       .capability-settings-section > .settings-disclosure {
@@ -3364,8 +3422,8 @@
 
       .advanced-groups {
         display: grid;
-        gap: 13px;
-        padding: 11px 10px 12px;
+        gap: var(--space-3);
+        padding: var(--space-2) 0 var(--space-3);
       }
 
       .app-confirmation-layer {
@@ -3482,14 +3540,14 @@
       .skill-paste textarea {
         height: 150px;
         resize: vertical;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: var(--font-code);
         font-size: 11px;
       }
 
       #modelProfileSettings textarea {
         height: 100px;
         resize: vertical;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-family: var(--font-code);
         font-size: 11px;
       }
 
@@ -3707,6 +3765,12 @@
           <div id="timeline" class="timeline" aria-label="Conversation" data-i18n-aria-label="Conversation"></div>
           <div id="conversationAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="messageActionAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+          <details id="sessionAudioResults" class="session-results" hidden>
+            <summary id="sessionAudioResultsSummary"><span data-i18n="Session audio results">Session audio results</span><span id="sessionAudioResultsCount" class="result-count"></span><span id="sessionAudioResultsStatus" class="field-hint" role="status" aria-live="polite"></span></summary>
+            <section id="audioResultsSection" aria-label="Session audio results" data-i18n-aria-label="Session audio results">
+              <div id="audioJobs"></div>
+            </section>
+          </details>
           <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
           <div class="composer">
             <div id="pendingAttachments" class="pending-attachments" role="list" aria-label="Pending file attachments" aria-busy="false" hidden data-i18n-aria-label="Pending file attachments"></div>
@@ -4208,14 +4272,6 @@
                     <select id="audioServiceProvider" onchange="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceOperations"></select>
                     <span id="audioServiceOperations" class="field-hint"></span>
                   </div>
-                  <details class="audio-model-options" id="audioServiceModelField">
-                    <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
-                    <div class="field">
-                    <label for="audioServiceModel" data-i18n="Music model (optional)">Music model (optional)</label>
-                    <input id="audioServiceModel" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceModelHint" />
-                    <span id="audioServiceModelHint" class="field-hint"></span>
-                    </div>
-                  </details>
                   <div class="field" id="audioServiceCallbackField" hidden>
                     <label for="audioServiceCallback" data-i18n="Public HTTPS callback URL">Public HTTPS callback URL</label>
                     <input id="audioServiceCallback" name="audioCallbackUrl" type="url" inputmode="url" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceCallbackHint" />
@@ -4223,14 +4279,15 @@
                   </div>
                   <p class="field-hint" id="audioServiceDisclosure"></p>
                   <div id="sunoLoginControls" hidden>
-                    <details class="audio-model-options" id="sunoFeatureHelp">
-                      <summary data-i18n="Suno features and limits">Suno features and limits</summary>
-                      <p class="field-hint" data-i18n="Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, extend a song, or get its whole version.">Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, extend a song, or get its whole version.</p>
-                      <p class="field-hint" data-i18n="Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.">Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.</p>
-                    </details>
+                    <h4 class="settings-subheading" data-i18n="Account connection">Account connection</h4>
+                    <p id="sunoLoginStatus" class="connection-state" role="status" aria-live="polite"></p>
+                    <p id="sunoAccountName" class="field-hint" hidden></p>
                     <div class="audio-settings-actions">
                       <button id="openSunoWebsiteButton" class="secondary" type="button" data-i18n="Open Suno in default browser">Open Suno in default browser</button>
+                      <button id="refreshSunoLoginButton" class="secondary" type="button" data-i18n="Refresh connection" disabled>Refresh connection</button>
                     </div>
+                    <details id="sunoCookieEditor" class="settings-disclosure">
+                    <summary data-i18n="Connect or replace Cookie">Connect or replace Cookie</summary>
                     <details id="sunoCookieHelp" class="audio-model-options">
                       <summary data-i18n="How to find your Suno Cookie">How to find your Suno Cookie</summary>
                       <ol class="field-hint">
@@ -4248,14 +4305,52 @@
                     <div class="audio-settings-actions">
                       <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
                     </div>
-                    <p id="sunoLoginStatus" class="field-hint" role="status" aria-live="polite"></p>
-                    <p id="sunoAccountName" class="field-hint" hidden></p>
+                    </details>
+                    <div id="sunoModelSelection" class="settings-group">
+                      <div class="field">
+                        <label for="sunoModelPicker" data-i18n="Music version">Music version</label>
+                        <div class="field-with-action">
+                          <select id="sunoModelPicker" name="sunoModel" aria-describedby="sunoModelStatus"></select>
+                          <button id="loadSunoModelsButton" class="secondary" type="button" data-i18n="Load versions">Load versions</button>
+                        </div>
+                        <span id="sunoModelStatus" class="field-hint" role="status" aria-live="polite"></span>
+                      </div>
+                    </div>
+                    <details class="settings-disclosure" id="sunoFeatureHelp">
+                      <summary data-i18n="Suno features and limits">Suno features and limits</summary>
+                      <p class="field-hint" data-i18n="Experimental Suno.com subscription connection. Import your Cookie, then enable and save this connection to expose music tools in chat. Generation uses your Suno credits. Security challenges require manual action on Suno; failed or unknown submissions are never retried automatically.">Experimental Suno.com subscription connection. Import your Cookie, then enable and save this connection to expose music tools in chat. Generation uses your Suno credits. Security challenges require manual action on Suno; failed or unknown submissions are never retried automatically.</p>
+                      <p class="field-hint" data-i18n="Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, retrieve existing songs for online preview, extend a song, or get its whole version.">Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, retrieve existing songs for online preview, extend a song, or get its whole version.</p>
+                      <p class="field-hint" data-i18n="Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.">Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.</p>
+                    </details>
+                    <details class="settings-disclosure">
+                    <summary data-i18n="Connection maintenance">Connection maintenance</summary>
                     <div class="audio-settings-actions audio-maintenance">
-                      <button id="refreshSunoLoginButton" class="secondary" type="button" data-i18n="Refresh connection" disabled>Refresh connection</button>
-                      <button id="logoutSunoButton" class="secondary" type="button" data-i18n="Clear local Cookie" disabled>Clear local Cookie</button>
+                      <button id="logoutSunoButton" class="secondary danger-action" type="button" data-i18n="Clear local Cookie" disabled>Clear local Cookie</button>
                     </div>
                     <p class="field-hint" data-i18n="Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.">Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.</p>
+                    </details>
+                    <details id="sunoRetrieveDetails" class="audio-model-options">
+                      <summary data-i18n="Preview existing Suno songs">Preview existing Suno songs</summary>
+                      <p id="sunoRetrieveHelp" class="field-hint" data-i18n="Retrieve already generated songs for online preview. Preview does not require download authorization or use your download allowance. To save one output for Live, choose Download and confirm; this may use up to one existing download allowance.">Retrieve already generated songs for online preview. Preview does not require download authorization or use your download allowance. To save one output for Live, choose Download and confirm; this may use up to one existing download allowance.</p>
+                      <p id="sunoRetrieveAccount" class="field-hint" role="status"></p>
+                      <div class="field">
+                        <label for="sunoRetrieveSongs" data-i18n="Suno song links or IDs (1–2)">Suno song links or IDs (1–2)</label>
+                        <textarea id="sunoRetrieveSongs" rows="2" maxlength="512" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="sunoRetrieveHelp sunoRetrieveAccount sunoRetrieveFormat" disabled></textarea>
+                        <span id="sunoRetrieveFormat" class="field-hint" data-i18n="One per line: https://suno.com/song/{id} or a song UUID.">One per line: https://suno.com/song/{id} or a song UUID.</span>
+                      </div>
+                      <div class="audio-settings-actions">
+                        <button id="retrieveSunoSongsButton" class="secondary" type="button" data-i18n="Retrieve for preview" disabled>Retrieve for preview</button>
+                      </div>
+                    </details>
                   </div>
+                  <details class="audio-model-options settings-disclosure" id="audioServiceModelField">
+                    <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
+                    <div class="field">
+                      <label for="audioServiceModel" data-i18n="Music model (optional)">Music model (optional)</label>
+                      <input id="audioServiceModel" name="audioModelId" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceModelHint" />
+                      <span id="audioServiceModelHint" class="field-hint"></span>
+                    </div>
+                  </details>
                   <label id="audioServiceEnabledField" class="context-usage-setting" for="audioServiceEnabled">
                     <input id="audioServiceEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
                     <span data-i18n="Enable connection">Enable connection</span>
@@ -4272,15 +4367,11 @@
                     <button id="reloadAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.reloadAudioService()" data-i18n="Reload connection" hidden>Reload connection</button>
                   </div>
                   <div class="audio-settings-actions audio-maintenance">
-                    <button id="clearAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" disabled>Clear key</button>
-                    <button id="removeAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
+                    <button id="clearAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" disabled>Clear key</button>
+                    <button id="removeAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
                   </div>
                   </div>
                 </details>
-              </section>
-              <section id="audioResultsSection" class="settings-section" aria-labelledby="audioResultsHeading">
-                <h3 id="audioResultsHeading" data-i18n="Session audio results">Session audio results</h3>
-                <div id="audioJobs"></div>
               </section>
               </section>
             </div>

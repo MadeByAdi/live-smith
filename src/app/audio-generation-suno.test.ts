@@ -10,7 +10,7 @@ import { listAudioJobs, loadAudioJob, updateAudioJob } from "../storage/audio-jo
 import { waveBytes } from "../storage/audio-storage-test-helpers.js";
 import { audioConnectionFingerprint, captureAudioServiceConnections, resolveAudioService } from "./audio-service-connections.js";
 import { generateAudio } from "./audio-generation.js";
-import { resumeAudioJob } from "./audio-processing.js";
+import { downloadAudioOutput, resumeAudioJob } from "./audio-processing.js";
 import { createRequestAudioTools } from "./request-audio-tools.js";
 
 const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
@@ -53,6 +53,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
       if (mode.failSecond && output.role === "music_alternative") throw new Error("Download unavailable.");
       return waveBytes();
     },
+    downloadSelected: async (output, signal) => adapter.download!({ ...output, url: `fixture:${output.key}` }, signal),
   };
   const context = { storageDirectory: directory, sessionId: session.id, signal: controller.signal, generationAdapter: adapter, wait: async () => {} };
   return { directory, session, sessions, controller, mode, calls, context };
@@ -110,22 +111,26 @@ test("every confirmed Suno clip survives Stop and resumes without another submis
   assert.deepEqual(saved.expectedOutputs, manifest);
   assert.equal(h.calls.inspect, 0);
   const result = await resumeAudioJob({ ...h.context, signal: new AbortController().signal }, saved.id);
-  assert.equal(result.status, "completed");
+  assert.equal(result.status, "ready");
   assert.equal(h.calls.submit, 1);
-  assert.equal(result.outputAssets.length, 2);
+  assert.deepEqual(result.remoteOutputs, manifest);
+  assert.deepEqual(result.outputAssets, []);
+  assert.deepEqual(h.calls.downloads, []);
 });
 
 test("successful sibling is retained when another clip fails remotely", async (t) => {
   const h = await harness(t);
   h.mode.failedSibling = true;
   const job = await generateAudio(h.context, connection.id, request);
-  assert.equal(job.status, "partial");
+  assert.equal(job.status, "ready");
   assert.deepEqual(job.expectedOutputs, manifest);
-  assert.deepEqual(job.outputAssets.map((asset) => asset.role), ["music"]);
+  assert.deepEqual(job.remoteOutputs, [manifest[0]]);
+  assert.deepEqual(job.outputAssets, []);
   h.mode.failedSibling = false;
   const result = await resumeAudioJob(h.context, job.id);
-  assert.equal(result.status, "completed");
-  assert.equal(h.calls.downloads.filter((id) => id === ids[0]).length, 1);
+  assert.equal(result.status, "ready");
+  assert.deepEqual(result.remoteOutputs, manifest);
+  assert.deepEqual(h.calls.downloads, []);
   assert.equal(h.calls.submit, 1);
 });
 
@@ -133,14 +138,15 @@ test("a fresh Cookie for the same account can recover; another account cannot", 
   const h = await harness(t);
   h.mode.failSecond = true;
   const job = await generateAudio(h.context, connection.id, request);
-  assert.equal(job.status, "partial");
+  assert.equal(job.status, "ready");
   const inspections = h.calls.inspect;
   await h.sessions.save(connection.id, { accountId: "user_other", clientToken: token("other") });
-  await assert.rejects(resumeAudioJob(h.context, job.id), /different service connection/);
+  await assert.rejects(downloadAudioOutput(h.context, job.id, ids[1]!), /different service connection/);
   assert.equal(h.calls.inspect, inspections);
   await h.sessions.save(connection.id, { accountId: "user_personal", clientToken: token("renewed") });
   h.mode.failSecond = false;
-  assert.equal((await resumeAudioJob(h.context, job.id)).status, "completed");
+  assert.equal((await downloadAudioOutput(h.context, job.id, ids[1]!)).status, "partial");
+  assert.deepEqual(h.calls.downloads, [ids[1]]);
   assert.equal(h.calls.submit, 1);
 });
 

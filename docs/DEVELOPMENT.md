@@ -34,6 +34,12 @@ Adjust the Live application path for your installation. `npm start` builds the
 development bundle and starts the Extensions CLI. Enable the extension in the
 CLI, then right-click a supported object in Live and choose **Ask Live Smith**.
 
+Rebuilding `dist/extension.js` does not replace code already loaded by a running
+Extension Host. Before testing changed code in Live, close the Live Smith dialog,
+stop its Extensions CLI with Ctrl+C, and start it again with the same storage
+directory. The Live Set can remain open; do not discard private development data
+to refresh the extension.
+
 Configure a Profile under **Inspector → Agent** to use model features.
 Subscription Profiles complete OAuth in the browser and require no provider CLI installation.
 Building and running tests do not require a model connection.
@@ -88,6 +94,15 @@ focus, host integration, OAuth browser/device login, refresh, cancellation,
 shutdown, and provider requests. Use an authorized test account for provider
 checks; ordinary tests must not read a developer's saved credentials.
 
+The dialog's shared visual tokens live in the template's `:root`: semantic
+surfaces, typography, spacing, control heights, radii and focus color. Reuse
+these tokens and existing control/disclosure styles instead of adding a
+provider-specific theme or a later override layer. Visual verification includes
+Agent and App settings, the collapsed/open Session audio-results shelf, narrow
+drawer focus, and long translated labels. The Suno version picker can be tested
+with a read-only catalog load; selecting, saving or discarding a version must
+not generate audio or implicitly enable a connection.
+
 ## Packaging
 
 ```sh
@@ -136,6 +151,10 @@ never enter source, fixtures, logs, screenshots or shared artifacts. See the
 import, validation, expiry and disconnect semantics. Real-provider verification
 requires the owner to enter a Cookie in the local form; passing fixture tests
 does not establish live authentication, subscription generation or download support.
+Suno result verification must distinguish remote generation, online preview,
+explicit download authorization and local Live import. Use the actual Live
+dialog to check the embedded player and download confirmation: JSDOM does not
+establish WebView playback, network policy or native file-export behavior.
 Legacy `suno-browser/<serviceId>/` directories may contain private browser data;
 the current runtime leaves them untouched. Close any old managed browser window
 before manually cleaning up a known legacy directory. Never delete or migrate

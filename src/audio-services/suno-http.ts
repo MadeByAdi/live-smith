@@ -7,6 +7,7 @@ import { cancelStreamBestEffort } from "../model/transports/stream-cancel.js";
 import { createHostAbortController, resolveFetchImplementation, waitForPromiseWithSignal } from "../runtime/host.js";
 import { MAX_AUDIO_ASSET_BYTES } from "./contracts.js";
 import { readAudioResponseBytes } from "./response-bytes.js";
+import { sunoErrorDiagnostic } from "./suno-errors.js";
 import { createSunoActiveSessionResolver, normalizeSunoSessionIdentity, normalizeSunoSessionValue,
   SunoSessionExpiredError } from "./suno-session.js";
 
@@ -23,9 +24,12 @@ const MAX_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
 const UUID = "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}";
 const FEED_IDS = new RegExp(`^/api/feed/\\?ids=${UUID}(?:,${UUID}){0,49}$`, "u");
 const PERSONA = new RegExp(`^/api/persona/get-persona-paginated/${UUID}/\\?page=(?:0|[1-9][0-9]{0,3})$`, "u");
+const DOWNLOAD = new RegExp(`^/api/download/clip/${UUID}\\?format=mp3$`, "u");
+const DOWNLOAD_ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 // Public response examples: https://github.com/serkansmg/SunoApiManager/blob/main/API.md
-// Exact provider CDN hosts only; no suffix matching or caller-selected API hosts.
-const AUDIO_HOSTS = new Set(["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai"]);
+// The authorized MP3 preparation endpoint also returns signed URLs on this exact
+// Suno bucket. No wildcard S3 hosts, playback endpoints or caller-selected APIs.
+const AUDIO_HOSTS = new Set(["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai", "suno-data-uploads.s3.amazonaws.com"]);
 
 class SunoHttpError extends Error {}
 
@@ -74,8 +78,9 @@ function object(value: unknown): Record<string, unknown> {
 
 function allowedRoute(method: string, path: string): boolean {
   if (typeof path !== "string" || path.length > 4096 || /[\s\\]/u.test(path)) return false;
-  if (method === "GET") return path === "/api/billing/info/" || FEED_IDS.test(path) || PERSONA.test(path);
-  return method === "POST" && ["/api/feed/v3", "/api/c/check", "/api/generate/v2-web/", "/api/generate/concat/v2/"].includes(path);
+  if (method === "GET") return path === "/api/billing/info/" || FEED_IDS.test(path) || PERSONA.test(path) || DOWNLOAD.test(path);
+  return method === "POST" && ["/api/feed/v3", "/api/c/check", "/api/generate/v2-web/", "/api/generate/concat/v2/",
+    "/api/download/authorize"].includes(path);
 }
 
 export function createSunoHttp(session: { clientToken: string; accountId: string }, injected?: typeof fetch) {
@@ -110,6 +115,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
     signal.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     let response: Response | undefined;
+    let rejection: Error | undefined;
     try {
       const pending = Promise.resolve(resolveFetchImplementation(injected)(url, {
         ...init, signal: controller.signal, redirect: "error", credentials: "omit", referrerPolicy: "no-referrer",
@@ -120,9 +126,23 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
       response = await waitForPromiseWithSignal(pending, controller.signal);
       active(controller.signal);
       if (response.redirected || (response.url && response.url !== url)) throw fail("unexpected response redirect.");
-      if (response.status === 401) throw fail("session expired; import a current Suno session.");
-      if (response.status === 403) throw fail("access denied or verification required; complete verification on Suno.com.");
-      if (response.status !== 200) throw fail("request rejected; no automatic retry was attempted.");
+      if (response.status !== 200) {
+        const summary = response.status === 401 ? "session expired; import a current Suno session."
+          : response.status === 403 ? audio
+          ? "audio download was denied. Retry Download for this song to request a fresh authorized download URL."
+          : url.startsWith(`${API_BASE}/api/download/clip/`)
+          ? "song download is not authorized. Check its download access on Suno.com, then retry Download for this song."
+          : "access denied or verification required; complete verification on Suno.com."
+          : "request rejected.";
+        const detail = `${summary} (HTTP ${response.status}); no automatic retry was attempted.`;
+        // The rejection is already known. Optional diagnostics and cancellation
+        // cannot replace it with a transport/unknown-outcome failure.
+        rejection = fail(detail);
+        const diagnostic = url.startsWith(`${API_BASE}/`) && !audio
+          ? await sunoErrorDiagnostic(response, controller.signal, [clientToken, ...(cached ? [cached.jwt] : [])], init.body) : "";
+        if (diagnostic) rejection = fail(`${detail} Provider diagnostic: ${diagnostic}`);
+        throw rejection;
+      }
       const mime = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
       if (audio ? !["audio/mpeg", "audio/wav", "audio/x-wav", "application/octet-stream"].includes(mime ?? "") : mime !== "application/json") {
         throw fail("invalid protocol response.");
@@ -135,6 +155,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
     } catch (error) {
       controller.abort();
       cancelStreamBestEffort(response?.body);
+      if (rejection) throw rejection;
       active(signal);
       if (timedOut) throw fail("request timed out; its remote outcome may be unknown.");
       if (error instanceof SunoHttpError) throw error;
@@ -219,6 +240,11 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
           validateJson(body);
           encoded = JSON.stringify(body);
           if (Buffer.byteLength(encoded) > MAX_JSON_BYTES) throw new Error();
+        }
+        if (path === "/api/download/authorize") {
+          const item = object(encoded === undefined ? undefined : JSON.parse(encoded));
+          if (Object.keys(item).length !== 2 || !Object.hasOwn(item, "item_id") || !Object.hasOwn(item, "item_type") ||
+              item.item_type !== "clip" || typeof item.item_id !== "string" || !DOWNLOAD_ITEM_ID.test(item.item_id)) throw new Error();
         }
       } catch { throw fail("request route or body is not allowed."); }
       const jwt = await accessToken(signal);

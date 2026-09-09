@@ -1,8 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { setTimeout, clearTimeout } from "node:timers";
+import { isDeepStrictEqual } from "node:util";
+import { parseRetrievalClipIds } from "../agent/music-tools.js";
 import type {
   AudioGenerationAdapter, AudioGenerationRequest, AudioJob,
-  GeneratedAudioOutput,
+  GeneratedAudioOutput, RemoteAudioStatus,
 } from "../audio-services/contracts.js";
 import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
 import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
@@ -11,14 +13,16 @@ import { createElevenLabsAudioAdapter } from "../audio-services/elevenlabs.js";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
 import { createSunoAudioAdapter } from "../audio-services/suno.js";
 import { createHostAbortController, throwIfAborted, waitForPromiseWithSignal } from "../runtime/host.js";
-import { createAudioJob, updateAudioJob } from "../storage/audio-jobs.js";
+import { createAudioJob, listAudioJobs, loadAudioJob, updateAudioJob } from "../storage/audio-jobs.js";
 import { assertAudioOutputCapacity, saveAudioAsset } from "../storage/audio-assets.js";
-import { acquireAudioJob, boundedAudioMessage, safeAudioFailure } from "./audio-job-runtime.js";
+import { acquireAudioJob, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { audioConnectionFingerprint, resolveAudioService, type RuntimeAudioServiceConnection } from "./audio-service-connections.js";
 import type { AudioProcessingContext } from "./audio-processing.js";
 import { providerFetchForStorage } from "./provider-fetch.js";
 
-function generationAdapter(context: AudioProcessingContext, settings: RuntimeAudioServiceConnection): AudioGenerationAdapter {
+function generationAdapter(
+  context: AudioProcessingContext, settings: RuntimeAudioServiceConnection, authorizeDownloads = false,
+): AudioGenerationAdapter {
   if (context.generationAdapter) {
     if (context.generationAdapter.provider !== settings.provider) throw new Error("Audio adapter does not match the selected connection.");
     return context.generationAdapter;
@@ -38,6 +42,7 @@ function generationAdapter(context: AudioProcessingContext, settings: RuntimeAud
   if (settings.provider === "suno" && settings.sunoSession) {
     return createSunoAudioAdapter(settings.sunoSession, {
       fetchImpl: providerFetchForStorage(context.storageDirectory),
+      authorizeDownloads,
       ...(settings.modelId ? { modelId: settings.modelId } : {}),
     });
   }
@@ -59,7 +64,7 @@ export async function generateAudio(
     throw new Error("This service does not support an explicit music duration.");
   }
   const adapter = generationAdapter(context, settings);
-  await assertAudioOutputCapacity(context.storageDirectory, context.sessionId,
+  if (settings.provider !== "suno") await assertAudioOutputCapacity(context.storageDirectory, context.sessionId,
     request.operation === "get_whole_song" ? 1 : AUDIO_SERVICE_CAPABILITIES[settings.provider].generationOutputCount);
   const job = await createAudioJob(context.storageDirectory, context.sessionId, {
     provider: settings.provider, serviceId: settings.id, operation: request.operation,
@@ -71,7 +76,45 @@ export async function generateAudio(
   finally { release(); }
 }
 
+export async function retrieveMusic(
+  context: AudioProcessingContext, serviceId: string, clipIds: readonly string[],
+): Promise<AudioJob> {
+  const ids = parseRetrievalClipIds(clipIds).sort();
+  throwIfAborted(context.signal);
+  const settings = await resolveAudioService(context.storageDirectory, serviceId, "retrieve_music", context.admittedConnections);
+  const fingerprint = audioConnectionFingerprint(settings);
+  const expectedOutputs: NonNullable<AudioJob["expectedOutputs"]> = ids.map((key, index) =>
+    Object.freeze({ key, role: index === 0 ? "music" : "music_alternative" }));
+  Object.freeze(expectedOutputs);
+  // Exclude duplicate selections before a job ID exists, using the same owner
+  // mechanism as Resume. The real job lock also excludes concurrent recovery.
+  const releaseSelection = acquireAudioJob(context.storageDirectory, `retrieve:${context.sessionId}:${serviceId}:${ids.join(",")}`);
+  try {
+    const matching = (await listAudioJobs(context.storageDirectory, context.sessionId)).filter((job) =>
+      job.provider === settings.provider && job.serviceId === serviceId && job.remoteTaskId === ids[0] &&
+      isDeepStrictEqual(job.expectedOutputs, expectedOutputs));
+    let job = matching.find((entry) => entry.connectionFingerprint === fingerprint);
+    if (!job && matching.length) throw new Error("This audio job belongs to a different service connection. Restore that connection to retrieve it.");
+    if (!job) {
+      throwIfAborted(context.signal);
+      job = await createAudioJob(context.storageDirectory, context.sessionId, {
+        provider: settings.provider, serviceId, operation: "retrieve_music", connectionFingerprint: fingerprint, stems: [],
+      }, { remoteTaskId: ids[0]!, expectedOutputs });
+    }
+    const release = acquireAudioJob(context.storageDirectory, job.id);
+    try {
+      job = await loadAudioJob(context.storageDirectory, context.sessionId, job.id);
+      if (job.status === "completed" || job.status === "cancelled") return job;
+      job = await reconcileLocalAudioJob(context.storageDirectory, context.sessionId, job, context.signal);
+      if (job.status === "completed" || job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length) return job;
+      await resolveAudioService(context.storageDirectory, serviceId, "retrieve_music", [settings]);
+      return await runGeneration(context, job, settings, generationAdapter(context, settings));
+    } finally { release(); }
+  } finally { releaseSelection(); }
+}
+
 export async function resumeAudioGeneration(context: AudioProcessingContext, job: AudioJob): Promise<AudioJob> {
+  if (job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length) return job;
   const settings = await resolveAudioService(context.storageDirectory, job.serviceId, job.operation);
   if (settings.provider !== job.provider || audioConnectionFingerprint(settings) !== job.connectionFingerprint) {
     throw new Error("This audio job belongs to a different service connection. Restore that connection to retrieve it.");
@@ -79,6 +122,87 @@ export async function resumeAudioGeneration(context: AudioProcessingContext, job
   const { modelId: _currentModel, ...connection } = settings;
   const adapter = generationAdapter(context, { ...connection, ...(job.modelId ? { modelId: job.modelId } : {}) });
   return runGeneration(context, job, settings, adapter);
+}
+
+/** An explicit confirmation authorizes collection of exactly one observed output. */
+export async function downloadAudioOutput(
+  context: AudioProcessingContext, jobId: string, outputKey: string,
+): Promise<AudioJob> {
+  throwIfAborted(context.signal);
+  const release = acquireAudioJob(context.storageDirectory, jobId);
+  try {
+    let job = await loadAudioJob(context.storageDirectory, context.sessionId, jobId);
+    const selected = job.expectedOutputs?.find((output) => output.key === outputKey);
+    if (job.provider !== "suno" || !selected) throw new Error("This output is not part of the original Suno job.");
+    job = await reconcileLocalAudioJob(context.storageDirectory, context.sessionId, job, context.signal);
+    if (job.outputAssets.some((asset) => asset.role === selected.role)) return job;
+    if (job.status === "cancelled" || !job.remoteOutputs?.some((output) => output.key === selected.key && output.role === selected.role)) {
+      throw new Error("This Suno output has not been observed complete. Resume its existing job before downloading.");
+    }
+    const settings = await resolveAudioService(context.storageDirectory, job.serviceId, job.operation, context.admittedConnections);
+    if (settings.provider !== job.provider || audioConnectionFingerprint(settings) !== job.connectionFingerprint) {
+      throw new Error("This audio job belongs to a different service connection. Restore that connection to retrieve it.");
+    }
+    const update = async (patch: Parameters<typeof updateAudioJob>[3]) => {
+      job = await updateAudioJob(context.storageDirectory, context.sessionId, job.id, patch);
+    };
+    try {
+      await assertAudioOutputCapacity(context.storageDirectory, context.sessionId, 1);
+      await context.onProgress?.("Downloading the selected Suno song");
+      await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
+      throwIfAborted(context.signal);
+      const adapter = generationAdapter(context, settings, true);
+      if (!adapter.downloadSelected) throw new Error("This service cannot download the selected output.");
+      await update({ status: "collecting", message: "Downloading the selected Suno song." });
+      throwIfAborted(context.signal);
+      const bytes = await adapter.downloadSelected(selected, context.signal, (signal, authorize) => {
+        if (!context.withDownloadAuthorization) throw new Error("Download authorization requires the connection lifecycle fence.");
+        return context.withDownloadAuthorization(signal, async () => {
+          await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
+          throwIfAborted(signal);
+          // The provider calls this only at the actual allowance boundary. Keep
+          // token minting and the complete POST inside the same settings lease.
+          return authorize();
+        });
+      });
+      throwIfAborted(context.signal);
+      const asset = await saveAudioAsset(context.storageDirectory, context.sessionId, {
+        jobId: job.id, role: selected.role, label: selected.role === "music_alternative" ? "Music alternative" : "Music",
+        bytes, origin: { kind: "generated" }, signal: context.signal,
+      });
+      const outputAssets = [...job.outputAssets, asset];
+      const complete = job.expectedOutputs!.every((entry) => outputAssets.some((saved) => saved.role === entry.role));
+      await retryLocalCommit(() => update({ outputAssets, status: complete ? "completed" : "partial",
+        message: "Selected audio is saved. Importing it into Live is a separate scoped Apply operation." }));
+    } catch (error) {
+      await update({ status: job.outputAssets.length ? "partial" : "ready",
+        message: context.signal.aborted
+          ? "Local download stopped. Download authorization may have consumed an allowance. No automatic retry will occur."
+          : safeAudioFailure(error, settings.sunoSession?.clientToken ?? settings.apiKey) });
+      throwIfAborted(context.signal);
+    }
+    return job;
+  } finally { release(); }
+}
+
+function confirmedGenerationOutputs(
+  job: AudioJob, remote: Extract<RemoteAudioStatus, { status: "completed" }>,
+): NonNullable<AudioJob["expectedOutputs"]> {
+  const roles = (job.expectedOutputs ?? remote.outputs).map((output) => output.role);
+  if (roles.some((role) => !["music", "music_alternative", "sound_effect"].includes(role))) throw new Error("Unexpected generated audio role.");
+  if (!job.expectedOutputs && job.outputAssets.length) {
+    throw new Error("This historical partial result has no saved remote output identities. Existing audio is retained, but missing files cannot be safely matched.");
+  }
+  const expectedOutputs = job.expectedOutputs ?? remote.outputs.map(({ key, role }) => ({ key, role: role as GeneratedAudioOutput["role"] }));
+  const returned = new Set(remote.outputs.map((output) => output.key));
+  const failed = remote.failedOutputKeys ?? [];
+  if (returned.size !== remote.outputs.length || new Set(failed).size !== failed.length ||
+    failed.some((key) => returned.has(key) || !expectedOutputs.some((output) => output.key === key)) ||
+    remote.outputs.some((output) => !expectedOutputs.some((expected) => expected.key === output.key && expected.role === output.role)) ||
+    expectedOutputs.some((output) => !returned.has(output.key) && !failed.includes(output.key))) {
+    throw new Error("The confirmed audio output identities changed.");
+  }
+  return expectedOutputs;
 }
 
 async function runGeneration(
@@ -129,7 +253,7 @@ async function runGeneration(
         ...(acceptedOutputs ? { expectedOutputs: acceptedOutputs } : {}), status: "running" }));
     }
     throwIfAborted(context.signal);
-    if (!acceptedTaskId || !adapter.inspect || !adapter.download) {
+    if (!acceptedTaskId || !adapter.inspect || job.provider !== "suno" && !adapter.download) {
       throw new Error("This generation has no resumable remote task. It will not be submitted again automatically.");
     }
     const deadline = Date.now() + 30 * 60_000;
@@ -137,33 +261,34 @@ async function runGeneration(
       throwIfAborted(context.signal);
       const remote = await adapter.inspect(acceptedTaskId, context.signal, acceptedOutputs);
       if (remote.status === "failed" || remote.status === "cancelled") {
-        await update({ status: remote.status === "cancelled" ? "cancelled" : job.outputAssets.length ? "partial" : "failed",
+        await update({ status: job.remoteOutputs?.length ? job.outputAssets.length ? "partial" : "ready"
+          : remote.status === "cancelled" ? "cancelled" : job.outputAssets.length ? "partial" : "failed",
           message: remote.status === "failed" ? remote.message : "The audio service confirmed cancellation." });
         return job;
       }
       if (remote.status === "completed") {
-        const roles = (job.expectedOutputs ?? remote.outputs).map((output) => output.role);
-        if (roles.some((role) => !["music", "music_alternative", "sound_effect"].includes(role))) throw new Error("Unexpected generated audio role.");
-        if (!job.expectedOutputs && job.outputAssets.length) {
-          throw new Error("This historical partial result has no saved remote output identities. Existing audio is retained, but missing files cannot be safely matched.");
-        }
-        const expectedOutputs = job.expectedOutputs ?? remote.outputs.map(({ key, role }) => ({ key, role: role as GeneratedAudioOutput["role"] }));
-        const returned = new Set(remote.outputs.map((output) => output.key));
+        const expectedOutputs = confirmedGenerationOutputs(job, remote);
+        const roles = expectedOutputs.map((output) => output.role);
         const failed = remote.failedOutputKeys ?? [];
-        if (returned.size !== remote.outputs.length || new Set(failed).size !== failed.length ||
-          failed.some((key) => returned.has(key) || !expectedOutputs.some((output) => output.key === key)) ||
-          remote.outputs.some((output) => !expectedOutputs.some((expected) => expected.key === output.key && expected.role === output.role)) ||
-          expectedOutputs.some((output) => !returned.has(output.key) && !failed.includes(output.key))) {
-          throw new Error("The confirmed audio output identities changed.");
-        }
         acceptedOutputs = expectedOutputs;
+        if (job.provider === "suno") {
+          const successful = new Set([...job.remoteOutputs ?? [], ...remote.outputs].map((output) => output.key));
+          const remoteOutputs = expectedOutputs.filter((output) => successful.has(output.key));
+          await retryLocalCommit(() => update({ expectedOutputs, remoteOutputs,
+            status: job.outputAssets.length ? "partial" : remoteOutputs.length ? "ready" : "failed",
+            message: remoteOutputs.length
+              ? `Suno audio is ready. Open this job's Preview action for the Suno online player. Use the selected output's Download action and confirm to save its file before importing into Live.${failed.length ? " Some confirmed outputs failed to generate." : ""}`
+              : "The service failed to generate the confirmed outputs." }));
+          throwIfAborted(context.signal);
+          return job;
+        }
         await retryLocalCommit(() => update({ status: "collecting", expectedOutputs }));
         const failures: string[] = failed.length ? ["The service failed to generate one or more confirmed outputs."] : [];
         for (const output of remote.outputs) {
           if (job.outputAssets.some((asset) => asset.role === output.role)) continue;
           throwIfAborted(context.signal);
           let bytes: Uint8Array;
-          try { bytes = await adapter.download(output, context.signal); }
+          try { bytes = await adapter.download!(output, context.signal); }
           catch (error) {
             throwIfAborted(context.signal);
             failures.push(`${output.role}: ${safeAudioFailure(error, settings.sunoSession?.clientToken ?? settings.apiKey)}`);
@@ -197,7 +322,7 @@ async function runGeneration(
       await update({
         ...(acceptedTaskId ? { remoteTaskId: acceptedTaskId } : {}),
         ...(acceptedOutputs ? { expectedOutputs: acceptedOutputs } : {}),
-        status: job.outputAssets.length ? "partial" : acceptedTaskId || hasCompleteAudio ? "interrupted"
+        status: job.outputAssets.length ? "partial" : job.remoteOutputs?.length ? "ready" : acceptedTaskId || hasCompleteAudio ? "interrupted"
           : submissionStarted || initial.status === "submitting" || initial.status === "unknown" ? "unknown"
           : context.signal.aborted ? "interrupted" : "failed",
         message: context.signal.aborted

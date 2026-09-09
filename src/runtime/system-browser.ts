@@ -8,6 +8,8 @@ import { throwIfAborted } from "./host.js";
 
 const execFileAsync = promisify(execFile);
 export interface SystemBrowserOpenerOptions {
+  /** Resource-specific callers must still validate the exact local route. */
+  allowLoopbackHttp?: boolean;
   platform?: NodeJS.Platform;
   windowsSystemRoot?: string;
   runOpenCommand?: (
@@ -22,6 +24,7 @@ export function createSystemBrowserOpener(
   options: SystemBrowserOpenerOptions = {},
 ): (target: string, signal?: AbortSignal) => Promise<void> {
   const platform = options.platform ?? process.platform;
+  const allowLoopbackHttp = options.allowLoopbackHttp === true;
   const windowsSystemRoot = normalizeWindowsSystemRoot(
     options.windowsSystemRoot ?? process.env.SystemRoot,
   );
@@ -39,7 +42,7 @@ export function createSystemBrowserOpener(
       throw new Error("The system browser requires a valid HTTPS URL.");
     }
     if (
-      url.protocol !== "https:" ||
+      (url.protocol !== "https:" && !(allowLoopbackHttp && url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port)) ||
       url.username ||
       url.password
     ) {

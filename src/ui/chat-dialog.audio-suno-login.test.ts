@@ -69,7 +69,8 @@ test("conflicting Suno drafts block import and maintenance while website opening
   const harness = await createDialogHarness(state);
   try {
     harness.input("#audioServiceName", "Unsaved Suno name");
-    assert.equal(text(harness, "#sunoAccountName"), "");
+    assert.equal(text(harness, "#sunoAccountName"), "Suno account: Personal musician",
+      "a non-secret settings draft does not change the saved account identity");
     const next = { connections: state.audioServices!.connections, revision: "2" };
     harness.setServerState({ ...state, audioServices: next });
     harness.emitServerEvent(broadcast(state, next));

@@ -33,7 +33,7 @@ export const audioAssetInspectionLimits = {
   maxDurationSeconds: MAX_AUDIO_ASSET_DURATION_SECONDS,
 };
 const jobStatuses: readonly AudioJob["status"][] = [
-  "preparing", "submitting", "running", "collecting", "completed",
+  "preparing", "submitting", "running", "collecting", "ready", "completed",
   "partial", "failed", "interrupted", "unknown", "cancelled",
 ];
 const jobConfigurationFields = [
@@ -45,14 +45,18 @@ type JobConfiguration = Pick<AudioJob,
 const jobFields = [
   "id", "sessionId", ...jobConfigurationFields,
   "status", "createdAt", "updatedAt", "sourceAssetId", "remoteSourceId",
-  "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "outputAssets", "message",
+  "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs", "outputAssets", "message",
 ];
 const updateFields = [
-  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "outputAssets", "message",
+  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs", "outputAssets", "message",
 ];
 type JobUpdate = Partial<Pick<AudioJob,
-  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "expectedOutputs" | "outputAssets" | "message"
+  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "expectedOutputs" | "remoteOutputs" | "outputAssets" | "message"
 >>;
+type InitialRetrievalReceipt = {
+  remoteTaskId: string;
+  expectedOutputs: NonNullable<AudioJob["expectedOutputs"]>;
+};
 
 export class AudioStorageError extends Error {
   constructor(message = "Saved audio data is invalid, unavailable, or changed.") {
@@ -65,12 +69,18 @@ export async function createAudioJob(
   storageDirectory: string | undefined,
   sessionId: string,
   input: JobConfiguration,
+  initialReceipt?: InitialRetrievalReceipt,
 ): Promise<AudioJob> {
   requireAudioStorage(storageDirectory, sessionId);
   if (!audioRecordHasOnly(input, jobConfigurationFields) || !isJobConfiguration(input)) {
     throw new AudioStorageError("Audio job configuration is invalid.");
   }
-  const config = cloneJsonValue(input);
+  // Only explicit retrieval can start with existing remote identities. Paid
+  // generation must still create its job before obtaining a submission receipt.
+  if (input.operation === "retrieve_music"
+    ? !audioRecordHasOnly(initialReceipt, ["remoteTaskId", "expectedOutputs"]) || !validExpectedOutputs({ ...input, ...initialReceipt })
+    : initialReceipt !== undefined) throw new AudioStorageError("Audio job initial retrieval receipt is invalid.");
+  const config = cloneJsonValue({ ...input, ...initialReceipt });
   return withStorageTransaction(storageDirectory, async (transaction) => {
     await requireAudioSession(storageDirectory, sessionId, transaction);
     if ((await listAudioJobs(storageDirectory, sessionId)).length >= MAX_AUDIO_SESSION_JOBS) {
@@ -80,7 +90,7 @@ export async function createAudioJob(
     const now = new Date().toISOString();
     const job: AudioJob = {
       ...config, id: createStorageId("audiojob"), sessionId,
-      status: "preparing", createdAt: now, updatedAt: now,
+      status: config.operation === "retrieve_music" ? "running" : "preparing", createdAt: now, updatedAt: now,
       outputAssets: [],
     };
     assertAudioJsonSize(job, MAX_AUDIO_JOB_METADATA_BYTES);
@@ -192,6 +202,9 @@ function isAudioJob(value: unknown): value is AudioJob {
     (!Object.hasOwn(value, "expectedOutputRoles") ||
       (!Object.hasOwn(value, "expectedOutputs") && validExpectedOutputRoles(value, value.expectedOutputRoles))) &&
     (!Object.hasOwn(value, "expectedOutputs") || validExpectedOutputs(value)) &&
+    (!Object.hasOwn(value, "remoteOutputs") || validRemoteOutputs(value)) &&
+    (value.status !== "ready" || Array.isArray(value.remoteOutputs) && value.remoteOutputs.length > 0) &&
+    (value.operation !== "retrieve_music" || Object.hasOwn(value, "expectedOutputs")) &&
     (!Object.hasOwn(value, "message") || boundedAudioText(value.message, 1024, true)) &&
     Array.isArray(value.outputAssets) && value.outputAssets.length <= MAX_AUDIO_JOB_OUTPUTS &&
     value.outputAssets.every((asset: unknown) => isAudioAsset(asset) &&
@@ -205,7 +218,7 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
   // availability; a disabled provider's historical jobs remain readable.
   const validOperation = value.provider === "lalal" ? value.operation === "separate_stems"
     : value.provider === "elevenlabs" ? ["generate_music", "generate_sound_effect"].includes(value.operation as string)
-    : value.provider === "suno" ? ["generate_music", "extend_music", "get_whole_song"].includes(value.operation as string)
+    : value.provider === "suno" ? ["generate_music", "extend_music", "get_whole_song", "retrieve_music"].includes(value.operation as string)
     : value.provider === "sunoapi" && value.operation === "generate_music";
   return validOperation && isSafeStorageId(value.serviceId) && isAudioHash(value.connectionFingerprint) &&
     (!Object.hasOwn(value, "modelId") || isAudioServiceModelId(value.modelId)) &&
@@ -215,7 +228,7 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
 function validExpectedOutputRoles(job: JobConfiguration, roles: unknown): boolean {
   if (!Array.isArray(roles)) return false;
   if (job.operation === "generate_sound_effect") return roles.length === 1 && roles[0] === "sound_effect";
-  return ["generate_music", "extend_music", "get_whole_song"].includes(job.operation) && roles[0] === "music" &&
+  return ["generate_music", "extend_music", "get_whole_song", "retrieve_music"].includes(job.operation) && roles[0] === "music" &&
     (roles.length === 1 || job.operation !== "get_whole_song" && ["sunoapi", "suno"].includes(job.provider) &&
       roles.length === 2 && roles[1] === "music_alternative");
 }
@@ -226,7 +239,24 @@ function validExpectedOutputs(job: Record<string, unknown> & JobConfiguration): 
     outputs.every((output: unknown) => audioRecordHasOnly(output, ["key", "role"]) &&
       typeof output.key === "string" && /^[A-Za-z0-9_.:-]{1,256}$/.test(output.key)) &&
     new Set(outputs.map((output) => output.key)).size === outputs.length &&
-    validExpectedOutputRoles(job, outputs.map((output) => output.role));
+    validExpectedOutputRoles(job, outputs.map((output) => output.role)) &&
+    (job.operation !== "retrieve_music" || outputs[0]!.key === job.remoteTaskId &&
+      outputs.every((output, index) => output.key.length === 36 &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(output.key) &&
+        (index === 0 || output.key > outputs[index - 1]!.key)));
+}
+
+function validRemoteOutputs(job: Record<string, unknown> & JobConfiguration): boolean {
+  const outputs = job.remoteOutputs;
+  const expected = job.expectedOutputs;
+  return job.provider === "suno" && validExpectedOutputs(job) && Array.isArray(expected) &&
+    expected[0]?.key === job.remoteTaskId && expected.every((output, index) =>
+      output.key.length === 36 && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(output.key) &&
+      (index === 0 || output.key > expected[index - 1]!.key)) &&
+    Array.isArray(outputs) && outputs.length <= expected.length &&
+    outputs.every((output: unknown) => audioRecordHasOnly(output, ["key", "role"]) &&
+      expected.some((entry) => entry.key === output.key && entry.role === output.role)) &&
+    new Set(outputs.map((output) => output.key)).size === outputs.length;
 }
 
 export function audioJobOwnsAssetRole(
@@ -241,7 +271,8 @@ export function audioJobOwnsAssetRole(
       (role === "source" || role === "residual" || job.stems.some((stem) => stem === role));
     case "generate_music": return (job.provider === "elevenlabs" && role === "music") ||
       (["sunoapi", "suno"].includes(job.provider) && (role === "music" || role === "music_alternative"));
-    case "extend_music": return job.provider === "suno" && (role === "music" || role === "music_alternative");
+    case "extend_music":
+    case "retrieve_music": return job.provider === "suno" && (role === "music" || role === "music_alternative");
     case "get_whole_song": return job.provider === "suno" && role === "music";
     case "generate_sound_effect": return job.provider === "elevenlabs" && role === "sound_effect";
   }

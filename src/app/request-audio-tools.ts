@@ -21,7 +21,7 @@ import {
   type AudioProcessingContext,
 } from "./audio-processing.js";
 import { audioConnectionFingerprint, captureAudioServiceConnections, resolveAudioService } from "./audio-service-connections.js";
-import { generateAudio } from "./audio-generation.js";
+import { generateAudio, retrieveMusic } from "./audio-generation.js";
 import { readSunoMusicService } from "../audio-services/suno.js";
 import { providerFetchForStorage } from "./provider-fetch.js";
 
@@ -131,20 +131,26 @@ export async function createRequestAudioTools(input: {
           if (request.query === "library" && "clips" in result) rememberClips(connection.id, result.clips);
           return { content: JSON.stringify(result) };
         }
-        if ((request.kind === "extend_music" || request.kind === "get_whole_song") && !observedClips.get(request.serviceId)?.has(request.clipId)) {
+        const clipIds = request.kind === "retrieve_music" ? request.clipIds
+          : request.kind === "extend_music" || request.kind === "get_whole_song" ? [request.clipId] : [];
+        if (clipIds.length && "serviceId" in request && clipIds.some((id) => !observedClips.get(request.serviceId)?.has(id))) {
           return { content: "Read this connection's library or saved audio jobs first, then use an observed clip ID.", failed: true, invalidArguments: true };
         }
         const job = request.kind === "resume_audio_job"
           ? await resumeAudioJob(processing, request.jobId)
           : request.kind === "separate_stems"
           ? await separateAudioStems(processing, request.serviceId, request.stems, () => snapshot(request.source))
+          : request.kind === "retrieve_music"
+          ? await retrieveMusic(processing, request.serviceId, request.clipIds)
           : await generateAudio(processing, request.serviceId, generationRequest(request));
         rememberJobs([job]);
         await registerAssets(job.outputAssets);
         throwIfAborted(input.signal);
+        const partialCollection = job.status === "partial" && job.provider === "suno" &&
+          job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length;
         return {
           content: audioJobResultText(job), progressKey: `${job.id}:${job.updatedAt}`,
-          ...(job.status === "unknown" || job.status === "failed" || job.status === "interrupted" || job.status === "partial"
+          ...(job.status === "unknown" || job.status === "failed" || job.status === "interrupted" || job.status === "partial" && !partialCollection
             ? { failed: true, stop: true } : {}),
         };
       } catch (error) {

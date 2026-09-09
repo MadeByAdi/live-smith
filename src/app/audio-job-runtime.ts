@@ -37,10 +37,13 @@ export async function reconcileLocalAudioJob(
     : job.expectedOutputs?.map((output) => output.role) ?? job.expectedOutputRoles ?? (job.provider === "elevenlabs"
       ? [job.operation === "generate_sound_effect" ? "sound_effect" : "music"] : undefined);
   const complete = roles?.every((role) => assets.some((asset) => asset.role === role));
-  if (!complete && assets.every((asset) => job.outputAssets.some((existing) => existing.id === asset.id))) return job;
+  const remoteStatus = job.remoteOutputs?.length && job.status !== "cancelled" ? expected.size ? "partial" : "ready" : undefined;
+  if (!complete && (!remoteStatus || remoteStatus === job.status) &&
+    assets.every((asset) => job.outputAssets.some((existing) => existing.id === asset.id))) return job;
   return updateAudioJob(storageDirectory, sessionId, job.id, {
     outputAssets: [...expected.values()],
-    ...(complete ? { status: "completed", message: "Audio is saved. Importing it into Live is a separate scoped Apply operation." } : {}),
+    ...(complete ? { status: "completed", message: "Audio is saved. Importing it into Live is a separate scoped Apply operation." }
+      : remoteStatus ? { status: remoteStatus, message: "Suno results are available in this job's online Preview player. Download each selected output explicitly before Live import." } : {}),
   });
 }
 

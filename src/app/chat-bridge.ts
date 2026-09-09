@@ -44,7 +44,7 @@ import {
   type NetworkProxySettings,
   type OAuthSubscriptionProvider,
 } from "../model/profile.js";
-import { createHostAbortController } from "../runtime/host.js";
+import { createHostAbortController, throwIfAborted } from "../runtime/host.js";
 import {
   SteeringCapacityError,
   SteeringChannel,
@@ -317,6 +317,7 @@ export interface ChatBridge {
   ): void;
   publishGlobalSettings(change: GlobalSettingsChange): void;
   publishProfileSettingsChange(change: ProfileSettingsChange): void;
+  createAudioDownload(sessionId: string, assetId: string, signal: AbortSignal): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -604,6 +605,7 @@ export async function createChatBridge(
   options: ChatBridgeOptions,
 ): Promise<ChatBridge> {
   const token = randomUUID();
+  const audioDownloads = new Map<string, { sessionId: string; assetId: string; expiresAt: number }>();
   const clients = new Set<ServerResponse>();
   const backpressuredClients = new Set<ServerResponse>();
   const pendingConfirmations = new Map<string, PendingConfirmation>();
@@ -1308,6 +1310,24 @@ export async function createChatBridge(
           error: "Live Smith bridge is closing.",
           ...(sendPromptPersistence ? { promptPersistence: sendPromptPersistence } : {}),
         }, 503);
+        return;
+      }
+
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/audio-download") {
+        assertExactQueryParameters(url, ["token"], "Audio download request");
+        const key = tokenForRequest(url) ?? "";
+        const ticket = audioDownloads.get(key);
+        const origin = bridgeBaseUrl(server);
+        if (!ticket || ticket.expiresAt <= Date.now() || request.headers.host !== new URL(origin).host ||
+          request.headers.origin !== undefined && request.headers.origin !== origin) {
+          if (ticket?.expiresAt && ticket.expiresAt <= Date.now()) audioDownloads.delete(key);
+          response.writeHead(403).end("Forbidden"); return;
+        }
+        if (!options.readAudioAsset) { response.writeHead(404).end("Not found"); return; }
+        const signal = beginReadOnlyBuild(response, handlerTerminal);
+        const audio = await options.readAudioAsset(ticket.sessionId, ticket.assetId, signal);
+        if (closing || response.destroyed) return;
+        sendAudioAssetResponse(response, audio, request.headers.range, request.method === "HEAD", true);
         return;
       }
 
@@ -2373,6 +2393,20 @@ export async function createChatBridge(
 
   return {
     url: `${bridgeBaseUrl(server)}/chat?token=${token}`,
+    createAudioDownload: async (sessionId, assetId, signal) => {
+      throwIfAborted(signal);
+      if (closing || !options.readAudioAsset || !isSafeStorageId(sessionId) || !isSafeStorageId(assetId)) {
+        throw new ChatBridgeResourceNotFoundError("Saved audio is unavailable.");
+      }
+      await options.readAudioAsset(sessionId, assetId, signal);
+      throwIfAborted(signal);
+      if (closing) throw new ChatBridgeResourceNotFoundError("Live Smith closed before opening the download.");
+      for (const [key, ticket] of audioDownloads) if (ticket.expiresAt <= Date.now()) audioDownloads.delete(key);
+      if (audioDownloads.size >= 20) throw new ChatBridgeConflictError("Too many pending audio downloads. Wait two minutes before opening another.");
+      const key = randomUUID();
+      audioDownloads.set(key, { sessionId, assetId, expiresAt: Date.now() + 120_000 });
+      return `${bridgeBaseUrl(server)}/audio-download?token=${key}`;
+    },
     publishSessionApprovalMode: (sessionId, approvalMode, updatedAt) => {
       const published = broadcastStateChange({
         type: "approval_mode_changed",
@@ -2563,6 +2597,7 @@ export async function createChatBridge(
     close: () => {
       if (closePromise) return closePromise;
       closing = true;
+      audioDownloads.clear();
       const mutationTerminals = [...inFlightMutationHandlers];
       const pendingReads = [...readOnlyBuilds.entries()];
       const connectedClients = new Set([

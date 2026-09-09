@@ -42,6 +42,13 @@ export type ChatLiveContext =
   | { sessionId: string; availability: "available"; value: LiveContextPresentation }
   | { sessionId: string; availability: "unavailable"; label: string };
 
+export interface SunoModelCatalogView {
+  serviceId: string;
+  accountId: string;
+  audioServicesRevision: string;
+  models: Array<{ id: string; name: string; canUse?: boolean; isDefault?: boolean }>;
+}
+
 export interface ChatDialogState {
   contextSummary: string;
   liveContext: ChatLiveContext;
@@ -74,6 +81,8 @@ export interface ChatDialogState {
   audioJobs?: AudioJobView[];
   /** Imported website-session evidence, not a generation capability or credential. */
   sunoAccounts?: SunoAccountView[];
+  /** Modal-only catalog for one saved connection; omission clears prior results. */
+  sunoModelCatalog?: SunoModelCatalogView;
   /** Credential-free state for the selected native OAuth provider. */
   oauthAuth?: OAuthAuthState;
   oauthAuthProfileId?: string;
@@ -124,6 +133,16 @@ export function chatDialogStateForWire<State extends ChatDialogState>(
   return {
     ...state,
     ...(settings ? { settings } : {}),
+    ...(state.sunoModelCatalog === undefined ? {} : { sunoModelCatalog: {
+      serviceId: state.sunoModelCatalog.serviceId,
+      accountId: state.sunoModelCatalog.accountId,
+      audioServicesRevision: state.sunoModelCatalog.audioServicesRevision,
+      models: state.sunoModelCatalog.models.slice(0, 100).map(({ id, name, canUse, isDefault }) => ({
+        id, name,
+        ...(typeof canUse === "boolean" ? { canUse } : {}),
+        ...(typeof isDefault === "boolean" ? { isDefault } : {}),
+      })),
+    } }),
     ...(state.sunoAccounts === undefined ? {} : { sunoAccounts: state.sunoAccounts.map(({ serviceId, status, accountId, accountName }) => ({
       serviceId, status,
       ...((status === "signed_in" || status === "saved") && accountId ? { accountId } : {}),

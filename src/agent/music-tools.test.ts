@@ -59,7 +59,7 @@ test("music browsing and editing have strict action-specific fields", () => {
 
 test("advanced tools are absent from other providers and contain no generic HTTP escape", () => {
   const tools = audioProcessingTools([service]);
-  assert.deepEqual(tools.map((tool) => tool.function.name), ["generate_music", "inspect_music_service", "extend_music", "get_whole_song", "resume_audio_job", "list_audio_jobs"]);
+  assert.deepEqual(tools.map((tool) => tool.function.name), ["generate_music", "inspect_music_service", "extend_music", "get_whole_song", "retrieve_music", "resume_audio_job", "list_audio_jobs"]);
   const other = audioProcessingTools([{ ...service, provider: "elevenlabs" }]);
   assert.ok(!other.some((tool) => ["inspect_music_service", "extend_music", "get_whole_song"].includes(tool.function.name)));
   const schemas = JSON.stringify(tools.map((tool) => tool.function.parameters));

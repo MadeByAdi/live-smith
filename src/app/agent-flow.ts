@@ -2,10 +2,15 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 import { createHash } from "node:crypto";
 
 import { audioJobViews, resumeAudioJob } from "./audio-processing.js";
+import { downloadAudioOutput, retrieveMusic } from "./audio-generation.js";
+import { captureAudioServiceConnections } from "./audio-service-connections.js";
 import { SunoSessionManager } from "./suno-session-manager.js";
+import { SunoModelCatalog } from "./suno-model-catalog.js";
+import type { readSunoMusicService } from "../audio-services/suno-catalog.js";
 import { createSunoSessionVerifier } from "../audio-services/suno-session.js";
 import type { SunoSessionVerifier } from "../audio-services/suno-session-contracts.js";
 import { openSunoWebsite } from "../runtime/suno-website.js";
+import { openAudioDownload } from "../runtime/audio-download-browser.js";
 import { audioServicesView } from "../storage/settings.js";
 import { readAudioAsset, deleteSessionAudio, listSessionAudioDirectoryIds } from "../storage/audio-assets.js";
 import { listAudioJobs } from "../storage/audio-jobs.js";
@@ -296,7 +301,11 @@ function effectiveSessionModelSelection(
 export interface AgentFlowDependencies {
   /** Test seams; production uses the OS default browser and a Suno-only verifier. */
   openSunoWebsite?: typeof openSunoWebsite;
+  openAudioDownload?: typeof openAudioDownload;
   verifySunoSession?: SunoSessionVerifier;
+  readSunoMusicService?: typeof readSunoMusicService;
+  retrieveMusic?: typeof retrieveMusic;
+  downloadAudioOutput?: typeof downloadAudioOutput;
   appendSessionEvent?: typeof appendSessionEvent;
   deleteSession?: typeof deleteSession;
   getOrCreateDefaultSession?: typeof getOrCreateDefaultSession;
@@ -386,6 +395,7 @@ export async function runAgentFlow(
   const providerFetch = providerFetchForStorage(storageDirectory);
   const sunoSessions = new SunoSessionManager(storageDirectory,
     dependencies.verifySunoSession ?? createSunoSessionVerifier(providerFetch));
+  const sunoModelCatalog = new SunoModelCatalog(storageDirectory, providerFetch, dependencies.readSunoMusicService);
   const modelAuthSendFenceFor = (
     profileId: string,
   ): ModelAuthSendFence => dependencies.modelAuthSendFence ??
@@ -599,8 +609,10 @@ export async function runAgentFlow(
       source: modalSessionOwner,
     });
   };
-  const notifyGlobalStateChanged = (): void => {
-    invalidateGlobalState(storageDirectory, { source: modalSessionOwner });
+  const notifyGlobalStateChanged = (sunoAuthServiceId?: string): void => {
+    invalidateGlobalState(storageDirectory, { source: modalSessionOwner,
+      ...(sunoAuthServiceId === undefined ? {} : { sunoAuthServiceId }),
+    });
   };
   const publishOAuthPendingState = (
     scope: OAuthProfileScope,
@@ -1381,6 +1393,10 @@ export async function runAgentFlow(
       const authProjection = modelAuthScope === undefined
         ? undefined
         : oauthAuthByScope.get(oauthScopeKey(modelAuthScope));
+      const audioJobs = await audioJobViews(storageDirectory, activeSession.id);
+      const sunoAccounts = await sunoSessions.views(settings.audioServices?.connections ?? []);
+      const catalog = await sunoModelCatalog.view(settings.audioServices?.revision);
+      throwIfAborted(signal);
       return {
         contextSummary: activeInteraction?.summary ??
           `The Live object for this session is unavailable: ${activeSession.scope.label}`,
@@ -1407,8 +1423,9 @@ export async function runAgentFlow(
         events,
         pendingAttachments,
         ...(settings.audioServices ? { audioServices: audioServicesView(settings.audioServices) } : {}),
-        audioJobs: await audioJobViews(storageDirectory, activeSession.id),
-        sunoAccounts: await sunoSessions.views(settings.audioServices?.connections ?? []),
+        audioJobs,
+        sunoAccounts,
+        ...(catalog === undefined ? {} : { sunoModelCatalog: catalog }),
         availableSkills: storageSnapshot.availableSkills,
         activeSkillIds: [...(activeSession.activeSkillIds ?? [])],
         capabilities: capabilityPreview.capabilities,
@@ -2134,6 +2151,21 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
+    if (commandInput.kind === "load_suno_models") {
+      try {
+        return await globalSettingsMutationFence.run(sessionMutationFenceKey(storageDirectory, "global-settings"), signal, async () => {
+          await commandContext.progress("Loading Suno models…");
+          await sunoModelCatalog.load(commandInput.serviceId, signal);
+          status = "Suno models loaded.";
+          return buildStateAfterCommandMutation(undefined, { signal });
+        });
+      } catch (error) {
+        sunoModelCatalog.clear();
+        if (!signal.aborted) throw error;
+        throw new ChatBridgeCommandStoppedError(await buildStateAfterCommandMutation());
+      }
+    }
+
     if (commandInput.kind === "open_suno_website") {
       await (dependencies.openSunoWebsite ?? openSunoWebsite)(signal);
       status = undefined;
@@ -2142,6 +2174,7 @@ export async function runAgentFlow(
 
     if (commandInput.kind === "import_suno_session" || commandInput.kind === "refresh_suno_login" || commandInput.kind === "logout_suno") {
       return globalSettingsMutationFence.run(sessionMutationFenceKey(storageDirectory, "global-settings"), signal, async () => {
+        sunoModelCatalog.clear(commandInput.serviceId);
         try {
           if (commandInput.kind === "import_suno_session") {
             await sunoSessions.importSession(commandInput.serviceId, commandInput.sessionValue, signal);
@@ -2152,7 +2185,7 @@ export async function runAgentFlow(
           }
           status = undefined;
           return await buildStateAfterCommandMutation();
-        } finally { notifyGlobalStateChanged(); }
+        } finally { notifyGlobalStateChanged(commandInput.serviceId); }
       });
     }
 
@@ -2866,14 +2899,47 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
-    if (commandInput.kind === "resume_audio_job") {
+    if (commandInput.kind === "open_audio_download") {
+      return withNamedSessionMutation(commandInput.sessionId, "audio-export", signal, async () => {
+        await attachmentSession(commandInput.sessionId);
+        if (!bridge) throw new Error("The audio download bridge is unavailable.");
+        const target = await bridge.createAudioDownload(commandInput.sessionId, commandInput.assetId, signal);
+        await (dependencies.openAudioDownload ?? openAudioDownload)(target, signal);
+        status = "The local audio file was sent to your default browser for download. Keep Live Smith open until it finishes.";
+        return buildStateAfterCommandMutation(undefined, {
+          heldSessionId: commandInput.sessionId, sessionMutationHeld: true,
+        });
+      });
+    }
+
+    if (commandInput.kind === "resume_audio_job" || commandInput.kind === "retrieve_music" || commandInput.kind === "download_audio_output") {
       return withNamedSessionMutation(commandInput.sessionId, "audio-job", signal, async () => {
         try {
           await attachmentSession(commandInput.sessionId);
-          const job = await resumeAudioJob({
+          const processing = {
             storageDirectory, sessionId: commandInput.sessionId, signal,
-            onProgress: (message) => commandContext.progress(message),
-          }, commandInput.jobId);
+            onProgress: (message: string) => commandContext.progress(message),
+          };
+          let job;
+          if (commandInput.kind === "retrieve_music") {
+            const admittedConnections = await captureAudioServiceConnections(storageDirectory);
+            const selected = admittedConnections.find((connection) => connection.id === commandInput.serviceId);
+            if (selected?.provider !== "suno" || selected.sunoSession?.accountId !== commandInput.expectedAccountId) {
+              throw new ChatBridgeConflictError("The selected Suno account changed or is unavailable. Select its saved connection again before retrieving songs.");
+            }
+            throwIfAborted(signal);
+            job = await (dependencies.retrieveMusic ?? retrieveMusic)({ ...processing, admittedConnections: [selected] },
+              commandInput.serviceId, commandInput.clipIds);
+          } else if (commandInput.kind === "download_audio_output") {
+            job = await (dependencies.downloadAudioOutput ?? downloadAudioOutput)({ ...processing,
+              withDownloadAuthorization: (authorizationSignal, authorize) => globalSettingsMutationFence.run(
+                sessionMutationFenceKey(storageDirectory, "global-settings"), authorizationSignal, authorize,
+              ),
+            },
+              commandInput.jobId, commandInput.outputKey);
+          } else {
+            job = await resumeAudioJob(processing, commandInput.jobId);
+          }
           status = job.message;
         } catch (error) {
           if (!signal.aborted) throw error;
@@ -4098,7 +4164,8 @@ export async function runAgentFlow(
     );
     unsubscribeGlobalState = subscribeGlobalStateInvalidations(
       storageDirectory,
-      ({ source }) => {
+      ({ source, sunoAuthServiceId }) => {
+        if (sunoAuthServiceId !== undefined) sunoModelCatalog.clear(sunoAuthServiceId);
         if (source === modalSessionOwner) return;
         if (bridge) bridge.publishGlobalStateInvalidation();
         else pendingGlobalStateInvalidation = true;

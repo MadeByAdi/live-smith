@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { AudioGenerationAdapter, AudioGenerationRequest, AudioJob, RemoteAudioOutput } from "./contracts.js";
+import type { AudioDownloadAuthorization, AudioGenerationAdapter, AudioGenerationRequest, AudioJob, RemoteAudioOutput } from "./contracts.js";
 import { createSunoHttp } from "./suno-http.js";
 import { exceedsAudioPromptLimit } from "./prompt.js";
+import { downloadSunoClip, sunoDownloadPath } from "./suno-download.js";
 import { readSunoCatalog, readSunoPersona, sunoActive, sunoObject, sunoUuid, type SunoMusicModel, type SunoSession } from "./suno-catalog.js";
 export { readSunoMusicService } from "./suno-catalog.js";
 export type { SunoMusicServiceRequest } from "./suno-catalog.js";
@@ -77,19 +78,21 @@ function enforceLimits(request: Exclude<MusicRequest, { operation: "get_whole_so
 
 function generationBody(request: Exclude<MusicRequest, { operation: "get_whole_song" }>, modelId: string) {
   const options = request.options;
+  const custom = request.operation === "extend_music" || options?.mode === "custom";
   const sliders = {
     ...(options?.weirdness === undefined ? {} : { weirdness_constraint: options.weirdness / 100 }),
     ...(options?.styleInfluence === undefined ? {} : { style_weight: options.styleInfluence / 100 }),
   };
-  // Full v2-web envelope: paperfoot/suno-cli@f0dea4d src/api/types.rs.
+  // The web client sends descriptions in gpt_description_prompt; prompt is lyrics.
   // Unverified cover/remaster/Sounds controls are deliberately not exposed.
   return {
-    token: null, generation_type: "TEXT", title: options?.title ?? null, tags: options?.styles ?? null,
-    negative_tags: options?.negativeStyles ?? "", mv: modelId, prompt: request.prompt,
+    token: null, generation_type: "TEXT", mv: modelId,
+    ...(custom ? { title: options?.title ?? "", tags: options?.styles ?? "", negative_tags: options?.negativeStyles ?? "" } : {}),
+    prompt: custom ? request.prompt : "", ...(custom ? {} : { gpt_description_prompt: request.prompt }),
     make_instrumental: request.instrumental, user_uploaded_images_b64: null,
     metadata: {
       web_client_pathname: "/create", is_max_mode: false, is_mumble: false,
-      create_mode: request.operation === "extend_music" || options?.mode === "custom" ? "custom" : "inspiration",
+      create_mode: custom ? "custom" : "simple",
       user_tier: "", create_session_token: randomUUID(), disable_volume_normalization: false,
       ...(Object.keys(sliders).length ? { control_sliders: sliders } : {}),
     },
@@ -131,11 +134,19 @@ function checkedManifest(taskId: string, manifest: AudioJob["expectedOutputs"], 
 }
 
 export function createSunoAudioAdapter(
-  session: SunoSession, options: { fetchImpl?: typeof fetch; modelId?: string } = {},
+  session: SunoSession, options: { fetchImpl?: typeof fetch; modelId?: string; authorizeDownloads?: boolean } = {},
 ): AudioGenerationAdapter {
   session = { ...session };
   const http = createSunoHttp(session, options.fetchImpl);
   const modelId = options.modelId;
+  const authorizeDownloads = options.authorizeDownloads === true;
+  const download = (output: RemoteAudioOutput, signal: AbortSignal, authorization?: AudioDownloadAuthorization) => {
+    sunoActive(signal, http);
+    sunoUuid(output.key, http);
+    if (output.role !== "music" && output.role !== "music_alternative") throw http.fail("invalid generated music role.");
+    if (output.url !== sunoDownloadPath(output.key)) throw http.fail("download locator does not match its clip identifier.");
+    return downloadSunoClip(http, output.key, signal, authorizeDownloads, authorization);
+  };
   if (modelId !== undefined && (typeof modelId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(modelId))) {
     throw http.fail("invalid configured music model identifier.");
   }
@@ -173,7 +184,8 @@ export function createSunoAudioAdapter(
         }
       }
       const gate = sunoObject(await http.request("POST", "/api/c/check", { ctype: "generation" }, signal), http);
-      if (gate.required !== false) throw http.fail("access denied or verification required; complete verification on Suno.com.");
+      if (gate.required === true) throw http.fail("human verification is required. No generation was submitted. Complete verification and generate on Suno.com, then use Retrieve existing Suno songs in Audio tools to preview them.");
+      if (gate.required !== false) throw http.fail("generation verification status is unavailable. No generation was submitted.");
       sunoActive(signal, http);
       const signature = JSON.stringify(snapshot);
       if (JSON.stringify(validateRequest(request, http)) !== signature) throw http.fail("music parameters changed during preparation.");
@@ -212,16 +224,17 @@ export function createSunoAudioAdapter(
       for (const entry of manifest) {
         const clip = found.get(entry.key)!;
         if (clip.status === "error") failedOutputKeys.push(entry.key);
-        else outputs.push({ ...entry, url: http.outputUrl(clip.audio_url) });
+        else outputs.push({ ...entry, url: sunoDownloadPath(entry.key) });
       }
       if (!outputs.length) return { status: "failed", message: http.fail("all generated clips failed.").message };
       return { status: "completed", outputs, ...(failedOutputKeys.length ? { failedOutputKeys } : {}) };
     },
     async download(output, signal) {
-      sunoActive(signal, http);
-      sunoUuid(output.key, http);
-      if (output.role !== "music" && output.role !== "music_alternative") throw http.fail("invalid generated music role.");
-      return http.download(http.outputUrl(output.url), signal);
+      return download(output, signal);
+    },
+    async downloadSelected(output, signal, authorization) {
+      if (typeof authorization !== "function") throw http.fail("selected download requires a connection authorization guard.");
+      return download({ ...output, url: sunoDownloadPath(output.key) }, signal, authorization);
     },
   };
 }

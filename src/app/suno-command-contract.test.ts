@@ -2,6 +2,44 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCommandInput } from "./chat-bridge-http.js";
 
+test("local audio export accepts only a Session-owned asset reference", () => {
+  const input = { kind: "open_audio_download", sessionId: "session-one", assetId: "asset-one" };
+  assert.deepEqual(parseCommandInput(input), input);
+  for (const patch of [{ assetId: "../asset" }, { sessionId: "../session" }, { url: "https://example.test" },
+    { path: "/private/file" }, { token: "secret" }, { serviceId: "suno-one" }]) {
+    assert.throws(() => parseCommandInput({ ...input, ...patch }));
+  }
+});
+
+test("explicit Suno download selects exactly one existing job output, never a URL or generation", () => {
+  const input = { kind: "download_audio_output", sessionId: "session-one", jobId: "audiojob-one",
+    outputKey: "11111111-1111-4111-8111-111111111111" };
+  assert.deepEqual(parseCommandInput(input), input);
+  for (const patch of [{ sessionId: "../session" }, { jobId: "../job" }, { outputKey: "" },
+    { outputKey: "https://suno.com/song/" + input.outputKey }, { outputKey: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA" },
+    { outputKey: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, { outputKeys: [input.outputKey] },
+    { serviceId: "other-service" }, { url: "https://example.test" }, { apiKey: "fixture-secret" },
+    { prompt: "generate again" }, { purchase: true }]) {
+    assert.throws(() => parseCommandInput({ ...input, ...patch }));
+  }
+});
+
+test("Suno retrieval accepts only bounded canonical IDs and an explicit expected account", () => {
+  const clipIds = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  const input = { kind: "retrieve_music", sessionId: "session-one", serviceId: "suno-one", expectedAccountId: "user_fixture", clipIds };
+  assert.deepEqual(parseCommandInput(input), input);
+  assert.deepEqual(parseCommandInput({ ...input, clipIds: [clipIds[0]] }), { ...input, clipIds: [clipIds[0]] });
+  for (const patch of [
+    { clipIds: [] }, { clipIds: [...clipIds, clipIds[0]] }, { clipIds: [clipIds[0], clipIds[0]] },
+    { clipIds: ["https://suno.com/song/" + clipIds[0]] }, { clipIds: ["not-a-clip"] },
+    { clipIds: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"] }, { clipIds: ["AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"] },
+    { clipIds: clipIds[0] }, { expectedAccountId: "" }, { expectedAccountId: "user/other" },
+    { expectedAccountId: "a".repeat(129) }, { expectedAccountId: undefined },
+    { sessionId: "../session" }, { serviceId: "../service" }, { sessionValue: "fixture-secret" },
+    { url: "https://example.test" }, { prompt: "generate more" }, { apiKey: "fixture-secret" },
+  ]) assert.throws(() => parseCommandInput({ ...input, ...patch }));
+});
+
 test("opening the Suno website accepts no destination, connection or credential", () => {
   assert.deepEqual(parseCommandInput({ kind: "open_suno_website" }), { kind: "open_suno_website" });
   for (const extra of [{ serviceId: "suno-one" }, { url: "https://example.test" }, { cookie: "fixture-secret" }]) {

@@ -14,7 +14,7 @@ export const AUDIO_SERVICE_CAPABILITIES: Record<AudioProvider, {
 }> = {
   lalal: { label: "LALAL.AI", operations: ["separate_stems"], musicDuration: false, generationOutputCount: 0, musicPromptCharacters: 0 },
   elevenlabs: { label: "ElevenLabs", operations: ["generate_music", "generate_sound_effect"], musicDuration: true, generationOutputCount: 1, musicPromptCharacters: 4100 },
-  suno: { label: "Suno.com (experimental)", operations: ["generate_music", "extend_music", "get_whole_song"], musicDuration: false, generationOutputCount: 2, musicPromptCharacters: 5000, sessionImport: true, customMusic: true, musicLibrary: true },
+  suno: { label: "Suno.com (experimental)", operations: ["generate_music", "extend_music", "get_whole_song", "retrieve_music"], musicDuration: false, generationOutputCount: 2, musicPromptCharacters: 5000, sessionImport: true, customMusic: true, musicLibrary: true },
   sunoapi: { label: "Suno via SunoAPI.org (third-party)", operations: ["generate_music"], musicDuration: false, generationOutputCount: 2, musicPromptCharacters: 3000 },
 };
 

@@ -253,7 +253,7 @@ test("Suno exposes explicit activation separately from Cookie login and lists fe
       assert.equal(harness.document.querySelector<HTMLElement>(selector)!.hidden, true, selector);
     }
     assert.equal(harness.document.querySelector<HTMLElement>("#sunoLoginControls")!.hidden, false);
-    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Custom lyrics.*Extend.*Library/);
+    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Custom lyrics.*Extend.*Library.*Retrieve/);
     assert.match(harness.document.querySelector("#sunoFeatureHelp")!.textContent!, /Not connected: Sounds/);
     assert.equal(harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!.type, "password");
     assert.equal(harness.document.querySelector<HTMLButtonElement>("#openSunoWebsiteButton")!.disabled, false);

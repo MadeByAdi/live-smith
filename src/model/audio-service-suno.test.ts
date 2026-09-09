@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { getEventListeners } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 import type { AudioGenerationRequest, AudioJob, RemoteAudioOutput } from "../audio-services/contracts.js";
 import { createSunoAudioAdapter, readSunoMusicService, type SunoMusicServiceRequest } from "../audio-services/suno.js";
@@ -32,8 +34,9 @@ function catalog(models: unknown[] = [model()], extra: Record<string, unknown> =
 }
 function clip(id = A, status = "complete", extra: Record<string, unknown> = {}) {
   return { id, status, title: "Fixture song", model_name: MODEL, audio_url: `https://cdn1.suno.ai/${id}.mp3`,
-    metadata: { duration: 30, tags: "jazz", make_instrumental: true }, ...extra };
+    is_download_unlocked: true, metadata: { duration: 30, tags: "jazz", make_instrumental: true }, ...extra };
 }
+const downloadPath = (id = A) => `/api/download/clip/${id}?format=mp3`;
 function receipt(ids: string[] = [B, A]) { return { status: "submitted", clips: ids.map((id) => clip(id, "submitted")) }; }
 type Step = { path: string; value?: unknown; response?: Response; run?: () => Promise<Response> };
 function replay(steps: Step[] = [], modelId?: string) {
@@ -110,9 +113,9 @@ test("prepare selects the catalog default, gates once, and submit sends the comp
   assert.match(String(metadata.create_session_token), /^[0-9a-f-]{36}$/u);
   assert.notEqual(body.transaction_uuid, metadata.create_session_token);
   assert.deepEqual(body, {
-    token: null, generation_type: "TEXT", title: null, tags: null, negative_tags: "", mv: MODEL,
-    prompt: MUSIC.prompt, make_instrumental: true, user_uploaded_images_b64: null,
-    metadata: { web_client_pathname: "/create", is_max_mode: false, is_mumble: false, create_mode: "inspiration",
+    token: null, generation_type: "TEXT", mv: MODEL,
+    prompt: "", gpt_description_prompt: MUSIC.prompt, make_instrumental: true, user_uploaded_images_b64: null,
+    metadata: { web_client_pathname: "/create", is_max_mode: false, is_mumble: false, create_mode: "simple",
       user_tier: "", create_session_token: metadata.create_session_token, disable_volume_normalization: false },
     override_fields: [], cover_clip_id: null, cover_start_s: null, cover_end_s: null, persona_id: null,
     artist_clip_id: null, artist_start_s: null, artist_end_s: null, continue_clip_id: null,
@@ -144,6 +147,7 @@ test("custom fields, percent sliders and exact existing persona are preserved wi
   const body = h.api().at(-1)!.body as Record<string, unknown>;
   assert.equal(body.mv, chosen);
   assert.equal(body.prompt, request.prompt);
+  assert.equal(Object.hasOwn(body, "gpt_description_prompt"), false);
   assert.equal(body.title, "New song");
   assert.equal(body.tags, "folk");
   assert.equal(body.negative_tags, "drums");
@@ -232,6 +236,12 @@ test("only explicit required false passes CAPTCHA and unknown/failed checks cann
     await safeFailure(h.adapter.prepare!({ ...MUSIC }, signal()));
     assert.equal(h.api().length, 2);
   }
+});
+
+test("required human verification describes the website-to-preview handoff without submitting", async () => {
+  const h = replay([accountStep(), gateStep({ required: true, captcha_version: 2 })]);
+  await safeFailure(h.adapter.prepare!({ ...MUSIC }, signal()), /No generation was submitted\. Complete verification and generate on Suno\.com, then use Retrieve existing Suno songs in Audio tools to preview them\./);
+  assert.deepEqual(h.api().map(entry => entry.path), ["/api/billing/info/", "/api/c/check"]);
 });
 
 test("a prepared request is bound to its values and cancellation signal, and is consumed once", async () => {
@@ -399,13 +409,13 @@ test("reordered final clips retain receipt roles and failed siblings retain thei
   const h = replay([pollStep([clip(B), clip(A)]), pollStep([failed, clip(B)]), pollStep([clip(A), clip(B, "error")]),
     pollStep([failed, clip(B, "error")])]);
   assert.deepEqual(await h.adapter.inspect!(A, signal(), MANIFEST), { status: "completed", outputs: [
-    { ...MANIFEST[0], url: `https://cdn1.suno.ai/${A}.mp3` }, { ...MANIFEST[1], url: `https://cdn1.suno.ai/${B}.mp3` },
+    { ...MANIFEST[0], url: downloadPath(A) }, { ...MANIFEST[1], url: downloadPath(B) },
   ] });
   assert.deepEqual(await h.adapter.inspect!(A, signal(), MANIFEST), { status: "completed", outputs: [
-    { ...MANIFEST[1], url: `https://cdn1.suno.ai/${B}.mp3` },
+    { ...MANIFEST[1], url: downloadPath(B) },
   ], failedOutputKeys: [A] });
   assert.deepEqual(await h.adapter.inspect!(A, signal(), MANIFEST), { status: "completed", outputs: [
-    { ...MANIFEST[0], url: `https://cdn1.suno.ai/${A}.mp3` },
+    { ...MANIFEST[0], url: downloadPath(A) },
   ], failedOutputKeys: [B] });
   const allFailed = await h.adapter.inspect!(A, signal(), MANIFEST);
   assert.equal(allFailed.status, "failed");
@@ -425,40 +435,117 @@ test("polling rejects extra identities, duplicates, invalid statuses and malform
   for (let index = 0; index < 2; index++) assert.deepEqual(await h.adapter.inspect!(A, signal(), MANIFEST), { status: "running" });
 });
 
-test("inspection and download reject untrusted locators; accepted downloads send no credentials", async () => {
+test("download accepts only a locator bound to its exact clip ID before any network call", async () => {
   for (const url of [undefined, "", "https://untrusted.test/a.mp3", "http://cdn1.suno.ai/a.mp3",
-    "https://cdn1.suno.ai.evil.test/a.mp3", "https://user:pass@cdn1.suno.ai/a.mp3", "https://cdn1.suno.ai:444/a.mp3",
-    "https://cdn1.suno.ai/a.mp3#fragment", "https://cdn1.suno.ai/a%0db.mp3", `https://cdn1.suno.ai/${clientToken}.mp3`]) {
-    const h = replay([pollStep([clip(A, "complete", { audio_url: url })], A)]);
-    await safeFailure(h.adapter.inspect!(A, signal(), single));
+    `https://cdn1.suno.ai/${A}.mp3`, downloadPath(B), `${downloadPath(A)}&unlock=true`,
+    downloadPath(A).replace("mp3", "wav"), "/api/download/authorize"]) {
+    const h = replay();
     await safeFailure(h.adapter.download!({ key: A, role: "music", url } as RemoteAudioOutput, signal()));
-    assert.equal(h.api().length, 1);
+    assert.equal(h.requests.length, 0);
   }
-  const bytes = new Uint8Array([1, 2, 3]);
-  const url = `https://cdn1.suno.ai/${A}.mp3`;
-  const h = replay([{ path: url, response: new Response(bytes, { headers: { "content-type": "audio/mpeg" } }) }]);
-  assert.deepEqual(Array.from(await h.adapter.download!({ key: A, role: "music", url }, signal())), Array.from(bytes));
-  assert.equal(h.requests.length, 1);
-  assert.deepEqual(Object.fromEntries(h.requests[0]!.headers), { accept: "audio/mpeg, audio/wav, application/octet-stream" });
 });
 
-test("all HTTP-owned Suno CDNs are accepted consistently and refreshed bearer echoes are rejected", async () => {
-  for (const host of ["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai"]) {
+test("complete but download-locked clips do not prevent discovering a successful sibling", async () => {
+  const locked = clip(A, "complete", { is_download_unlocked: false, audio_url: "https://studio-api.prod.suno.com/api/forbidden" });
+  const h = replay([pollStep([locked, clip(B)]), pollStep([locked], A)]);
+  const status = await h.adapter.inspect!(A, signal(), MANIFEST);
+  assert.deepEqual(status, { status: "completed", outputs: MANIFEST.map(entry => ({ ...entry, url: downloadPath(entry.key) })) });
+  if (status.status !== "completed") return;
+  await safeFailure(h.adapter.download!(status.outputs[0]!, signal()), /download.*locked/);
+  assert.equal(h.api().length, 2);
+  assert.ok(h.api().every(entry => entry.init.method === "GET" && entry.path.startsWith("/api/feed/")));
+  h.done();
+});
+
+test("download rechecks exact completed clip identity and explicit download permission", async () => {
+  for (const value of [[], [clip(B)], [clip(A), clip(A)], [clip(A, "streaming")],
+    ...[undefined, false, null, "true"].map(is_download_unlocked => [clip(A, "complete", { is_download_unlocked })])]) {
+    const h = replay([pollStep(value, A)]);
+    await safeFailure(h.adapter.download!({ ...MANIFEST[0]!, url: downloadPath() }, signal()));
+    assert.equal(h.api().length, 1);
+    h.done();
+  }
+});
+
+test("authorized MP3 preparation resolves approved CDN URLs and never sends credentials to media", async () => {
+  for (const host of ["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai", "suno-data-uploads.s3.amazonaws.com"]) {
     const url = `https://${host}/${A}.mp3`;
-    const h = replay([pollStep([clip(A, "complete", { audio_url: url })], A),
+    const h = replay([pollStep([clip(A)], A), pollStep([clip(A)], A),
+      { path: downloadPath(), value: { ok: true, status: "ready", download_url: url } },
       { path: url, response: new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }) }]);
     const status = await h.adapter.inspect!(A, signal(), single);
     assert.equal(status.status, "completed");
     if (status.status !== "completed") return;
-    assert.equal(status.outputs[0]!.url, url);
-    await h.adapter.download!(status.outputs[0]!, signal());
-    assert.equal(h.requests.at(-1)!.headers.get("authorization"), null);
+    assert.equal(status.outputs[0]!.url, downloadPath());
+    assert.deepEqual(Array.from(await h.adapter.download!(status.outputs[0]!, signal())), [1]);
+    assert.ok(h.api().every(entry => entry.init.method === "GET"));
+    assert.deepEqual(Object.fromEntries(h.requests.at(-1)!.headers), { accept: "audio/mpeg, audio/wav, application/octet-stream" });
     h.done();
   }
-  const h = replay([{ path: `/api/feed/?ids=${A}`, run: async () => Response.json([
-    clip(A, "complete", { audio_url: `https://cdn1.suno.ai/${A}.mp3?secret=${encodeURIComponent(h.jwt)}` }),
-  ]) }]);
-  await safeFailure(h.adapter.inspect!(A, signal(), single));
+});
+
+test("prepared downloads reject invalid responses and untrusted URLs without falling back to audio_url", async () => {
+  for (const value of [null, {}, { ok: false, status: "ready", download_url: `https://cdn1.suno.ai/${A}.mp3` },
+    { ok: true, status: "error", detail: `remote-secret ${clientToken}` },
+    { ok: true, status: "future-state" },
+    ...[undefined, "", "http://cdn1.suno.ai/a.mp3", "https://untrusted.test/a.mp3",
+      "https://cdn1.suno.ai.evil.test/a.mp3", "https://user:pass@cdn1.suno.ai/a.mp3",
+      "https://cdn1.suno.ai:444/a.mp3", "https://cdn1.suno.ai/a.mp3#fragment",
+      "https://cdn1.suno.ai/a%0db.mp3", `https://cdn1.suno.ai/${clientToken}.mp3`,
+    ].map(download_url => ({ ok: true, status: "ready", download_url }))]) {
+    const h = replay([pollStep([clip(A)], A), { path: downloadPath(), value }]);
+    await safeFailure(h.adapter.download!({ ...MANIFEST[0]!, url: downloadPath() }, signal()));
+    assert.equal(h.api().length, 2);
+    h.done();
+  }
+  const h = replay([pollStep([clip(A)], A), { path: downloadPath(), run: async () => Response.json({
+    ok: true, status: "ready", download_url: `https://cdn1.suno.ai/${A}.mp3?secret=${encodeURIComponent(h.jwt)}`,
+  }) }]);
+  await safeFailure(h.adapter.download!({ ...MANIFEST[0]!, url: downloadPath() }, signal()));
+});
+
+test("MP3 preparation waits for its existing file without submitting generation or download authorization", async () => {
+  const url = `https://cdn1.suno.ai/${A}.mp3`;
+  const h = replay([pollStep([clip(A)], A),
+    { path: downloadPath(), value: { ok: true, status: "processing" } },
+    { path: downloadPath(), value: { ok: true, status: "ready", download_url: url } },
+    { path: url, response: new Response(new Uint8Array([1]), { headers: { "content-type": "audio/mpeg" } }) }]);
+  await h.adapter.download!({ ...MANIFEST[0]!, url: downloadPath() }, signal());
+  assert.ok(h.api().every(entry => entry.init.method === "GET"));
+  h.done();
+});
+
+test("download preparation honors cancellation and an overall deadline without leaking reasons", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] }); syncBuiltinESMExports();
+  t.after(() => { t.mock.timers.reset(); syncBuiltinESMExports(); });
+  for (const mode of ["stop", "deadline"]) {
+    const started = Promise.withResolvers<void>();
+    const controller = createHostAbortController();
+    const h = replay([pollStep([clip(A)], A), { path: downloadPath(), run: async () => {
+      started.resolve();
+      return new Promise<Response>(() => {});
+    } }]);
+    const pending = h.adapter.download!({ ...MANIFEST[0]!, url: downloadPath() }, controller.signal);
+    await started.promise;
+    if (mode === "stop") controller.abort(new Error(clientToken));
+    else t.mock.timers.tick(120_000);
+    await safeFailure(pending, mode === "stop" ? /cancelled/ : /download timed out/);
+    assert.equal(h.api().length, 2);
+    assert.equal(h.api().at(-1)!.init.signal?.aborted, true);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  }
+});
+
+test("library download permission preserves true, false and unknown evidence", async () => {
+  for (const evidence of [true, false, undefined, null, "true"]) {
+    const h = replay([{ path: "/api/feed/v3", value: {
+      clips: [clip(A, "complete", { is_download_unlocked: evidence })], has_more: false,
+    } }]);
+    const result = await readSunoMusicService(session, { query: "library" }, signal(), h.fetchImpl);
+    assert.ok(result.query === "library");
+    assert.equal(result.clips[0]!.downloadUnlocked, typeof evidence === "boolean" ? evidence : undefined);
+    assert.equal(Object.hasOwn(result.clips[0]!, "downloadUnlocked"), typeof evidence === "boolean");
+  }
 });
 
 test("catalog projection keeps bounded model evidence and omits account metadata, URLs and credentials", async () => {
@@ -526,7 +613,7 @@ test("a full library page bounds each safe display field and cannot reflect prov
   assert.deepEqual(Object.keys(result).sort(), ["clips", "hasMore", "query"]);
   assert.equal(result.clips.length, 20);
   for (const item of result.clips) {
-    assert.deepEqual(Object.keys(item).sort(), ["durationSeconds", "id", "modelId", "status", "styles", "title"]);
+    assert.deepEqual(Object.keys(item).sort(), ["downloadUnlocked", "durationSeconds", "id", "modelId", "status", "styles", "title"]);
     assert.ok(Array.from(item.title).length <= 160);
     assert.ok(Array.from(item.styles).length <= 500);
     assert.ok(Array.from(item.modelId).length <= 128);

@@ -178,10 +178,14 @@ export type ChatBridgeCommandInput =
       networkProxy?: never;
     }
   | { kind: "resume_audio_job"; sessionId: string; jobId: string }
+  | { kind: "download_audio_output"; sessionId: string; jobId: string; outputKey: string }
+  | { kind: "open_audio_download"; sessionId: string; assetId: string }
+  | { kind: "retrieve_music"; sessionId: string; serviceId: string; clipIds: string[]; expectedAccountId: string }
   | { kind: "open_suno_website" }
   | { kind: "import_suno_session"; serviceId: string; sessionValue: string }
   | { kind: "refresh_suno_login"; serviceId: string }
   | { kind: "logout_suno"; serviceId: string }
+  | { kind: "load_suno_models"; serviceId: string }
   | {
       kind: "set_session_approval_mode";
       sessionId: string;
@@ -974,10 +978,36 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     }
     return { kind, serviceId: input.serviceId, sessionValue: input.sessionValue };
   }
-  if (kind === "refresh_suno_login" || kind === "logout_suno") {
+  if (kind === "refresh_suno_login" || kind === "logout_suno" || kind === "load_suno_models") {
     assertOnlyInputKeys(input, ["kind", "serviceId"], `${kind} command`);
     if (!isSafeStorageId(input.serviceId)) throw new ChatBridgeRequestValidationError("Suno connection ID must be a safe storage ID.");
     return { kind, serviceId: input.serviceId };
+  }
+  if (kind === "retrieve_music") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "serviceId", "clipIds", "expectedAccountId"], "retrieve_music command");
+    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.serviceId) ||
+      typeof input.expectedAccountId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(input.expectedAccountId) ||
+      !Array.isArray(input.clipIds) || input.clipIds.length < 1 || input.clipIds.length > 2 ||
+      input.clipIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(id)) ||
+      new Set(input.clipIds).size !== input.clipIds.length) {
+      throw new ChatBridgeRequestValidationError("Choose a saved Suno account and one or two unique song IDs.");
+    }
+    return { kind, sessionId: input.sessionId, serviceId: input.serviceId, clipIds: [...input.clipIds], expectedAccountId: input.expectedAccountId };
+  }
+  if (kind === "download_audio_output") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "jobId", "outputKey"], "download_audio_output command");
+    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.jobId) ||
+      typeof input.outputKey !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(input.outputKey)) {
+      throw new ChatBridgeRequestValidationError("Choose one generated Suno output from this Session.");
+    }
+    return { kind, sessionId: input.sessionId, jobId: input.jobId, outputKey: input.outputKey };
+  }
+  if (kind === "open_audio_download") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "assetId"], "open_audio_download command");
+    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.assetId)) {
+      throw new ChatBridgeRequestValidationError("Choose a saved audio file in this Session.");
+    }
+    return { kind, sessionId: input.sessionId, assetId: input.assetId };
   }
   if (kind === "resume_audio_job") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "jobId"], "resume_audio_job command");

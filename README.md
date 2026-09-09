@@ -79,6 +79,14 @@ names, and raw provider/SDK output stay in their original language.
   access to your Google credentials. Enable the saved experimental connection
   to generate music using your subscription credits, supply lyrics/styles and
   supported sliders, browse songs/models, extend songs and get whole songs.
+  Load account versions in the connection editor and choose a fixed version or
+  follow the account default. The active Session's audio results appear above
+  the chat composer, separately from connection settings.
+  Completed songs can be auditioned through Suno's embedded player without
+  downloading them. Saving a selected song for Live is a separate confirmation
+  and may consume one download allowance; Live Smith never buys extra quota.
+  If Suno requires human verification, complete generation on its normal website,
+  then retrieve the song links in Live Smith without generating them again.
   This is not full Suno website parity; see the supported features and limits in the
   [website sign-in workflow](docs/MODEL_PROVIDERS.md#sunocom-website-sign-in).
 - **Separate audio into stems.** Add a LALAL.AI connection, then ask to extract vocals, drums, bass, piano, or guitars from

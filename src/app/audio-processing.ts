@@ -5,7 +5,7 @@ import { setTimeout, clearTimeout } from "node:timers";
 import {
   audioJobView, type AudioAsset, type AudioJob, type AudioJobView,
   type AudioOrigin, type AudioServiceAdapter, type AudioServiceConnection, type AudioGenerationAdapter,
-  type SeparationStem,
+  type SeparationStem, type AudioDownloadAuthorization,
 } from "../audio-services/contracts.js";
 import { createLalalAudioAdapter } from "../audio-services/lalal.js";
 import { AttachmentProcessingError } from "../attachments/contracts.js";
@@ -22,6 +22,7 @@ import { audioConnectionFingerprint, availableAudioServices, resolveAudioService
 import { acquireAudioJob, audioJobIsActive, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { resumeAudioGeneration } from "./audio-generation.js";
 export { audioConnectionFingerprint } from "./audio-service-connections.js";
+export { downloadAudioOutput } from "./audio-generation.js";
 
 export interface AudioProcessingContext {
   storageDirectory: string | undefined;
@@ -30,6 +31,8 @@ export interface AudioProcessingContext {
   /** Saved connections captured before this request advertises audio tools. */
   admittedConnections?: readonly RuntimeAudioServiceConnection[];
   onProgress?(message: string): Promise<void> | void;
+  /** The explicit download command supplies the shared global-settings fence. */
+  withDownloadAuthorization?: AudioDownloadAuthorization;
   /** Injected service and wait are used by protocol-independent lifecycle tests. */
   adapter?: AudioServiceAdapter;
   generationAdapter?: AudioGenerationAdapter;
@@ -49,7 +52,8 @@ export async function audioJobViews(
     const view = audioJobView(job);
     const active = audioJobIsActive(storageDirectory, job.id);
     if (!active && ["preparing", "submitting", "running", "collecting"].includes(job.status)) {
-      view.status = job.remoteTaskId ? "interrupted" : job.status === "submitting" ? "unknown" : "interrupted";
+      view.status = job.remoteOutputs?.length ? job.outputAssets.length ? "partial" : "ready"
+        : job.status === "submitting" && !job.remoteTaskId ? "unknown" : "interrupted";
     }
     if (active) view.resumable = false;
     else if (!job.remoteTaskId && job.operation !== "separate_stems" &&

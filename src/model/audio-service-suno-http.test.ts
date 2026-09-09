@@ -68,6 +68,103 @@ test("private active session resolution preserves the public verifier result exa
   assert.deepEqual(await createSunoSessionVerifier(fetcher)(clientToken, signal()), { accountId: "user_selected" });
 });
 
+test("HTTP rejection preserves its numeric status without provider body or automatic retry", async () => {
+  for (const status of [400, 402, 422, 429, 500, 503]) {
+    const h = harness(() => new Response("remote-secret", { status }));
+    await assert.rejects(h.http.request("POST", "/api/generate/v2-web/", { prompt: "fixture" }, signal()), error => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, new RegExp(`HTTP ${status}\\b`));
+      return safeFailure(error);
+    });
+    assert.equal(h.calls.filter(call => call.url.startsWith(API)).length, 1);
+  }
+});
+
+test("generation validation diagnostics retain field/type, never the rejected input or server dump", async () => {
+  const h = harness(() => Response.json({ detail: [{
+    type: "missing", loc: ["body", "token_provider"], msg: "remote-secret",
+    input: { prompt: "private prompt", authorization: clientToken }, ctx: { error: "remote-secret" },
+  }] }, { status: 422 }));
+  await assert.rejects(h.http.request("POST", "/api/generate/v2-web/", { prompt: "private prompt" }, signal()), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /HTTP 422/u);
+    assert.match(error.message, /body\.token_provider: missing/u);
+    assert.doesNotMatch(error.message, /private prompt|authorization|input|ctx/u);
+    return safeFailure(error);
+  });
+  assert.equal(h.calls.filter(call => call.url.startsWith(API)).length, 1);
+});
+
+test("structured provider diagnostics exclude arbitrary prose, escaped secrets and request dumps", async () => {
+  const prompt = "private\nlyrics";
+  const message = `${clientToken.replaceAll(".", "\\u002e")}; prompt=${JSON.stringify(prompt)}; ` +
+    '{"api_key":"synthetic-provider-key"}; debug_context=synthetic-dump';
+  const diagnostic = { code: "invalid_request", type: "validation_error" };
+  for (const payload of [
+    { error: { ...diagnostic, message } },
+    { ...diagnostic, detail: message, debug: "remote-secret", request: { prompt } },
+    { detail: { ...diagnostic, message } },
+  ]) {
+    const h = harness(() => Response.json(payload, { status: 400 }));
+    await assert.rejects(h.http.request("POST", "/api/generate/v2-web/", { prompt }, signal()), error => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /code=invalid_request; type=validation_error/u);
+      assert.doesNotMatch(error.message, /private|lyrics|example\.test|debug|eyJ|synthetic-provider-key/u);
+      return safeFailure(error);
+    });
+  }
+});
+
+test("received HTTP rejection survives Stop or the request deadline during diagnostic reading", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] }); syncBuiltinESMExports();
+  t.after(() => { t.mock.timers.reset(); syncBuiltinESMExports(); });
+  for (const stop of [true, false]) {
+    const started = Promise.withResolvers<void>();
+    const reading = Promise.withResolvers<void>();
+    const headers = Promise.withResolvers<Response>();
+    const controller = createHostAbortController();
+    let cancelled = false;
+    const h = harness(() => { started.resolve(); return headers.promise; });
+    const pending = h.http.request("POST", "/api/generate/v2-web/", {}, controller.signal);
+    await started.promise;
+    if (!stop) t.mock.timers.tick(119_990);
+    headers.resolve(new Response(new ReadableStream({
+      pull() { reading.resolve(); return new Promise<void>(() => {}); },
+      cancel() { cancelled = true; return new Promise<void>(() => {}); },
+    }, { highWaterMark: 0 }) as unknown as BodyInit, { status: 422, headers: { "content-type": "application/json" } }));
+    await reading.promise;
+    if (stop) controller.abort(new Error("remote-secret"));
+    t.mock.timers.tick(stop ? 25 : 10);
+    await assert.rejects(pending, error => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /HTTP 422/u);
+      assert.doesNotMatch(error.message, /timed out|request cancelled/u);
+      return safeFailure(error);
+    });
+    assert.equal(cancelled, true);
+    assert.equal(h.calls.filter(call => call.url.startsWith(API)).length, 1);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  }
+});
+
+test("malformed, oversized and stalled error JSON preserve the HTTP rejection without retry", async () => {
+  for (const reply of [
+    () => new Response("{", { status: 422, headers: { "content-type": "application/json" } }),
+    () => Response.json({ detail: "x".repeat(70_000) }, { status: 422 }),
+    () => new Response(new ReadableStream({ pull() { return new Promise(() => {}); } }) as unknown as BodyInit,
+      { status: 422, headers: { "content-type": "application/json" } }),
+  ]) {
+    const h = harness(reply);
+    await assert.rejects(h.http.request("POST", "/api/generate/v2-web/", {}, signal()), error => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /HTTP 422/u);
+      assert.ok(error.message.length < 900);
+      return safeFailure(error);
+    });
+    assert.equal(h.calls.filter(call => call.url.startsWith(API)).length, 1);
+  }
+});
+
 test("one exact account session mints a bounded bearer, cached only in the client instance", async () => {
   const state = harness(() => Response.json({ total_credits_left: 10 }));
   assert.deepEqual(await state.http.request("GET", "/api/billing/info/", undefined, signal()), { total_credits_left: 10 });
@@ -158,6 +255,7 @@ test("only the enumerated method and route pairs reach the API", async () => {
   const state = harness();
   const routes: ["GET" | "POST", string][] = [
     ["GET", "/api/billing/info/"], ["GET", `/api/feed/?ids=${ID},${ID}`],
+    ["GET", `/api/download/clip/${ID}?format=mp3`],
     ["GET", `/api/persona/get-persona-paginated/${ID}/?page=0`],
     ["GET", `/api/persona/get-persona-paginated/${ID}/?page=12`],
     ["POST", "/api/feed/v3"], ["POST", "/api/c/check"],
@@ -171,6 +269,8 @@ test("unlisted routes, query injection, malformed or oversized ID lists fail bef
   const paths = ["https://example.test/", "//example.test/", "/api/billing/info/?x=1", "/api/billing/info",
     "/api/../api/billing/info/", "/api/%62illing/info/", "/api/billing/info/#fragment", "/api/billing/info/\n",
     "/api/playlist/me", "/api/session/", "/api/project/me", `/api/gen/${ID}/set_visibility/`,
+    "/api/download/authorize", `/api/download/clip/${ID}`, `/api/download/clip/${ID}?format=wav`,
+    `/api/download/clip/${ID}?format=mp3&unlock=true`, `/api/download/clip/${ID}/?format=mp3`,
     "/api/feed/", "/api/feed/?ids=", "/api/feed/?ids=not-a-uuid", `/api/feed/?ids=${ID}&page=1`,
     `/api/feed/?ids=${ID}%2C${ID}`, `/api/feed/?ids=${ID}\n`, `/api/feed/?ids=${Array(51).fill(ID).join(",")}`,
     `/api/persona/get-persona-paginated/${ID}/?page=-1`, `/api/persona/get-persona-paginated/${ID}/?page=01`,
@@ -179,7 +279,8 @@ test("unlisted routes, query injection, malformed or oversized ID lists fail bef
   const state = harness();
   for (const path of paths) await assert.rejects(state.http.request("GET", path, undefined, signal()), safeFailure);
   for (const [method, path] of [["POST", "/api/billing/info/"], ["GET", "/api/feed/v3"], ["GET", "/api/c/check"],
-    ["GET", "/api/generate/v2-web/"], ["DELETE", "/api/feed/v3"]]) {
+    ["GET", "/api/generate/v2-web/"], ["DELETE", "/api/feed/v3"], ["POST", "/api/download/authorize"],
+    ["POST", `/api/download/clip/${ID}?format=mp3`]]) {
     await assert.rejects(state.http.request(method as "GET", path!, undefined, signal()), safeFailure);
   }
   assert.equal(state.calls.length, 0);
@@ -280,12 +381,12 @@ test("redirected or mismatched response URLs fail at token, API and download bou
   }
 });
 
-test("CDN downloads are unauthenticated, instance-independent reads on exact approved HTTPS hosts", async () => {
+test("media downloads are unauthenticated, instance-independent reads on exact approved HTTPS hosts", async () => {
   const state = harness(({ url }) => url.startsWith(API) ? Response.json({}) : audio());
-  for (const host of ["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai"]) {
+  for (const host of ["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai", "suno-data-uploads.s3.amazonaws.com"]) {
     assert.deepEqual(await state.http.download(`https://${host}/file.mp3?Signature=signed-asset`, signal()), Buffer.from([1, 2, 3]));
   }
-  assert.equal(state.calls.length, 3);
+  assert.equal(state.calls.length, 4);
   for (const call of state.calls) {
     assert.equal(call.init?.method, "GET");
     assert.equal(call.init?.credentials, "omit");
@@ -301,6 +402,8 @@ test("CDN downloads are unauthenticated, instance-independent reads on exact app
 test("download URLs reject other hosts, authority tricks, non-HTTPS and credential echoes before Fetch", async () => {
   const state = harness(() => audio());
   for (const value of ["http://cdn1.suno.ai/file.mp3", "//cdn1.suno.ai/file.mp3", "file:///tmp/file.mp3",
+    "https://other-bucket.s3.amazonaws.com/file.mp3", "https://suno-data-uploads.s3.amazonaws.com.evil.test/file.mp3",
+    "https://suno-data-uploads.s3.amazonaws.com@evil.test/file.mp3", "https://suno-data-uploads.s3.amazonaws.com:444/file.mp3",
     "https://cdn1.suno.ai.evil.test/file.mp3", "https://sub.cdn1.suno.ai/file.mp3", "https://cdn1.suno.ai./file.mp3",
     "https://127.0.0.1/file.mp3", "https://cdn1.suno.ai:8443/file.mp3", "https://user@cdn1.suno.ai/file.mp3",
     "https://cdn1.suno.ai@evil.test/file.mp3", "https://cdn1.suno.ai\\@evil.test/file.mp3",

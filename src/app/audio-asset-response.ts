@@ -7,13 +7,16 @@ export function sendAudioAssetResponse(
   audio: { bytes: Uint8Array; mediaType: "audio/wav" | "audio/mpeg" },
   rangeHeader: string | undefined,
   head = false,
+  download = false,
 ): void {
   const size = audio.bytes.byteLength;
   response.setHeader("Content-Type", audio.mediaType);
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Accept-Ranges", "bytes");
-  response.setHeader("Content-Disposition", "inline");
+  response.setHeader("Content-Disposition", download
+    ? `attachment; filename="audio-result.${audio.mediaType === "audio/wav" ? "wav" : "mp3"}"`
+    : "inline");
   let start = 0;
   let end = size - 1;
   if (rangeHeader !== undefined) {

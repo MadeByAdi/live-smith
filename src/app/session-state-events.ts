@@ -7,6 +7,8 @@ export interface SessionStateInvalidation {
 
 export interface GlobalStateInvalidation {
   source: symbol;
+  /** Internal auth-lifecycle invalidation; never forwarded into browser payloads. */
+  sunoAuthServiceId?: string;
 }
 
 type SessionStateInvalidationListener = (

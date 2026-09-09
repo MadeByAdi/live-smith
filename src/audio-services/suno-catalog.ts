@@ -117,6 +117,7 @@ function projectClip(value: unknown, session: SunoSession, http: SunoHttp) {
     ...(typeof metadata.make_instrumental === "boolean" ? { instrumental: metadata.make_instrumental } : {}),
     ...(typeof metadata.has_stem === "boolean" ? { hasStems: metadata.has_stem } : {}),
     ...(typeof metadata.can_remix === "boolean" ? { canRemix: metadata.can_remix } : {}),
+    ...(typeof clip.is_download_unlocked === "boolean" ? { downloadUnlocked: clip.is_download_unlocked } : {}),
   };
 }
 

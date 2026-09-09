@@ -13,7 +13,7 @@ export const MAX_AUDIO_SERVICES = 20;
 export const LEGACY_AUDIO_SERVICE_ID = "audio-service-lalal";
 export const AUDIO_PROVIDERS = ["lalal", "elevenlabs", "suno", "sunoapi"] as const;
 export type AudioProvider = (typeof AUDIO_PROVIDERS)[number];
-export type AudioOperation = "separate_stems" | "generate_music" | "generate_sound_effect" | "extend_music" | "get_whole_song";
+export type AudioOperation = "separate_stems" | "generate_music" | "generate_sound_effect" | "extend_music" | "get_whole_song" | "retrieve_music";
 
 export interface AudioServiceConnection {
   id: string;
@@ -70,6 +70,9 @@ export type AudioGenerationSubmission =
   | { kind: "audio"; outputs: GeneratedAudioOutput[] }
   | { kind: "task"; taskId: string; expectedOutputs?: AudioJob["expectedOutputs"] };
 
+/** Holds the connection lifecycle boundary through one download-allowance request. */
+export type AudioDownloadAuthorization = <T>(signal: AbortSignal, operation: () => Promise<T>) => Promise<T>;
+
 export interface AudioGenerationAdapter {
   readonly provider: "elevenlabs" | "suno" | "sunoapi";
   /** Read-only validation and challenge preflight, before the paid submission boundary. */
@@ -77,6 +80,9 @@ export interface AudioGenerationAdapter {
   submit(request: AudioGenerationRequest, signal: AbortSignal): Promise<AudioGenerationSubmission>;
   inspect?(taskId: string, signal: AbortSignal, expectedOutputs?: AudioJob["expectedOutputs"]): Promise<RemoteAudioStatus>;
   download?(output: RemoteAudioOutput, signal: AbortSignal): Promise<Uint8Array>;
+  /** Freshly validate and collect only this observed output, without sibling dependencies or caller URLs. */
+  downloadSelected?(output: Pick<RemoteAudioOutput, "key" | "role">, signal: AbortSignal,
+    authorization: AudioDownloadAuthorization): Promise<Uint8Array>;
   cancel?(taskId: string, signal: AbortSignal): Promise<void>;
 }
 
@@ -129,7 +135,7 @@ export interface AudioServiceAdapter {
 }
 
 export type AudioJobStatus =
-  | "preparing" | "submitting" | "running" | "collecting"
+  | "preparing" | "submitting" | "running" | "collecting" | "ready"
   | "completed" | "partial" | "failed" | "interrupted" | "unknown" | "cancelled";
 
 export interface AudioJob {
@@ -150,6 +156,8 @@ export interface AudioJob {
   remoteTaskId?: string;
   /** Immutable remote identities acknowledged before collection; never include URLs. */
   expectedOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
+  /** Observed successful Suno outputs, a URL-free subset of the immutable manifest. */
+  remoteOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
   /** Historical result shape, used only when the original remote identities were not saved. */
   expectedOutputRoles?: GeneratedAudioOutput["role"][];
   outputAssets: AudioAsset[];
@@ -166,6 +174,7 @@ export interface AudioJobView {
   stems: SeparationStem[];
   createdAt: string;
   outputs: AudioAsset[];
+  remoteOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
   message?: string;
   resumable: boolean;
 }
@@ -176,7 +185,9 @@ export function audioJobView(job: AudioJob): AudioJobView {
     provider: job.provider, serviceId: job.serviceId, operation: job.operation,
     ...(job.modelId ? { modelId: job.modelId } : {}),
     outputs: job.outputAssets.map((asset) => ({ ...asset, origin: { ...asset.origin } })),
+    ...(job.remoteOutputs ? { remoteOutputs: job.remoteOutputs.map(({ key, role }) => ({ key, role })) } : {}),
     ...(job.message ? { message: job.message } : {}),
-    resumable: Boolean(job.remoteTaskId) && job.status !== "completed" && job.status !== "cancelled",
+    resumable: Boolean(job.remoteTaskId) && job.status !== "completed" && job.status !== "cancelled" &&
+      !(job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length),
   };
 }

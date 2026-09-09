@@ -693,19 +693,107 @@ prove plan entitlements, sufficient credits or freedom from security challenges.
   library page (20 songs with opaque pagination), or one Persona by ID. It does
   not enumerate all Voices or train/register a new voice. Returned text is data,
   not instructions; media URLs and credentials never enter the model context.
+  Library entries preserve explicit download-unlocked evidence separately from
+  generation status; missing evidence is not treated as permission.
+- `retrieve_music`: add one or two selected existing songs from the account for preview,
+  without generating, extending or authorizing a download. Chat calls require
+  clip IDs observed through that connection's library or saved jobs. The explicit
+  retrieval form accepts the user's Suno song links or IDs and checks that the
+  selected saved account has not changed. Repeating an identical retrieval in
+  the same Session reuses its existing job and any saved outputs.
 - `extend_music`: lyrics/styles for a completed, observed song starting at an
   explicit second before its end. `get_whole_song` joins one extension's
   existing lineage, not an arbitrary collection of audio files. These operations
   can consume credits and never import to Live without a separate scoped Apply.
 
-Leave the connection's model override blank to use the account's usable default,
-or use an exact model ID returned by the catalog. There is no model-name guessing
-or fallback to a different account/provider. Every generation is preceded by
+Use **Music version → Load versions** in a saved Suno connection to read that
+account's catalog directly; no chat request or generation credits are required,
+and a saved connection can remain disabled during setup. **Follow account
+default** uses its current usable default; choosing a named version fixes that
+connection's model after **Save audio settings**. Unavailable or unknown-access
+versions cannot be selected from the catalog. A saved ID missing from a newly
+loaded catalog remains visible instead of silently changing the selection.
+**Advanced model ID** retains explicit ID entry; **Discard** restores the saved
+connection without a settings write. Catalogs stay in the current dialog and
+are invalidated when their account credentials change, not persisted to disk.
+There is no model-name guessing or fallback to a different account/provider.
+Every generation is preceded by
 account/parameter validation and a CAPTCHA check; only an explicit no-challenge
 response permits submission. Verification challenges stop the operation and
 require manual action on Suno. There is no browser/device impersonation, CAPTCHA
 solver, challenge bypass, or automatic replay of a paid submission. Stop allows
 a bounded receipt-read grace period; it is not a remote cancellation or refund.
+
+HTTP failures retain the numeric status and, when available, a bounded,
+structured provider diagnostic: error codes/types and validation field paths.
+Arbitrary provider messages, rejected input and server debug data are never
+exposed. An unavailable error body or an interrupted diagnostic read does not
+erase an already received HTTP rejection, and a diagnostic never authorizes a
+generation retry.
+
+#### Online preview, file downloads and Live import
+
+Suno generation completion is separate from a file download. **Session audio
+results**, above the chat composer, holds the active Session's processing jobs;
+it is separate from application connection settings and collapses when switching
+Sessions. A generated song can be ready for online listening without a local audio asset. The result card
+offers an explicitly opened Suno embedded player at `https://suno.com/embed/{clip_id}`.
+The player loads only when requested and remains owned by Suno, inside a
+sandboxed cross-origin frame with no referrer. Live Smith passes no Cookie or API
+token to it and does not capture its playback data. The player uses the host
+WebView's network/session environment, not the API proxy; provider restrictions
+or network failures can make online playback unavailable without invalidating
+generation. Closing the preview, collapsing the result shelf or switching
+Session removes the embedded player. Collapsing the shelf also pauses local
+audio; reopening it does not automatically play or download anything.
+
+Saving a song for Live is a separate, explicit per-song download action. Its
+confirmation explains that an existing download allowance may be consumed.
+Only the selected output is authorized, using the original job's exact account
+and immutable clip identity. If the song is already unlocked, it is not
+authorized again. Live Smith never buys download packs or treats playback
+permission as permission to export a file. Suno describes its streaming and
+download distinction in its [download FAQ](https://help.suno.com/en/articles/13614785).
+
+Downloaded audio becomes a verified local Session asset, with local playback
+and a separate local-file download button. That button opens the system default
+browser with a two-minute link for this file only, not the dialog's control
+credential. Keep Live Smith open until the browser finishes the download; no
+Suno request or additional download allowance is needed. Repeating a saved output's download reuses that
+asset without a provider request. Importing into Live requires this local asset
+and remains a separate scoped Apply operation; an online preview cannot be used
+as an import source.
+
+#### Human-assisted generation and result retrieval
+
+When a direct generation stops at human verification, its paid submission has
+not started. Use the normal Suno website to complete verification and generate
+the requested song, then return the selected song links to **Preview existing
+Suno songs** in that saved connection's Audio tools editor. The website generation
+is the generation attempt: do not also resubmit the same request through chat.
+Live Smith does not claim that merely opening Suno or clicking “verified” clears
+the server-side challenge, and it does not capture or replay CAPTCHA tokens.
+
+Retrieval and Resume check the original Suno songs without automatically
+downloading them. A generated song can be complete but still unavailable for
+file export. The separate download action checks explicit download permission;
+with the user's confirmation it can authorize one locked song through
+`POST /api/download/authorize`, then recheck that same song's permission. A
+missing or uncertain authorization response is never replayed automatically.
+The adapter requests the prepared MP3 through
+`GET /api/download/clip/{clip_id}?format=mp3`, rather than treating the song's
+playback URL as a file download. Preparation and transfer have a cancellable
+two-minute deadline; only the Suno CDNs and the exact
+`suno-data-uploads.s3.amazonaws.com` bucket returned by authorized MP3 preparation
+are accepted over HTTPS, without API credentials or redirects.
+Missing permission, a failed preparation or an unfamiliar host stops that output
+with a recoverable error instead of falling back to an alternate media endpoint.
+
+If one song's download fails, its remote identity and already-saved sibling
+results remain available. Retry that song's explicit download to check its
+permission and collect it without another generation. **Resume** checks remote
+generation state; it does not spend download allowance. This is a human-assisted workflow, not
+unattended CAPTCHA automation or full website parity.
 
 Suno returns individual clip IDs. All acknowledged IDs and their output roles
 are saved before polling. Missing/pending clips remain pending; successful clips
