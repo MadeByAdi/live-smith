@@ -11,7 +11,7 @@ export const MAX_AUDIO_SESSION_BYTES = 1024 * 1024 * 1024;
 export const MAX_AUDIO_SESSION_JOBS = 40;
 export const MAX_AUDIO_SERVICES = 20;
 export const LEGACY_AUDIO_SERVICE_ID = "audio-service-lalal";
-export const AUDIO_PROVIDERS = ["lalal", "elevenlabs", "suno", "sunoapi"] as const;
+export const AUDIO_PROVIDERS = ["lalal", "elevenlabs", "suno-platform", "suno", "sunoapi"] as const;
 export type AudioProvider = (typeof AUDIO_PROVIDERS)[number];
 export type AudioOperation = "separate_stems" | "generate_music" | "generate_sound_effect" | "extend_music" | "get_whole_song" | "retrieve_music";
 
@@ -52,8 +52,11 @@ export interface MusicGenerationOptions {
   negativeStyles?: string;
   weirdness?: number;
   styleInfluence?: number;
+  vocalGender?: "male" | "female";
   personaId?: string;
 }
+
+export type MusicGenerationOptionField = Exclude<keyof MusicGenerationOptions, "mode">;
 
 export type AudioGenerationRequest =
   | { operation: "generate_music"; prompt: string; durationSeconds?: number; instrumental: boolean; options?: MusicGenerationOptions }
@@ -74,7 +77,7 @@ export type AudioGenerationSubmission =
 export type AudioDownloadAuthorization = <T>(signal: AbortSignal, operation: () => Promise<T>) => Promise<T>;
 
 export interface AudioGenerationAdapter {
-  readonly provider: "elevenlabs" | "suno" | "sunoapi";
+  readonly provider: "elevenlabs" | "suno-platform" | "suno" | "sunoapi";
   /** Read-only validation and challenge preflight, before the paid submission boundary. */
   prepare?(request: AudioGenerationRequest, signal: AbortSignal): Promise<void>;
   submit(request: AudioGenerationRequest, signal: AbortSignal): Promise<AudioGenerationSubmission>;
@@ -128,7 +131,8 @@ export interface AudioServiceAdapter {
   readonly provider: "lalal";
   readonly stems: readonly SeparationStem[];
   upload(bytes: Uint8Array, mediaType: AudioAsset["mediaType"], signal: AbortSignal): Promise<string>;
-  submit(sourceId: string, stems: readonly SeparationStem[], idempotencyKey: string, signal: AbortSignal): Promise<string>;
+  submit(sourceId: string, stems: readonly SeparationStem[], idempotencyKey: string, signal: AbortSignal,
+    sourceMediaType?: AudioAsset["mediaType"]): Promise<string>;
   inspect(taskId: string, stems: readonly SeparationStem[], signal: AbortSignal): Promise<RemoteAudioStatus>;
   cancel?(taskId: string, signal: AbortSignal): Promise<void>;
   download(output: RemoteAudioOutput, signal: AbortSignal): Promise<Uint8Array>;
@@ -158,6 +162,10 @@ export interface AudioJob {
   expectedOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
   /** Observed successful Suno outputs, a URL-free subset of the immutable manifest. */
   remoteOutputs?: Array<{ key: string; role: GeneratedAudioOutput["role"] }>;
+  /** Terminal provider state for the whole accepted remote task. */
+  remoteTaskTerminal?: "failed" | "cancelled";
+  /** Terminally failed output identities from an otherwise completed remote task. */
+  failedOutputKeys?: string[];
   /** Historical result shape, used only when the original remote identities were not saved. */
   expectedOutputRoles?: GeneratedAudioOutput["role"][];
   outputAssets: AudioAsset[];
@@ -188,6 +196,19 @@ export function audioJobView(job: AudioJob): AudioJobView {
     ...(job.remoteOutputs ? { remoteOutputs: job.remoteOutputs.map(({ key, role }) => ({ key, role })) } : {}),
     ...(job.message ? { message: job.message } : {}),
     resumable: Boolean(job.remoteTaskId) && job.status !== "completed" && job.status !== "cancelled" &&
-      !(job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length),
+      !audioJobRemoteSettled(job),
   };
+}
+
+/** True when another provider status read cannot reveal a new successful output. */
+export function audioJobRemoteSettled(job: Pick<AudioJob,
+  "remoteTaskTerminal" | "expectedOutputs" | "remoteOutputs" | "failedOutputKeys"
+>): boolean {
+  if (job.remoteTaskTerminal !== undefined) return true;
+  if (!job.expectedOutputs?.length) return false;
+  const accounted = new Set([
+    ...(job.remoteOutputs?.map((output) => output.key) ?? []),
+    ...(job.failedOutputKeys ?? []),
+  ]);
+  return job.expectedOutputs.every((output) => accounted.has(output.key));
 }

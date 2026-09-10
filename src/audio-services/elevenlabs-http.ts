@@ -10,8 +10,9 @@ import { MAX_AUDIO_ASSET_BYTES } from "./contracts.js";
 import { readAudioResponseBytes } from "./response-bytes.js";
 
 const REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
-// Explicitly supported by both endpoints and by the local MPEG Layer III inspector.
-const OUTPUT_FORMAT = "mp3_44100_128";
+// Music auto-selects the format appropriate for its configured model. Sound
+// effects retain the broadly available MP3 format accepted by the local parser.
+const OUTPUT_FORMATS = { music: "auto", "sound-generation": "mp3_44100_128" } as const;
 
 class ElevenLabsError extends Error {}
 
@@ -45,7 +46,7 @@ export function createElevenLabsHttp(apiKey: string, injected?: typeof fetch) {
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
     let response: Response | undefined;
-    const url = `https://api.elevenlabs.io/v1/${route}?output_format=${OUTPUT_FORMAT}`;
+    const url = `https://api.elevenlabs.io/v1/${route}?output_format=${OUTPUT_FORMATS[route]}`;
     try {
       // Resolve only on submit: loading the extension needs no ambient Web APIs.
       // A paid POST is issued exactly once, including on an unknown remote outcome.

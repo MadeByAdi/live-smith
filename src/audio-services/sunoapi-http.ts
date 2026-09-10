@@ -1,4 +1,3 @@
-import { isIP } from "node:net";
 import { clearTimeout, setTimeout } from "node:timers";
 import { URL } from "node:url";
 import { TextDecoder } from "node:util";
@@ -10,14 +9,9 @@ import { readAudioResponseBytes } from "./response-bytes.js";
 
 const API_BASE = "https://api.sunoapi.org/api/v1/generate";
 const MAX_JSON_BYTES = 64 * 1024;
-const REQUEST_TIMEOUT_MS = 120_000;
+const JSON_REQUEST_TIMEOUT_MS = 120_000;
+const MEDIA_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const SUBMIT_STOP_GRACE_MS = 3_000;
-// The provider documents real audio downloads on this exact host at:
-// https://docs.sunoapi.org/suno-api/get-vocal-separation-details
-// Other output hosts remain unavailable until independently verified. A public
-// DNS lookup alone would not authorize a URL or prevent DNS rebinding.
-const OUTPUT_HOST = "file.aiquickdraw.com";
-
 class SunoApiError extends Error {}
 
 export function createSunoApiHttp(apiKey: string, injected?: typeof fetch) {
@@ -67,26 +61,10 @@ export function createSunoApiHttp(apiKey: string, injected?: typeof fetch) {
     } catch {
       throw fail(callback ? "invalid or credential-bearing callback URL." : "invalid or credential-bearing output URL.");
     }
-    if (url.protocol !== "https:" || url.port || url.username || url.password || url.hash ||
-        (callback && (value.includes("?") || value.includes("#")))) {
-      throw fail(callback ? "callback must be a public HTTPS URL without credentials, port, query or fragment." : "untrusted output URL.");
-    }
-    if (callback) {
-      // This is a user-configured endpoint, never an agent-controlled URL. The
-      // owner supplies its public address; the client does not fetch it or claim
-      // that syntax validation establishes DNS reachability or ownership.
-      const authority = value.split("/")[2];
-      const host = url.hostname.toLowerCase().replace(/\.$/u, "");
-      const labels = host.split(".");
-      if (!/^https:\/\//iu.test(value) || !authority || authority.includes("@") ||
-          isIP(host) || host.length > 253 || labels.length < 2 ||
-          !labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(label)) ||
-          /(?:^|\.)(?:localhost|local|internal|invalid|test|example|onion|lan|corp|home)$/u.test(host) ||
-          /(?:^|\.)home\.arpa$/u.test(host)) {
-        throw fail("callback must use a public HTTPS hostname.");
-      }
-    } else if (url.hostname !== OUTPUT_HOST || !value.startsWith(`https://${OUTPUT_HOST}/`) || url.pathname === "/") {
-      throw fail("output host is not a documented, allowed SunoAPI.org audio CDN.");
+    const authority = value.split("/")[2];
+    if (!/^https?:\/\//iu.test(value) || !["https:", "http:"].includes(url.protocol) || !authority ||
+        authority.includes("@") || url.username || url.password || value.includes("#")) {
+      throw fail(callback ? "invalid callback URL." : "invalid output URL.");
     }
     return url.href;
   };
@@ -103,7 +81,8 @@ export function createSunoApiHttp(apiKey: string, injected?: typeof fetch) {
       else controller.abort();
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+    const timeoutMs = maximumBytes === MAX_JSON_BYTES ? JSON_REQUEST_TIMEOUT_MS : MEDIA_REQUEST_TIMEOUT_MS;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     let response: Response | undefined;
     try {
       const pending = Promise.resolve(resolveFetchImplementation(injected)(url, {

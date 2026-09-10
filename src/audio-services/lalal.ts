@@ -54,12 +54,17 @@ export function createLalalAudioAdapter(
       }
       return identifier(value.id);
     },
-    async submit(sourceId, stems, idempotencyKey, signal) {
+    async submit(sourceId, stems, idempotencyKey, signal, sourceMediaType = "audio/wav") {
       assertLalalActive(signal);
       const stemList = remoteStems(stems);
+      if (sourceMediaType !== "audio/wav" && sourceMediaType !== "audio/mpeg") {
+        throw lalalError("source media type is unavailable for output encoding.");
+      }
       const value = await http.post("split/multistem/", JSON.stringify({
         source_id: identifier(sourceId),
-        presets: { stem_list: stemList, encoder_format: "wav" },
+        // Preserve lossless WAV sources. MP3 sources stay compressed instead of
+        // expanding a valid long upload beyond the local per-output byte limit.
+        presets: { stem_list: stemList, encoder_format: sourceMediaType === "audio/wav" ? "wav" : "mp3" },
         idempotency_key: identifier(idempotencyKey),
       }), signal);
       return identifier(value.task_id);

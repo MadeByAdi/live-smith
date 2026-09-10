@@ -142,7 +142,7 @@ test("upload captures official octet-stream headers, immutable bytes and generic
   }
 });
 
-test("single and all-stem submissions use multistem, drum mapping, WAV and caller idempotency", async () => {
+test("single and all-stem submissions use multistem, drum mapping, source-matched encoding and caller idempotency", async () => {
   for (const stems of [["vocals"] as const, SEPARATION_STEMS]) {
     const { adapter, requests } = replay(json({ task_id: TASK_ID }));
     assert.deepEqual(adapter.stems, SEPARATION_STEMS);
@@ -155,6 +155,9 @@ test("single and all-stem submissions use multistem, drum mapping, WAV and calle
       presets: { stem_list: stems.map((stem) => stem === "drums" ? "drum" : stem), encoder_format: "wav" },
       idempotency_key: IDEMPOTENCY_KEY });
   }
+  const { adapter, requests } = replay(json({ task_id: TASK_ID }));
+  assert.equal(await adapter.submit(SOURCE_ID, STEMS, IDEMPOTENCY_KEY, signal(), "audio/mpeg"), TASK_ID);
+  assert.equal((requests[0]!.body as { presets: { encoder_format: string } }).presets.encoder_format, "mp3");
 });
 
 test("check replays queued, processing and completed results with all stems and residual intact", async () => {

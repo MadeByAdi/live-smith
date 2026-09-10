@@ -14,7 +14,7 @@ import { createHostAbortController } from "../runtime/host.js";
 const KEY = "fixture-elevenlabs-key-only";
 const MUSIC: AudioGenerationRequest = { operation: "generate_music", prompt: "  Soft piano 🌙\n", instrumental: true };
 const EFFECT: AudioGenerationRequest = { operation: "generate_sound_effect", prompt: "Rain on leaves", durationSeconds: 1.5, loop: true };
-const MUSIC_URL = "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128";
+const MUSIC_URL = "https://api.elevenlabs.io/v1/music?output_format=auto";
 const EFFECT_URL = "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128";
 
 function mp3Bytes(frames = 2): Buffer {
@@ -88,7 +88,7 @@ function stalledBody(cleanup: "hang" | "reject" | "throw" = "hang") {
   return { response, reading: reading.promise, pending, cleanupPending, counts: () => ({ reads, cancels, releases }) };
 }
 
-test("music uses the documented REST request, explicit MP3, quickstart model and unchanged prompt", async () => {
+test("music uses the documented REST request, model-selected quality, quickstart model and unchanged prompt", async () => {
   const bytes = mp3Bytes();
   const { adapter, requests } = replay([audio(bytes, { "Content-Length": String(bytes.length) })]);
   assert.equal(adapter.provider, "elevenlabs");

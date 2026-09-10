@@ -14,7 +14,8 @@ import { readAudioResponseBytes } from "./response-bytes.js";
 
 const API_BASE = "https://www.lalal.ai/api/v1/";
 const MAX_JSON_BYTES = 64 * 1024;
-const REQUEST_TIMEOUT_MS = 120_000;
+const JSON_REQUEST_TIMEOUT_MS = 120_000;
+const MEDIA_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const SUBMIT_STOP_GRACE_MS = 3_000;
 
 class LalalError extends Error {}
@@ -68,6 +69,7 @@ export function createLalalHttp(apiKey: string, injected?: typeof fetch) {
     init: RequestInit,
     signal: AbortSignal,
     maximumBytes: number,
+    timeoutMs: number,
     preserveSubmitReceipt = false,
   ): Promise<Uint8Array> => {
     assertLalalActive(signal);
@@ -87,7 +89,7 @@ export function createLalalHttp(apiKey: string, injected?: typeof fetch) {
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, REQUEST_TIMEOUT_MS);
+    }, timeoutMs);
     let response: Response | undefined;
     try {
       const pending = Promise.resolve(resolveFetchImplementation(injected)(url, {
@@ -145,7 +147,7 @@ export function createLalalHttp(apiKey: string, injected?: typeof fetch) {
           ...(filename ? { "Content-Disposition": `attachment; filename=${filename}` } : {}),
         },
         body: typeof body === "string" ? body : Buffer.from(body),
-      }, signal, MAX_JSON_BYTES, preserveSubmitReceipt);
+      }, signal, MAX_JSON_BYTES, filename ? MEDIA_REQUEST_TIMEOUT_MS : JSON_REQUEST_TIMEOUT_MS, preserveSubmitReceipt);
       if (!preserveSubmitReceipt) assertLalalActive(signal);
       try {
         const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -159,7 +161,7 @@ export function createLalalHttp(apiKey: string, injected?: typeof fetch) {
       return request(lalalOutputUrl(url, apiKey), {
         method: "GET",
         headers: { Accept: "audio/wav, audio/mpeg, application/octet-stream" },
-      }, signal, MAX_AUDIO_ASSET_BYTES);
+      }, signal, MAX_AUDIO_ASSET_BYTES, MEDIA_REQUEST_TIMEOUT_MS);
     },
   };
 }

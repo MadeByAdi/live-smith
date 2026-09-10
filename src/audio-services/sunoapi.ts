@@ -1,8 +1,8 @@
 import type { AudioGenerationAdapter, RemoteAudioOutput } from "./contracts.js";
+import { DEFAULT_SUNOAPI_MUSIC_MODEL, SUNOAPI_MUSIC_MODELS } from "./capabilities.js";
 import { createSunoApiHttp } from "./sunoapi-http.js";
 import { exceedsAudioPromptLimit } from "./prompt.js";
 
-const MODELS = ["V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5"];
 const RUNNING = ["PENDING", "TEXT_SUCCESS", "FIRST_SUCCESS"];
 const FAILED = ["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"];
 
@@ -15,8 +15,10 @@ export function createSunoApiAudioAdapter(
 ): AudioGenerationAdapter {
   const http = createSunoApiHttp(apiKey, options?.fetchImpl);
   const callbackUrl = http.callbackUrl(options?.callbackUrl);
-  const model = options?.modelId ?? "V4_5ALL";
-  if (!MODELS.includes(model)) throw http.fail("unsupported music model identifier.");
+  const model = options?.modelId ?? DEFAULT_SUNOAPI_MUSIC_MODEL;
+  if (!SUNOAPI_MUSIC_MODELS.includes(model as (typeof SUNOAPI_MUSIC_MODELS)[number])) {
+    throw http.fail("unsupported music model identifier.");
+  }
   return {
     provider: "sunoapi",
     async submit(request, signal) {

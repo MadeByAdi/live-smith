@@ -78,7 +78,7 @@ function stalledBody(cleanup: "hang" | "reject" | "throw" = "hang") {
   return { response, started: started.promise, read, cleaning, counts: () => ({ reads, cancels, releases }) };
 }
 
-test("non-custom submit captures the exact third-party contract and default model", async () => {
+test("non-custom submit captures the exact third-party contract and current default model", async () => {
   const { adapter, requests } = replay([receipt()]);
   assert.equal(adapter.provider, "sunoapi");
   assert.equal(adapter.cancel, undefined);
@@ -90,14 +90,14 @@ test("non-custom submit captures the exact third-party contract and default mode
   assert.deepEqual(Object.fromEntries(request.headers), {
     accept: "application/json", authorization: `Bearer ${KEY}`, "content-type": "application/json",
   });
-  assert.deepEqual(request.body, { customMode: false, instrumental: true, model: "V4_5ALL", callBackUrl: CALLBACK, prompt: MUSIC.prompt });
+  assert.deepEqual(request.body, { customMode: false, instrumental: true, model: "V6", callBackUrl: CALLBACK, prompt: MUSIC.prompt });
   assert.equal(request.init.redirect, "error");
   assert.equal(request.init.credentials, "omit");
   assert.equal(request.init.referrerPolicy, "no-referrer");
 });
 
 test("every published model and both instrumental flags use the same request schema", async () => {
-  for (const modelId of ["V4", "V4_5", "V4_5PLUS", "V4_5ALL", "V5", "V5_5"]) {
+  for (const modelId of ["V6", "V6_WILD", "V6_MINI", "V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4"]) {
     for (const instrumental of [true, false]) {
       const { adapter, requests } = replay([receipt()], { modelId });
       await adapter.submit({ ...MUSIC, instrumental }, signal());
@@ -126,28 +126,25 @@ test("invalid credentials, model IDs and callbacks fail before any request", () 
   for (const modelId of ["", "V3_5", "v5", "V5 ", KEY]) {
     assert.throws(() => createSunoApiAudioAdapter(KEY, { callbackUrl: CALLBACK, modelId, fetchImpl }), /model/u);
   }
-  for (const callbackUrl of [undefined, null, "", "not a url", "http://callbacks.example.org/music",
-    "https://localhost/music", "https://127.0.0.1/music", "https://2130706433/music", "https://[::1]/music",
-    "https://10.0.0.1/music", "https://home.arpa/music", "https://foo.home.arpa/music",
-    ...["localhost", "local", "internal", "invalid", "test", "example", "onion", "lan", "corp", "home"]
-      .map((suffix) => `https://callbacks.${suffix}/music`),
-    "https://user:password@callbacks.example.org/music", "https://@callbacks.example.org/music", "https://callbacks.example.org:444/music",
-    "https:callbacks.example.org/music", "https:////callbacks.example.org/music", `https://${"a".repeat(64)}.example.org/music`,
-    `https://${Array.from({ length: 5 }, () => "a".repeat(60)).join(".")}/music`,
-    "https://callbacks.example.org/music#fragment", "https://callbacks.example.org/music?token=fixture",
-    "https://callbacks.example.org/music?", "https://callbacks.example.org/music#", "https://callbacks.example.org/a%zz",
+  for (const callbackUrl of [undefined, null, "", "not a url", "ftp://callbacks.example.org/music",
+    "https://user:password@callbacks.example.org/music", "https://@callbacks.example.org/music",
+    "https:callbacks.example.org/music", "https:////callbacks.example.org/music",
+    "https://callbacks.example.org/music#fragment", "https://callbacks.example.org/music#", "https://callbacks.example.org/a%zz",
     "https://callbacks.example.org/a%b", "https://callbacks.example.org/a b", "https://callbacks.example.org/a\\b",
     "https://callbacks.example.org/a%0db", `https://callbacks.example.org/${KEY}`,
   ]) assert.throws(() => createSunoApiAudioAdapter(KEY, { callbackUrl: callbackUrl as string, fetchImpl }), /callback/u);
   assert.equal(requests, 0);
 });
 
-test("callback accepts default HTTPS port and valid path escapes without fetching it", async () => {
-  const { adapter, requests } = replay([receipt()], { callbackUrl: "https://callbacks.example.org:443/music%2Fready" });
-  await adapter.submit(MUSIC, signal());
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0]!.url, BASE);
-  assert.equal((requests[0]!.body as Record<string, unknown>).callBackUrl, "https://callbacks.example.org/music%2Fready");
+test("callback preserves user-selected HTTP endpoints, ports, queries and valid path escapes without fetching them", async () => {
+  for (const callbackUrl of ["https://callbacks.example.org:443/music%2Fready",
+    "http://localhost:8787/music?token=fixture", "https://127.0.0.1:9443/callback?stage=complete"]) {
+    const { adapter, requests } = replay([receipt()], { callbackUrl });
+    await adapter.submit(MUSIC, signal());
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]!.url, BASE);
+    assert.equal((requests[0]!.body as Record<string, unknown>).callBackUrl, new URL(callbackUrl).href);
+  }
 });
 
 test("submit receipts require numeric success and a safe non-reflected task ID", async () => {
@@ -226,13 +223,10 @@ test("malformed completed results, duplicate IDs and undocumented aliases are re
   }
 });
 
-test("inspect and download enforce the same exact documented HTTPS CDN without DNS-based trust", async () => {
-  const urls = ["https://example.cn/output.mp3", "https://cdn1.suno.ai/output.mp3", "https://untrusted.test/audio.mp3",
-    "https://127.0.0.1/a", "https://2130706433/a", "https://[::1]/a", "https://10.0.0.1/a", "file:///tmp/a.mp3",
-    "http://file.aiquickdraw.com/s/audio.mp3", "https://file.aiquickdraw.com.evil.test/s/audio.mp3",
-    "https://evil.file.aiquickdraw.com/s/audio.mp3", "https://file.aiquickdraw.com./s/audio.mp3",
-    "https://user:pass@file.aiquickdraw.com/s/audio.mp3", "https://file.aiquickdraw.com:444/s/audio.mp3",
-    "https://file.aiquickdraw.com/", "https://file.aiquickdraw.com/s/a.mp3#fragment", `${CDN}a%0db.mp3`,
+test("inspect and download reject only malformed or credential-bearing provider URLs", async () => {
+  const urls = ["file:///tmp/a.mp3", "data:audio/mpeg;base64,AAAA", "ftp://files.example.org/a.mp3",
+    "https://user:pass@file.aiquickdraw.com/s/audio.mp3",
+    "https://file.aiquickdraw.com/s/a.mp3#fragment", `${CDN}a%0db.mp3`,
     `${CDN}a%5cb.mp3`, `${CDN}${KEY}.mp3`, `${CDN}a.mp3?token=${KEY}`, `${CDN}a.mp3?token=${Array.from(KEY).map(c => `%${c.charCodeAt(0).toString(16)}`).join("")}`,
   ];
   for (const url of urls) {
@@ -240,6 +234,23 @@ test("inspect and download enforce the same exact documented HTTPS CDN without D
     await safeFailure(adapter.inspect!(TASK, signal()));
     await safeFailure(adapter.download!({ ...OUTPUT, url }, signal()));
     assert.equal(requests.length, 1);
+  }
+});
+
+test("provider-selected HTTP audio hosts, ports and signed queries are usable without forwarding credentials", async () => {
+  for (const url of [
+    "https://media.provider-cdn.org/generated/audio.mp3?expires=1900000000&signature=fixture",
+    "https://cdn1.suno.ai/audio.mp3",
+    "http://127.0.0.1:8080/audio.mp3?download=1",
+  ]) {
+    const output = { ...OUTPUT, url };
+    const { adapter, requests } = replay([status("SUCCESS", [track("audio_a", { audio_url: url })]), audio()]);
+    assert.deepEqual(await adapter.inspect!(TASK, signal()), { status: "completed", outputs: [output] });
+    assert.deepEqual(await adapter.download!(output, signal()), BYTES);
+    assert.equal(requests[1]!.url, url);
+    assert.deepEqual(Object.fromEntries(requests[1]!.headers), { accept: "audio/mpeg, audio/wav, application/octet-stream" });
+    assert.equal(requests[1]!.init.credentials, "omit");
+    assert.equal(requests[1]!.init.redirect, "error");
   }
 });
 
@@ -455,14 +466,14 @@ test("Stop grace cannot turn malformed or reflected-key JSON into a task receipt
   }
 });
 
-test("one 120-second deadline bounds headers and body without resetting", async (t) => {
+test("one ten-minute media deadline bounds headers and body without resetting", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] }); syncBuiltinESMExports();
   try {
     const pending = Promise.withResolvers<Response>(); const body = stalledBody(); const controller = createHostAbortController();
     const { adapter, requests } = replay([() => pending.promise]);
     const failure = safeFailure(adapter.download!(OUTPUT, controller.signal), /timed out/u);
-    t.mock.timers.tick(90000); pending.resolve(body.response); await body.started;
-    t.mock.timers.tick(29999); assert.equal(requests[0]!.init.signal!.aborted, false);
+    t.mock.timers.tick(90_000); pending.resolve(body.response); await body.started;
+    t.mock.timers.tick(509_999); assert.equal(requests[0]!.init.signal!.aborted, false);
     t.mock.timers.tick(1); await failure; assert.deepEqual(body.counts(), { reads: 1, cancels: 1, releases: 1 });
     body.read.reject(new Error(KEY)); body.cleaning.reject(new Error(KEY)); await setImmediate();
   } finally { t.mock.timers.reset(); syncBuiltinESMExports(); }
