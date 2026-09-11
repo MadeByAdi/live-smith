@@ -40,7 +40,7 @@ export function normalizeSunoSessionIdentity(value: unknown, token: string): Sun
   const input = object(value);
   const accountId = identifier(input.accountId);
   const accountName = name(input.accountName, token);
-  if (!/^user_[A-Za-z0-9_-]+$/u.test(accountId) || accountId.includes(token)) throw new SunoSessionUnavailableError();
+  if (accountId.includes(token)) throw new SunoSessionUnavailableError();
   return { accountId, ...(accountName ? { accountName } : {}) };
 }
 

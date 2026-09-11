@@ -57,6 +57,12 @@ test("verification makes one fixed GET with only the imported credential and ret
   assert.equal(calls, 1);
 });
 
+test("verification accepts a bounded provider account ID without the legacy Clerk prefix", async () => {
+  assert.deepEqual(await verifier(payload([session("sess_selected", "account-selected")]))(token, signal()), {
+    accountId: "account-selected", accountName: "Ada Lovelace",
+  });
+});
+
 test("last active session never falls back to another account or a public user stub", async () => {
   for (const value of [payload([session("sess_other")]), payload([session()], null),
     payload([{ ...session(), status: "expired" }]), payload([{ ...session(), expire_at: Date.now() - 1 }])]) {
@@ -72,9 +78,9 @@ test("last active session never falls back to another account or a public user s
   }
 });
 
-test("identity excludes metadata, invalid Clerk user IDs, controls and credential echoes", async () => {
+test("identity excludes metadata, invalid account IDs, controls and credential echoes", async () => {
   for (const user of [{ ...session().user, id: token }, { ...session().user, first_name: token },
-    { ...session().user, id: "account_other" }, { ...session().user, first_name: "Ada\nCookie" }]) {
+    { ...session().user, id: "account/other" }, { ...session().user, first_name: "Ada\nCookie" }]) {
     await assert.rejects(verifier(payload([{ ...session(), user }]))(token, signal()), safeFailure);
   }
   assert.deepEqual(await verifier(payload([{ ...session(), user: {
