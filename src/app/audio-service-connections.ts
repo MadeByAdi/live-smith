@@ -72,12 +72,14 @@ export async function resolveAudioService(
   if (admitted && (connection.name !== admitted.name || connection.provider !== admitted.provider ||
     connection.enabled !== admitted.enabled || connection.apiKey !== admitted.apiKey ||
     connection.modelId !== admitted.modelId || connection.callbackUrl !== admitted.callbackUrl ||
-    connection.sunoSession?.clientToken !== admitted.sunoSession?.clientToken ||
     connection.sunoSession?.accountId !== admitted.sunoSession?.accountId)) {
     throw new Error("The selected audio service changed after this request was admitted. Send a new request to use its saved connection.");
   }
   if (!audioServiceSupports(connection.provider, operation)) {
     throw new Error("The selected audio service does not support this operation.");
   }
-  return admitted ?? connection;
+  // Clerk rotates __session while preserving the verified account owner. Use the
+  // current private credential after all user-controlled configuration and owner
+  // fields match the admitted snapshot.
+  return admitted && connection.provider !== "suno" ? admitted : connection;
 }

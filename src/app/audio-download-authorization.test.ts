@@ -81,11 +81,11 @@ test("connection edits during a pending selected permission read prevent the aut
       });
     } finally { proceed.resolve(); }
     const result = await pending;
-    assert.equal(h.calls.authorizations, 0);
-    assert.equal(h.calls.media, 0);
-    assert.equal(result.status, "ready");
+    assert.equal(h.calls.authorizations, change === "credential" ? 1 : 0);
+    assert.equal(h.calls.media, change === "credential" ? 1 : 0);
+    assert.equal(result.status, change === "credential" ? "partial" : "ready");
     assert.deepEqual(result.remoteOutputs, manifest);
-    assert.deepEqual(result.outputAssets, []);
+    assert.equal(result.outputAssets.length, change === "credential" ? 1 : 0);
   });
 });
 

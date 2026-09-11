@@ -6,6 +6,7 @@ import type { createSunoHttp } from "./suno-http.js";
 import { sunoActive, sunoObject, sunoUuid } from "./suno-catalog.js";
 
 type SunoHttp = ReturnType<typeof createSunoHttp>;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 /** Private preparation locator, never a playable URL or a download authorization. */
 export function sunoDownloadPath(clipId: string): string {
@@ -36,7 +37,7 @@ export async function downloadSunoClip(
   const stop = () => controller.abort();
   signal.addEventListener("abort", stop, { once: true });
   let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, DOWNLOAD_TIMEOUT_MS);
   try {
     sunoActive(signal, http);
     if (!await downloadUnlocked(http, clipId, controller.signal)) {

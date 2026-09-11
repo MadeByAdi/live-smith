@@ -12,7 +12,7 @@ import { isStorageCommitOutcomeUnknownError, StorageCommitOutcomeUnknownError,
   removeFileDurably, requireActiveStorageTransaction, trackStorageTransactionOperation,
   withStorageTransaction, writeJsonAtomically, type StorageTransactionContext } from "./persistence.js";
 
-const MAX_RECORD_BYTES = 16 * 1024;
+const MAX_RECORD_BYTES = 32 * 1024;
 export interface StoredSunoSession extends SunoSessionIdentity { clientToken: string }
 interface DirectoryIdentity { ino: number; dev: number }
 interface RootBinding { directory: string; identity?: DirectoryIdentity }
@@ -156,6 +156,10 @@ function decode(value: unknown, serviceId: string): StoredSunoSession {
     record.schemaVersion !== 1 || record.serviceId !== serviceId) throw new SunoSessionStorageError();
   const clientToken = normalizeSunoSessionValue(record.clientToken);
   const identity = normalizeSunoSessionIdentity(record, clientToken);
-  if (record.clientToken !== clientToken || record.accountName !== identity.accountName) throw new SunoSessionStorageError();
+  const legacyRawClient = typeof record.clientToken === "string" && !record.clientToken.includes("=") &&
+    clientToken === `__client=${record.clientToken}`;
+  if ((record.clientToken !== clientToken && !legacyRawClient) || record.accountName !== identity.accountName) {
+    throw new SunoSessionStorageError();
+  }
   return { clientToken, ...identity };
 }

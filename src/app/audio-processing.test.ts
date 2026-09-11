@@ -8,6 +8,7 @@ import { createSession } from "../storage/sessions.js";
 import { saveGlobalSettings } from "../storage/settings.js";
 import { listAudioJobs, updateAudioJob } from "../storage/audio-jobs.js";
 import { readAudioAsset } from "../storage/audio-assets.js";
+import { mp3Bytes } from "../storage/audio-storage-test-helpers.js";
 import { resumeAudioJob, separateAudioStems, audioJobViews } from "./audio-processing.js";
 import { subscribeSessionStateInvalidations } from "./session-state-events.js";
 
@@ -29,11 +30,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   await saveGlobalSettings(directory, { audioServices: { action: "upsert", expectedRevision: "0",
     connection: { id: "splitter", name: "Stem account", provider: "lalal", enabled: true, apiKey: key } } });
   const calls: string[] = [];
+  const submittedMediaTypes: string[] = [];
   const adapter: AudioServiceAdapter = {
     provider: "lalal", stems: SEPARATION_STEMS,
     upload: async () => { calls.push("upload"); return "remote-source"; },
-    submit: async (_source, stems, idempotencyKey) => {
+    submit: async (_source, stems, idempotencyKey, _signal, sourceMediaType) => {
       assert.deepEqual(stems, ["vocals"]); assert.match(idempotencyKey, /^[0-9a-f-]{36}$/);
+      submittedMediaTypes.push(sourceMediaType ?? "");
       calls.push("submit"); return "remote-task";
     },
     inspect: async () => {
@@ -49,7 +52,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   const controller = new AbortController();
   const context = { storageDirectory: directory, sessionId: session.id, signal: controller.signal, adapter, wait: async () => {} };
   const source = async () => ({ bytes: wave(), label: "Input", origin: { kind: "arrangement" as const, startBeat: 16, endBeat: 18, tempo: 120 } });
-  return { directory, session, adapter, calls, controller, context, source };
+  return { directory, session, adapter, calls, submittedMediaTypes, controller, context, source };
 }
 
 test("separation persists the source, outputs and origin without credentials or remote URLs in view", async (t) => {
@@ -64,6 +67,18 @@ test("separation persists the source, outputs and origin without credentials or 
   const view = JSON.stringify(await audioJobViews(h.directory, h.session.id));
   assert.doesNotMatch(view, /fixture-audio-service-key|d\.lalal\.ai|remote-task|connectionFingerprint/);
   assert.equal(h.calls.filter((call) => call === "submit").length, 1);
+  assert.deepEqual(h.submittedMediaTypes, ["audio/wav"]);
+});
+
+test("MP3 separation keeps a compressed output request instead of expanding long sources to WAV", async (t) => {
+  const h = await harness(t);
+  h.adapter.download = async () => mp3Bytes();
+  const result = await separateAudioStems(h.context, "splitter", ["vocals"], async () => ({
+    bytes: mp3Bytes(), label: "Compressed input", origin: { kind: "attachment" as const },
+  }));
+  assert.equal(result.status, "completed");
+  assert.deepEqual(h.submittedMediaTypes, ["audio/mpeg"]);
+  assert.ok(result.outputAssets.every((asset) => asset.mediaType === "audio/mpeg"));
 });
 
 test("partial download preserves successful stems; resume retrieves only missing files without resubmission", async (t) => {
@@ -126,6 +141,19 @@ test("processing status is polled within one operation and a remote cancellation
   const job = await separateAudioStems({ ...h.context, wait: async () => { waits++; } }, "splitter", ["vocals"], h.source);
   assert.equal(job.status, "cancelled"); assert.equal(polls, 2); assert.equal(waits, 1);
   assert.deepEqual(job.outputAssets, []);
+});
+
+test("provider-confirmed separation failure is terminal and Resume does not poll it again", async (t) => {
+  const h = await harness(t);
+  h.adapter.inspect = async () => { h.calls.push("inspect"); return { status: "failed", message: "Fixture terminal failure" }; };
+  const job = await separateAudioStems(h.context, "splitter", ["vocals"], h.source);
+  assert.equal(job.status, "failed");
+  assert.equal(job.remoteTaskTerminal, "failed");
+  assert.equal((await audioJobViews(h.directory, h.session.id))[0]?.resumable, false);
+  const before = h.calls.filter((call) => call === "inspect").length;
+  const unchanged = await resumeAudioJob(h.context, job.id);
+  assert.equal(unchanged.remoteTaskTerminal, "failed");
+  assert.equal(h.calls.filter((call) => call === "inspect").length, before);
 });
 
 test("Stop cancels an accepted in-memory ticket even when persisting the receipt and failure both fail", async (t) => {

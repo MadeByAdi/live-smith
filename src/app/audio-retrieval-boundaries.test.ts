@@ -44,10 +44,10 @@ test("remote failed siblings and invalid audio preserve successful outputs for r
     assert.deepEqual(partial.outputAssets.map((asset) => asset.role), ["music_alternative"]);
     h.mode[kind].clear();
     const resumed = await resumeAudioJob(h.context, partial.id);
-    assert.deepEqual(resumed.remoteOutputs, manifest);
+    assert.deepEqual(resumed.remoteOutputs, kind === "failed" ? [manifest[1]] : manifest);
     assert.equal(resumed.outputAssets.length, 1);
-    const completed = await downloadAudioOutput(h.context, partial.id, clipIds[0]!);
-    assert.equal(completed.status, "completed");
+    if (kind === "failed") await assert.rejects(downloadAudioOutput(h.context, partial.id, clipIds[0]!), /not been observed complete/);
+    else assert.equal((await downloadAudioOutput(h.context, partial.id, clipIds[0]!)).status, "completed");
     assert.equal(h.calls.downloads.filter((key) => key === clipIds[1]).length, 1);
     assert.equal(h.calls.prepare + h.calls.submit, 0);
   });

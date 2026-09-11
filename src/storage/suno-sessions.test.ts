@@ -6,7 +6,8 @@ import test, { type TestContext } from "node:test";
 import { isStorageCommitOutcomeUnknownError, withStorageTransaction } from "./persistence.js";
 import { SunoSessions, SunoSessionStorageError } from "./suno-sessions.js";
 
-const record = { clientToken: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGlj", accountId: "user_fixture", accountName: "Fixture" };
+const rawClient = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGlj";
+const record = { clientToken: `__client=${rawClient}`, accountId: "user_fixture", accountName: "Fixture" };
 async function harness(t: TestContext) {
   const directory = await fs.mkdtemp("/private/tmp/live-smith-suno-session-storage-");
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -29,6 +30,14 @@ test("private per-service atomic records isolate owners and strict public identi
   assert.equal(await h.store.load("one"), undefined);
   assert.equal((await h.store.load("two"))?.accountId, "user_other");
   assert.equal(await h.store.clear("one"), false);
+});
+
+test("legacy raw __client records are projected into the canonical private Cookie form", async (t) => {
+  const h = await harness(t);
+  await fs.writeFile(path.join(h.directory, "suno-session-one.json"), JSON.stringify({
+    schemaVersion: 1, serviceId: "one", accountId: "user_fixture", clientToken: rawClient,
+  }));
+  assert.deepEqual(await h.store.load("one"), { accountId: "user_fixture", clientToken: `__client=${rawClient}` });
 });
 
 test("invalid IDs, missing storage and foreign transactions fail without secrets or filesystem paths", async (t) => {
@@ -69,6 +78,7 @@ test("oversized, corrupt, foreign-owner and credential-bearing identity records 
   const original = JSON.parse(await fs.readFile(target, "utf8"));
   for (const raw of ["x".repeat(40 * 1024), record.clientToken, JSON.stringify({ ...original, serviceId: "two" }),
     JSON.stringify({ ...original, extra: "secret" }), JSON.stringify({ ...original, clientToken: `__client=${record.clientToken}` }),
+    JSON.stringify({ ...original, clientToken: `${record.clientToken}; ignored=browser-cookie` }),
     JSON.stringify({ ...original, accountName: record.clientToken })]) {
     await fs.writeFile(target, raw);
     await assert.rejects(h.store.load("one"), (error) => {

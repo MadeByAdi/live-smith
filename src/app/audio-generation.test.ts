@@ -100,6 +100,17 @@ test("audio services reject incompatible operations and disabled or unadvertised
   assert.equal((await listAudioJobs(h.directory, h.session.id)).length, 0);
 });
 
+test("music duration is rejected against the selected provider before creating a paid job", async (t) => {
+  const h = await harness(t);
+  for (const durationSeconds of [2.99, 600.01]) {
+    await assert.rejects(generateAudio(h.context, "music-a", {
+      operation: "generate_music", prompt: "Piano", durationSeconds, instrumental: true,
+    }), /supported range/);
+  }
+  assert.equal(h.submissions(), 0);
+  assert.equal((await listAudioJobs(h.directory, h.session.id)).length, 0);
+});
+
 test("complete paid audio survives one failed job-record commit without regenerating", async (t) => {
   const h = await harness(t);
   const probe = await fs.open(h.directory);

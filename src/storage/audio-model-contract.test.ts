@@ -47,4 +47,8 @@ test("native Suno and SunoAPI keep separate owners and two-track contracts", asy
   const job = await createAudioJob(h.storage, h.session.id, { ...music, provider: "sunoapi", modelId: "V4_5ALL" });
   const updated = await updateAudioJob(h.storage, h.session.id, job.id, { expectedOutputRoles: ["music", "music_alternative"] });
   assert.deepEqual((await loadAudioJob(h.storage, h.session.id, job.id)).expectedOutputRoles, updated.expectedOutputRoles);
+  const official = await createAudioJob(h.storage, h.session.id, { ...music, provider: "suno-platform" });
+  await updateAudioJob(h.storage, h.session.id, official.id, { expectedOutputRoles: ["music"] });
+  await assert.rejects(updateAudioJob(h.storage, h.session.id, official.id,
+    { expectedOutputRoles: ["music", "music_alternative"] }), AudioStorageError);
 });

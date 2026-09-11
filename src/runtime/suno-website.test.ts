@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSunoWebsiteOpener } from "./suno-website.js";
+import { createSunoPlatformOpener, createSunoWebsiteOpener } from "./suno-website.js";
 
 for (const platform of ["darwin", "win32"] as const) {
   test(`Suno uses the ${platform} default handler without a browser profile or debugger`, async () => {
@@ -11,6 +11,18 @@ for (const platform of ["darwin", "win32"] as const) {
     assert.deepEqual(calls, [platform === "darwin"
       ? { executable: "/usr/bin/open", args: ["https://suno.com/create"] }
       : { executable: "C:\\Windows\\System32\\rundll32.exe", args: ["url.dll,FileProtocolHandler", "https://suno.com/create"] }]);
+  });
+}
+
+for (const platform of ["darwin", "win32"] as const) {
+  test(`Suno Platform uses the ${platform} default handler`, async () => {
+    const calls: { executable: string; args: readonly string[] }[] = [];
+    const open = createSunoPlatformOpener({ platform, windowsSystemRoot: "C:\\Windows",
+      runOpenCommand: async (executable, args) => { calls.push({ executable, args }); } });
+    await open();
+    assert.deepEqual(calls, [platform === "darwin"
+      ? { executable: "/usr/bin/open", args: ["https://platform.suno.com/"] }
+      : { executable: "C:\\Windows\\System32\\rundll32.exe", args: ["url.dll,FileProtocolHandler", "https://platform.suno.com/"] }]);
   });
 }
 

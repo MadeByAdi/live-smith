@@ -15,6 +15,39 @@ interface VerificationEvidence {
 // Only fingerprints and verification outcomes survive across managers, never credentials.
 const evidenceByStorage = new Map<StorageScopeKey, Map<string, VerificationEvidence>>();
 
+/** Persist a verified Clerk rotation without overwriting a concurrent reimport. */
+export async function persistRotatedSunoSession(
+  storageDirectory: string | undefined, serviceId: string, accountId: string,
+  previousSessionValue: string, nextSessionValue: string, signal: AbortSignal,
+): Promise<void> {
+  active(signal);
+  if (!storageDirectory) throw new SunoSessionUnavailableError();
+  const previous = normalizeSunoSessionValue(previousSessionValue);
+  const next = normalizeSunoSessionValue(nextSessionValue);
+  const owner = normalizeSunoSessionIdentity({ accountId }, previous).accountId;
+  if (previous === next) return;
+  const store = new SunoSessions(storageDirectory);
+  const scopeKey = storageScopeKey(storageDirectory);
+  await withStorageTransaction(storageDirectory, async (transaction) => {
+    active(signal);
+    const connection = (await loadAgentSettings(storageDirectory)).audioServices?.connections
+      .find((entry) => entry.id === serviceId && entry.provider === "suno");
+    if (!connection) throw new SunoSessionUnavailableError();
+    const current = await store.load(serviceId, transaction);
+    if (!current || current.accountId !== owner) throw new SunoSessionUnavailableError();
+    if (current.clientToken !== previous) {
+      if (current.clientToken === next) setEvidence(scopeKey, serviceId, {
+        fingerprint: identity(current), status: "signed_in",
+      });
+      return;
+    }
+    const refreshed = { ...current, clientToken: next };
+    active(signal);
+    await store.save(serviceId, refreshed, transaction);
+    setEvidence(scopeKey, serviceId, { fingerprint: identity(refreshed), status: "signed_in" });
+  });
+}
+
 /** The app's global-settings fence serializes the complete network/commit lifecycle. */
 export class SunoSessionManager {
   private readonly store: SunoSessions;
@@ -55,7 +88,8 @@ export class SunoSessionManager {
     const clientToken = normalizeSunoSessionValue(sessionValue);
     const previous = await this.store.load(serviceId);
     const account = await this.verify(clientToken, signal);
-    await this.commit(serviceId, { clientToken, ...account }, previous, signal);
+    const { sessionValue: refreshed, ...identity } = account;
+    await this.commit(serviceId, { clientToken: refreshed ?? clientToken, ...identity }, previous, signal);
   }
 
   async refresh(serviceId: string, signal: AbortSignal): Promise<void> {
@@ -69,7 +103,8 @@ export class SunoSessionManager {
     try {
       const account = await this.verify(previous.clientToken, signal);
       if (account.accountId !== previous.accountId) throw new SunoSessionUnavailableError();
-      await this.commit(serviceId, { clientToken: previous.clientToken, ...account }, previous, signal);
+      const { sessionValue: refreshed, ...identity } = account;
+      await this.commit(serviceId, { clientToken: refreshed ?? previous.clientToken, ...identity }, previous, signal);
     } catch (error) {
       if (isStorageCommitOutcomeUnknownError(error)) {
         this.updateEvidence(serviceId);
@@ -93,15 +128,7 @@ export class SunoSessionManager {
   }
 
   private updateEvidence(serviceId: string, value?: VerificationEvidence): void {
-    const shared = evidenceByStorage.get(this.scopeKey);
-    if (value) {
-      const evidence = shared ?? new Map<string, VerificationEvidence>();
-      evidence.set(serviceId, value);
-      evidenceByStorage.set(this.scopeKey, evidence);
-    } else {
-      shared?.delete(serviceId);
-      if (!shared?.size) evidenceByStorage.delete(this.scopeKey);
-    }
+    setEvidence(this.scopeKey, serviceId, value);
   }
 
   private async verify(token: string, signal: AbortSignal) {
@@ -109,7 +136,9 @@ export class SunoSessionManager {
       active(signal);
       const account = await waitForPromiseWithSignal(this.verifier(token, signal), signal);
       active(signal);
-      return normalizeSunoSessionIdentity(account, token);
+      const identity = normalizeSunoSessionIdentity(account, token);
+      const sessionValue = account.sessionValue === undefined ? undefined : normalizeSunoSessionValue(account.sessionValue);
+      return { ...identity, ...(sessionValue ? { sessionValue } : {}) };
     } catch (error) {
       active(signal);
       if (error instanceof SunoSessionExpiredError) throw new SunoSessionExpiredError();
@@ -141,6 +170,18 @@ export class SunoSessionManager {
 
 function identity(session: StoredSunoSession | undefined): string {
   return session ? createHash("sha256").update(JSON.stringify(session), "utf8").digest("hex") : "";
+}
+
+function setEvidence(scopeKey: StorageScopeKey, serviceId: string, value?: VerificationEvidence): void {
+  const shared = evidenceByStorage.get(scopeKey);
+  if (value) {
+    const evidence = shared ?? new Map<string, VerificationEvidence>();
+    evidence.set(serviceId, value);
+    evidenceByStorage.set(scopeKey, evidence);
+  } else {
+    shared?.delete(serviceId);
+    if (!shared?.size) evidenceByStorage.delete(scopeKey);
+  }
 }
 
 function active(signal: AbortSignal): void {

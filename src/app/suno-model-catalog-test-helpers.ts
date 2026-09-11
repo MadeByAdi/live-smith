@@ -14,7 +14,8 @@ import { liveContextPresentationFixture } from "./live-context.test-harness.js";
 export const connection = { id: "suno-one", name: "My Suno", provider: "suno" as const, enabled: false, apiKey: "" };
 export const token = (claims: object) => [JSON.stringify({ alg: "RS256" }), JSON.stringify(claims), "synthetic-signature"]
   .map((part) => Buffer.from(part).toString("base64url")).join(".");
-export const session = { clientToken: token({ client: "fixture" }), accountId: "user_fixture" };
+export const clientCookie = (claims: object) => `__client=${token(claims)}`;
+export const session = { clientToken: clientCookie({ client: "fixture" }), accountId: "user_fixture" };
 export const models = [
   { id: "model-fixture", name: "Fixture model", canUse: true, isDefault: true },
   { id: "model-denied", name: "Denied model", canUse: false, isDefault: false },

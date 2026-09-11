@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AudioDownloadAuthorization, AudioGenerationAdapter, AudioGenerationRequest, AudioJob, RemoteAudioOutput } from "./contracts.js";
-import { createSunoHttp } from "./suno-http.js";
+import { createSunoHttp, type SunoSessionRefreshHandler } from "./suno-http.js";
 import { exceedsAudioPromptLimit } from "./prompt.js";
 import { downloadSunoClip, sunoDownloadPath } from "./suno-download.js";
 import { readSunoCatalog, readSunoPersona, sunoActive, sunoObject, sunoUuid, type SunoMusicModel, type SunoSession } from "./suno-catalog.js";
@@ -14,7 +14,7 @@ function terminal(status: unknown): boolean { return status === "complete" || st
 
 function validateRequest(request: AudioGenerationRequest, http: SunoHttp): MusicRequest {
   const input = sunoObject(request, http);
-  const fields = request.operation === "generate_music" ? ["operation", "prompt", "instrumental", "options"]
+  const fields = request.operation === "generate_music" ? ["operation", "prompt", "durationSeconds", "instrumental", "options"]
     : request.operation === "extend_music" ? ["operation", "clipId", "startSeconds", "prompt", "instrumental", "options"]
     : request.operation === "get_whole_song" ? ["operation", "clipId"] : [];
   if (!fields.length || Object.keys(input).some((key) => !fields.includes(key))) throw http.fail("unsupported music operation or parameter.");
@@ -32,12 +32,16 @@ function validateRequest(request: AudioGenerationRequest, http: SunoHttp): Music
     const options = sunoObject(request.options, http);
     if (options.mode !== "custom" || Object.keys(options).some((key) => ![
       "mode", "title", "styles", "negativeStyles", "weirdness", "styleInfluence", "personaId",
+      "vocalGender",
     ].includes(key))) throw http.fail("unsupported custom music option.");
     for (const key of ["title", "styles", "negativeStyles"] as const) {
       if (options[key] !== undefined && (typeof options[key] !== "string" || options[key].includes("\0") ||
-          exceedsAudioPromptLimit(options[key], key === "title" ? 80 : 1000))) {
+          exceedsAudioPromptLimit(options[key], key === "title" ? 100 : 1000))) {
         throw http.fail("invalid custom music text.");
       }
+    }
+    if (options.vocalGender !== undefined && options.vocalGender !== "male" && options.vocalGender !== "female") {
+      throw http.fail("vocal gender must be male or female.");
     }
     for (const key of ["weirdness", "styleInfluence"] as const) {
       const value = options[key];
@@ -46,9 +50,17 @@ function validateRequest(request: AudioGenerationRequest, http: SunoHttp): Music
       }
     }
     if (options.personaId !== undefined) sunoUuid(options.personaId, http);
+    if (request.operation === "extend_music" && options.personaId !== undefined) {
+      throw http.fail("Persona is not available for music extensions.");
+    }
   }
   if (!request.prompt.trim() && !(request.instrumental && custom)) {
     throw http.fail("a prompt is required except for instrumental custom music.");
+  }
+  if (request.operation === "generate_music" && request.durationSeconds !== undefined &&
+    (typeof request.durationSeconds !== "number" || !Number.isFinite(request.durationSeconds) ||
+      request.durationSeconds < 10 || request.durationSeconds > 480)) {
+    throw http.fail("music duration must be between 10 and 480 seconds.");
   }
   if (request.operation === "extend_music") {
     sunoUuid(request.clipId, http);
@@ -58,6 +70,8 @@ function validateRequest(request: AudioGenerationRequest, http: SunoHttp): Music
   }
   return {
     operation: request.operation, prompt: request.prompt, instrumental: request.instrumental,
+    ...(request.operation === "generate_music" && request.durationSeconds !== undefined
+      ? { durationSeconds: request.durationSeconds } : {}),
     ...(request.operation === "extend_music" ? { clipId: request.clipId, startSeconds: request.startSeconds } : {}),
     ...(request.options ? { options: { ...request.options } } : {}),
   } as MusicRequest;
@@ -74,6 +88,9 @@ function enforceLimits(request: Exclude<MusicRequest, { operation: "get_whole_so
     const limit = model.maxLengths[key];
     if (limit !== undefined && exceedsAudioPromptLimit(value, limit)) throw http.fail("music text exceeds the selected model's catalog limit.");
   }
+  if (request.operation === "generate_music" && request.durationSeconds !== undefined && model.supportsDuration !== true) {
+    throw http.fail("the selected catalog model does not support requested duration.");
+  }
 }
 
 function generationBody(request: Exclude<MusicRequest, { operation: "get_whole_song" }>, modelId: string) {
@@ -87,13 +104,18 @@ function generationBody(request: Exclude<MusicRequest, { operation: "get_whole_s
   // Unverified cover/remaster/Sounds controls are deliberately not exposed.
   return {
     token: null, generation_type: "TEXT", mv: modelId,
+    ...(request.operation === "extend_music" ? { task: "extend" } : {}),
     ...(custom ? { title: options?.title ?? "", tags: options?.styles ?? "", negative_tags: options?.negativeStyles ?? "" } : {}),
     prompt: custom ? request.prompt : "", ...(custom ? {} : { gpt_description_prompt: request.prompt }),
     make_instrumental: request.instrumental, user_uploaded_images_b64: null,
+    ...(request.operation === "generate_music" && request.durationSeconds !== undefined
+      ? { duration: request.durationSeconds } : {}),
     metadata: {
       web_client_pathname: "/create", is_max_mode: false, is_mumble: false,
       create_mode: custom ? "custom" : "simple",
       user_tier: "", create_session_token: randomUUID(), disable_volume_normalization: false,
+      ...(request.operation === "extend_music" ? { is_remix: true, lyrics_updated: false } : {}),
+      ...(options?.vocalGender === undefined ? {} : { vocal_gender: options.vocalGender === "female" ? "f" : "m" }),
       ...(Object.keys(sliders).length ? { control_sliders: sliders } : {}),
     },
     override_fields: [], cover_clip_id: null, cover_start_s: null, cover_end_s: null,
@@ -134,10 +156,15 @@ function checkedManifest(taskId: string, manifest: AudioJob["expectedOutputs"], 
 }
 
 export function createSunoAudioAdapter(
-  session: SunoSession, options: { fetchImpl?: typeof fetch; modelId?: string; authorizeDownloads?: boolean } = {},
+  session: SunoSession, options: {
+    fetchImpl?: typeof fetch;
+    modelId?: string;
+    authorizeDownloads?: boolean;
+    onSessionRefresh?: SunoSessionRefreshHandler;
+  } = {},
 ): AudioGenerationAdapter {
   session = { ...session };
-  const http = createSunoHttp(session, options.fetchImpl);
+  const http = createSunoHttp(session, options.fetchImpl, options.onSessionRefresh);
   const modelId = options.modelId;
   const authorizeDownloads = options.authorizeDownloads === true;
   const download = (output: RemoteAudioOutput, signal: AbortSignal, authorization?: AudioDownloadAuthorization) => {
@@ -176,6 +203,12 @@ export function createSunoAudioAdapter(
         if (!Array.isArray(clips) || clips.length !== 1) throw http.fail("source clip is unavailable.");
         const source = sunoObject(clips[0], http);
         if (sunoUuid(source.id, http) !== snapshot.clipId || source.status !== "complete") throw http.fail("source clip is not complete or does not match.");
+        if (snapshot.operation === "get_whole_song") {
+          const task = sunoObject(source.metadata, http).task;
+          if (typeof task !== "string" || !["extend", "upload_extend", "artist_extend", "vox_extend"].includes(task)) {
+            throw http.fail("Get Whole Song requires a completed extension clip.");
+          }
+        }
         if (snapshot.operation === "extend_music") {
           const duration = sunoObject(source.metadata, http).duration;
           if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= snapshot.startSeconds) {
@@ -184,7 +217,7 @@ export function createSunoAudioAdapter(
         }
       }
       const gate = sunoObject(await http.request("POST", "/api/c/check", { ctype: "generation" }, signal), http);
-      if (gate.required === true) throw http.fail("human verification is required. No generation was submitted. Complete verification and generate on Suno.com, then use Retrieve existing Suno songs in Audio tools to preview them.");
+      if (gate.required === true) throw http.fail("human verification is required. No generation was submitted. Complete verification and generation on Suno.com, then drag or paste the downloaded WAV or MP3 into Live Smith.");
       if (gate.required !== false) throw http.fail("generation verification status is unavailable. No generation was submitted.");
       sunoActive(signal, http);
       const signature = JSON.stringify(snapshot);

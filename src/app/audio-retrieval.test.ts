@@ -64,7 +64,9 @@ test("recovery allows a renewed Cookie for the same account and denies another a
   h.mode.failed.add(clipIds[1]!);
   const job = await retrieveMusic(h.context, connection.id, clipIds);
   await h.sessions.save(connection.id, { accountId: "user_other", clientToken: fixtureToken("other") });
-  await assert.rejects(resumeAudioJob(h.context, job.id), /different service connection/);
+  const terminal = await resumeAudioJob(h.context, job.id);
+  assert.equal(terminal.id, job.id);
+  assert.equal(terminal.status, "ready");
   await assert.rejects(retrieveMusic(h.context, connection.id, clipIds), /different service connection/);
   assert.equal(h.calls.inspect, 1);
   assert.equal((await listAudioJobs(h.directory, h.session.id)).length, 1);
@@ -119,11 +121,11 @@ test("retrieval cannot retarget an unknown paid job but can reuse an exact confi
   assert.equal(h.calls.prepare + h.calls.submit, 0);
 });
 
-test("retrieval requires the exact enabled admitted connection before creating a record", async (t) => {
+test("retrieval requires the exact enabled admitted account before creating a record", async (t) => {
   const h = await retrievalHarness(t);
   const admittedConnections = await captureAudioServiceConnections(h.directory);
   await assert.rejects(retrieveMusic({ ...h.context, admittedConnections: [] }, connection.id, clipIds), /not admitted/);
-  await h.sessions.save(connection.id, { accountId: "user_fixture", clientToken: fixtureToken("changed") });
+  await h.sessions.save(connection.id, { accountId: "user_other", clientToken: fixtureToken("changed") });
   await assert.rejects(retrieveMusic({ ...h.context, admittedConnections }, connection.id, clipIds), /changed/);
   await saveGlobalSettings(h.directory, { audioServices: { action: "upsert", expectedRevision: "1", connection: { ...connection, enabled: false } } });
   await assert.rejects(retrieveMusic(h.context, connection.id, clipIds), /unavailable/);

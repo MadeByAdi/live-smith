@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { MAX_AUDIO_ASSET_BYTES } from "../audio-services/contracts.js";
 import { createSunoHttp } from "../audio-services/suno-http.js";
-import { createSunoActiveSessionResolver, createSunoSessionVerifier } from "../audio-services/suno-session.js";
+import { createSunoSessionVerifier } from "../audio-services/suno-session.js";
 import { createHostAbortController } from "../runtime/host.js";
 
 const CLIENT = "https://auth.suno.com/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
@@ -21,7 +21,7 @@ const jwt = (claims: unknown, header: unknown = { alg: "RS256", typ: "JWT" }) =>
 const clientToken = jwt({ sub: "client_synthetic" });
 const credentials = { clientToken, accountId: "user_selected" };
 const signal = () => createHostAbortController().signal;
-const claims = () => ({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 60 });
+const claims = () => ({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 3600 });
 const clientResponse = (accountId = "user_selected", sessionId = "sess_selected") => ({
   response: { object: "client", last_active_session_id: sessionId, sessions: [{
     object: "session", id: sessionId, status: "active", expire_at: Date.now() + 60_000,
@@ -60,12 +60,11 @@ function harness(reply: (call: Call) => Response | Promise<Response> = () => Res
   return { http: createSunoHttp(credentials, fetcher), calls, fetcher, minted };
 }
 
-test("private active session resolution preserves the public verifier result exactly", async () => {
+test("public verification exposes only account identity and a private refreshed session value", async () => {
   const { fetcher } = harness();
-  assert.deepEqual(await createSunoActiveSessionResolver(fetcher)(clientToken, signal()), {
-    accountId: "user_selected", sessionId: "sess_selected",
-  });
-  assert.deepEqual(await createSunoSessionVerifier(fetcher)(clientToken, signal()), { accountId: "user_selected" });
+  const verified = await createSunoSessionVerifier(fetcher)(clientToken, signal());
+  assert.equal(verified.accountId, "user_selected");
+  assert.match(verified.sessionValue ?? "", new RegExp(`^__client=${clientToken}; ajs_anonymous_id=[0-9a-f-]{36}$`, "u"));
 });
 
 test("HTTP rejection preserves its numeric status without provider body or automatic retry", async () => {
@@ -170,20 +169,31 @@ test("one exact account session mints a bounded bearer, cached only in the clien
   assert.deepEqual(await state.http.request("GET", "/api/billing/info/", undefined, signal()), { total_credits_left: 10 });
   await state.http.request("POST", "/api/feed/v3", { limit: 20 }, signal());
   assert.deepEqual(state.calls.map(({ url }) => url), [CLIENT, MINT, `${API}/api/billing/info/`, `${API}/api/feed/v3`]);
+  let deviceId: string | undefined;
   for (const call of state.calls) {
     assert.equal(call.init?.redirect, "error");
     assert.equal(call.init?.credentials, "omit");
     assert.equal(call.init?.referrerPolicy, "no-referrer");
     const headers = new Headers(call.init?.headers);
-    for (const key of ["device-id", "browser-token", "user-agent", "x-suno-client", "sec-ch-ua"]) assert.equal(headers.get(key), null);
+    for (const key of ["user-agent", "x-suno-client", "sec-ch-ua"]) assert.equal(headers.get(key), null);
     if (call.url.startsWith(API)) {
       assert.equal(headers.get("Authorization"), `Bearer ${state.minted[0]}`);
       assert.equal(headers.get("Cookie"), null);
-      assert.equal(headers.get("Origin"), null);
-      assert.equal(headers.get("Referer"), null);
+      assert.equal(headers.get("Origin"), "https://suno.com");
+      assert.equal(headers.get("Referer"), "https://suno.com/");
+      const currentDeviceId = headers.get("Device-Id")!;
+      assert.match(currentDeviceId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+      deviceId ??= currentDeviceId;
+      assert.equal(currentDeviceId, deviceId);
+      const browser = JSON.parse(headers.get("Browser-Token")!);
+      assert.equal(typeof browser.token, "string");
+      assert.match(browser.token, /^[A-Za-z0-9_-]+$/u);
+      assert.equal(typeof JSON.parse(Buffer.from(browser.token, "base64url").toString()).timestamp, "number");
     } else {
       assert.equal(headers.get("Authorization"), clientToken);
       assert.equal(headers.get("Cookie"), `__client=${clientToken}`);
+      assert.equal(headers.get("Browser-Token"), null);
+      assert.equal(headers.get("Device-Id"), null);
     }
   }
   assert.equal(state.calls[1]?.init?.method, "POST");
@@ -195,9 +205,23 @@ test("one exact account session mints a bounded bearer, cached only in the clien
   assert.equal(state.calls.filter(({ url }) => url === MINT).length, 2);
 });
 
+test("a generated device identity is reported for private atomic persistence before API use", async () => {
+  const state = harness(() => Response.json({ total_credits_left: 10 }));
+  const rotations: Array<{ previous: string; next: string }> = [];
+  const http = createSunoHttp(credentials, state.fetcher, async (previous, next, refreshSignal) => {
+    assert.equal(refreshSignal.aborted, false);
+    rotations.push({ previous, next });
+  });
+  await http.request("GET", "/api/billing/info/", undefined, signal());
+  assert.equal(rotations.length, 1);
+  assert.equal(rotations[0]!.previous, `__client=${clientToken}`);
+  assert.match(rotations[0]!.next, new RegExp(`^__client=${clientToken}; ajs_anonymous_id=[0-9a-f-]{36}$`, "u"));
+  assert.equal(state.calls.filter(({ url }) => url.startsWith(API)).length, 1);
+});
+
 test("credential admission is bounded and snapshots the exact supplied connection", async () => {
   for (const value of [null, {}, { ...credentials, clientToken: "remote-secret" },
-    { ...credentials, clientToken: `__client=${clientToken}; extra=remote-secret` },
+    { ...credentials, clientToken: `__client=${clientToken}; __client=${clientToken}` },
     { ...credentials, accountId: "invalid/account" }, { ...credentials, accountId: "user_selected\n" }]) {
     assert.throws(() => createSunoHttp(value as typeof credentials), safeFailure);
   }
@@ -209,14 +233,15 @@ test("credential admission is bounded and snapshots the exact supplied connectio
   assert.equal(new Headers(state.calls[0]?.init?.headers).get("Authorization"), clientToken);
 });
 
-test("account mismatch or ambiguous selection fails before token mint or API access", async () => {
+test("account mismatch or ambiguous selection fails before API access", async () => {
   for (const value of [clientResponse("user_other"), clientResponse("user_selected", "sess_selected\n"),
     { response: { ...clientResponse().response, last_active_session_id: null } },
     { response: { ...clientResponse().response, sessions: [] } },
     { response: { ...clientResponse().response, sessions: [...clientResponse().response.sessions, ...clientResponse().response.sessions] } }]) {
     const state = harness(undefined, () => value);
     await assert.rejects(state.http.request("GET", "/api/billing/info/", undefined, signal()), safeFailure);
-    assert.equal(state.calls.length, 1);
+    assert.equal(state.calls.filter(({ url }) => url.startsWith(API)).length, 0);
+    assert.ok(state.calls.length === 1 || state.calls.length === 2);
   }
 });
 
@@ -241,11 +266,11 @@ test("expiry revalidates identity and refresh never switches to another active s
   let selected = "sess_selected";
   const state = harness(undefined, () => clientResponse("user_selected", selected));
   await state.http.request("GET", "/api/billing/info/", undefined, signal());
-  t.mock.timers.tick(51_000);
+  t.mock.timers.tick(31 * 60_000);
   await state.http.request("GET", "/api/billing/info/", undefined, signal());
   assert.equal(state.calls.filter(({ url }) => url === MINT).length, 2);
   selected = "sess_other";
-  t.mock.timers.tick(51_000);
+  t.mock.timers.tick(31 * 60_000);
   await assert.rejects(state.http.request("POST", "/api/generate/v2-web/", {}, signal()), safeFailure);
   assert.equal(state.calls.filter(({ url }) => url === MINT).length, 2);
   assert.equal(state.calls.filter(({ url }) => url.startsWith(API)).length, 2);
@@ -616,7 +641,7 @@ test("deadlines bound token mint, API and download Fetch without retries", async
     });
     const pending = stage === AUDIO ? http.download(AUDIO, signal()) : http.request("POST", "/api/generate/v2-web/", {}, signal());
     await started.promise;
-    t.mock.timers.tick(stage === MINT ? 15_000 : 120_000);
+    t.mock.timers.tick(stage === MINT ? 15_000 : stage === AUDIO ? 10 * 60_000 : 120_000);
     await assert.rejects(pending, (error) => { assert.match((error as Error).message, /timed out/u); return safeFailure(error); });
     assert.equal(requestSignal?.aborted, true);
     assert.equal(stageCalls, 1);

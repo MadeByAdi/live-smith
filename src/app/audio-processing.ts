@@ -3,7 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { setTimeout, clearTimeout } from "node:timers";
 
 import {
-  audioJobView, type AudioAsset, type AudioJob, type AudioJobView,
+  audioJobRemoteSettled, audioJobView, type AudioAsset, type AudioJob, type AudioJobView,
   type AudioOrigin, type AudioServiceAdapter, type AudioServiceConnection, type AudioGenerationAdapter,
   type SeparationStem, type AudioDownloadAuthorization,
 } from "../audio-services/contracts.js";
@@ -21,6 +21,7 @@ import { audioServiceSupports } from "../audio-services/capabilities.js";
 import { audioConnectionFingerprint, availableAudioServices, resolveAudioService, type RuntimeAudioServiceConnection } from "./audio-service-connections.js";
 import { acquireAudioJob, audioJobIsActive, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { resumeAudioGeneration } from "./audio-generation.js";
+import { audioPollScheduler } from "./audio-polling.js";
 export { audioConnectionFingerprint } from "./audio-service-connections.js";
 export { downloadAudioOutput } from "./audio-generation.js";
 
@@ -103,7 +104,7 @@ export async function resumeAudioJob(context: AudioProcessingContext, jobId: str
     let job = await loadAudioJob(context.storageDirectory, context.sessionId, jobId);
     if (job.status === "completed" || job.status === "cancelled") return job;
     job = await reconcileLocalAudioJob(context.storageDirectory, context.sessionId, job, context.signal);
-    if (job.status === "completed") return job;
+    if (job.status === "completed" || audioJobRemoteSettled(job)) return job;
     if (job.operation !== "separate_stems") return await resumeAudioGeneration(context, job);
     const { settings, adapter } = await service(context, job.serviceId);
     if (job.connectionFingerprint !== audioConnectionFingerprint(settings)) {
@@ -152,7 +153,7 @@ async function ownJob(
       await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
       throwIfAborted(context.signal);
       submissionStarted = true;
-      const remoteTaskId = await adapter.submit(remoteSourceId, job.stems, randomUUID(), context.signal);
+      const remoteTaskId = await adapter.submit(remoteSourceId, job.stems, randomUUID(), context.signal, asset.mediaType);
       acceptedTaskId = remoteTaskId;
       // Persist the accepted ticket even when cancellation raced the reply.
       await update({ remoteTaskId, status: "running", message: "Stem separation is processing." });
@@ -163,13 +164,15 @@ async function ownJob(
     const deadline = Date.now() + 30 * 60_000;
     for (;;) {
       throwIfAborted(context.signal);
+      if (!context.wait) await audioPollScheduler.wait(settings.provider,
+        JSON.stringify([context.storageDirectory, job.connectionFingerprint]), context.signal);
       const remote = await adapter.inspect(taskId, job.stems, context.signal);
       if (remote.status === "cancelled") {
-        await update({ status: "cancelled", message: "The audio service confirmed cancellation." });
+        await update({ remoteTaskTerminal: "cancelled", status: "cancelled", message: "The audio service confirmed cancellation." });
         return job;
       }
       if (remote.status === "failed") {
-        await update({ status: job.outputAssets.length ? "partial" : "failed", message: remote.message });
+        await update({ remoteTaskTerminal: "failed", status: job.outputAssets.length ? "partial" : "failed", message: remote.message });
         return job;
       }
       if (remote.status === "completed") {
@@ -203,7 +206,7 @@ async function ownJob(
         }
         const missing = [...job.stems, "residual"].filter((role) => !job.outputAssets.some((asset) => asset.role === role));
         await update({
-          status: missing.length ? job.outputAssets.length ? "partial" : "failed" : "completed",
+          status: missing.length ? job.outputAssets.length ? "partial" : "interrupted" : "completed",
           message: missing.length
             ? boundedAudioMessage(`Audio outputs unavailable: ${missing.join(", ")}. Resume to retrieve missing files without another separation. ${unavailable.join("; ")}`)
             : "Separated audio is saved. Importing it into Live is a separate scoped Apply operation.",
@@ -264,8 +267,8 @@ async function cancelRemoteBestEffort(adapter: AudioServiceAdapter, taskId: stri
 }
 
 export function audioJobResultText(job: AudioJob): string {
-  return JSON.stringify({ ...audioJobView(job), ...(job.provider === "suno" && job.expectedOutputs
-    ? { musicClips: job.expectedOutputs.map(({ key, role }) => ({ clipId: key, role })) } : {}) });
+  return JSON.stringify({ ...audioJobView(job), ...(job.provider === "suno" && job.remoteOutputs
+    ? { musicClips: job.remoteOutputs.map(({ key, role }) => ({ clipId: key, role })) } : {}) });
 }
 
 export function audioAssetsFromJobs(jobs: readonly AudioJob[]): AudioAsset[] {

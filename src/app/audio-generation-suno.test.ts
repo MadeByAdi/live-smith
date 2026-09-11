@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as fs from "node:fs/promises";
 import { Buffer } from "node:buffer";
-import type { AudioGenerationAdapter } from "../audio-services/contracts.js";
+import { audioJobView, type AudioGenerationAdapter } from "../audio-services/contracts.js";
 import { createSession } from "../storage/sessions.js";
 import { loadAgentSettings, saveGlobalSettings } from "../storage/settings.js";
 import { SunoSessions } from "../storage/suno-sessions.js";
@@ -27,7 +27,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   const sessions = new SunoSessions(directory);
   await sessions.save(connection.id, { accountId: "user_personal", clientToken: token("first") });
   const controller = new AbortController();
-  const mode = { stopAfterReceipt: false, failPrepare: false, failSecond: false, failedSibling: false, changeId: false };
+  const mode = { stopAfterReceipt: false, failPrepare: false, failSecond: false, failedSibling: false,
+    failedTask: false, changeId: false };
   const calls = { submit: 0, inspect: 0, downloads: [] as string[] };
   const adapter: AudioGenerationAdapter = {
     provider: "suno",
@@ -43,6 +44,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
       assert.deepEqual(expectedOutputs, manifest);
       const saved = (await listAudioJobs(directory, session.id))[0]!;
       assert.deepEqual(saved.expectedOutputs, manifest, "receipt is durable before polling");
+      if (mode.failedTask) return { status: "failed", message: "The remote task failed." };
       return { status: "completed", outputs: manifest.filter((_, index) => !mode.failedSibling || index === 0).map((entry, index) => ({
         ...entry, key: mode.changeId && index === 1 ? "33333333-3333-4333-8333-333333333333" : entry.key,
         url: `https://cdn1.suno.ai/${entry.key}.mp3`,
@@ -59,7 +61,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }) {
   return { directory, session, sessions, controller, mode, calls, context };
 }
 
-test("Cookie-based service admission is private, exact and independent of API key setup", async (t) => {
+test("Cookie-based service admission follows verified same-account rotation and rejects missing credentials", async (t) => {
   const h = await harness(t);
   const admitted = await captureAudioServiceConnections(h.directory);
   assert.equal(admitted.length, 1);
@@ -67,12 +69,27 @@ test("Cookie-based service admission is private, exact and independent of API ke
   assert.equal(admitted[0]!.sunoSession?.accountId, "user_personal");
   assert.ok(Object.isFrozen(admitted[0]!.sunoSession));
   const fingerprint = audioConnectionFingerprint(admitted[0]!);
-  await h.sessions.save(connection.id, { accountId: "user_personal", clientToken: token("renewed") });
-  await assert.rejects(resolveAudioService(h.directory, connection.id, "generate_music", admitted), /changed/);
+  const renewed = token("renewed");
+  await h.sessions.save(connection.id, { accountId: "user_personal", clientToken: renewed });
+  const resolved = await resolveAudioService(h.directory, connection.id, "generate_music", admitted);
+  assert.equal(resolved.sunoSession?.clientToken, `__client=${renewed}`);
   assert.equal(audioConnectionFingerprint((await captureAudioServiceConnections(h.directory))[0]!), fingerprint);
   await h.sessions.clear(connection.id);
   assert.deepEqual(await captureAudioServiceConnections(h.directory), []);
   await assert.rejects(resolveAudioService(h.directory, connection.id, "generate_music"), /unavailable/);
+});
+
+test("provider-confirmed task failure is terminal and does not offer a pointless Resume", async (t) => {
+  const h = await harness(t);
+  h.mode.failedTask = true;
+  const job = await generateAudio(h.context, connection.id, request);
+  assert.equal(job.status, "failed");
+  assert.equal(job.remoteTaskTerminal, "failed");
+  assert.equal(audioJobView(job).resumable, false);
+  const inspections = h.calls.inspect;
+  const unchanged = await resumeAudioJob(h.context, job.id);
+  assert.equal(unchanged.remoteTaskTerminal, "failed");
+  assert.equal(h.calls.inspect, inspections);
 });
 
 test("one corrupt Suno credential cannot block healthy connections or ordinary chat admission", async (t) => {
@@ -125,11 +142,16 @@ test("successful sibling is retained when another clip fails remotely", async (t
   assert.equal(job.status, "ready");
   assert.deepEqual(job.expectedOutputs, manifest);
   assert.deepEqual(job.remoteOutputs, [manifest[0]]);
+  assert.deepEqual(job.failedOutputKeys, [ids[1]]);
   assert.deepEqual(job.outputAssets, []);
+  assert.equal(audioJobView(job).resumable, false);
+  const inspections = h.calls.inspect;
   h.mode.failedSibling = false;
   const result = await resumeAudioJob(h.context, job.id);
   assert.equal(result.status, "ready");
-  assert.deepEqual(result.remoteOutputs, manifest);
+  assert.deepEqual(result.remoteOutputs, [manifest[0]]);
+  assert.deepEqual(result.failedOutputKeys, [ids[1]]);
+  assert.equal(h.calls.inspect, inspections);
   assert.deepEqual(h.calls.downloads, []);
   assert.equal(h.calls.submit, 1);
 });

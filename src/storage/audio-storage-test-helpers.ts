@@ -24,6 +24,8 @@ export const generationJobCases: { input: AudioJobInput; roles: AudioAsset["role
     connectionFingerprint: fingerprint, stems: [] }, roles: ["sound_effect"] },
   { input: { provider: "sunoapi", serviceId: "suno-music", operation: "generate_music",
     connectionFingerprint: fingerprint, stems: [] }, roles: ["music", "music_alternative"] },
+  { input: { provider: "suno-platform", serviceId: "suno-platform", operation: "generate_music",
+    connectionFingerprint: fingerprint, stems: [] }, roles: ["music"] },
 ];
 export const sessionInput = {
   title: "Audio storage", projectKey: "test-project",

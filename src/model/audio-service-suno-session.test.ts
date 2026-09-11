@@ -4,11 +4,18 @@ import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 import { ReadableStream } from "node:stream/web";
 import { createHostAbortController } from "../runtime/host.js";
-import { createSunoSessionVerifier, normalizeSunoSessionValue, SunoSessionExpiredError } from "../audio-services/suno-session.js";
+import { createSunoSessionResolver, createSunoSessionVerifier, normalizeSunoSessionValue, SunoSessionExpiredError } from "../audio-services/suno-session.js";
 
-const token = [Buffer.from('{"alg":"HS256"}'), Buffer.from('{"sub":"client_synthetic"}'), Buffer.from("synthetic-signature")]
-  .map((part) => part.toString("base64url")).join(".");
+const jwt = (claims: unknown, header: unknown = { alg: "RS256", typ: "JWT" }) =>
+  [Buffer.from(JSON.stringify(header)), Buffer.from(JSON.stringify(claims)), Buffer.from("synthetic-signature")]
+    .map((part) => part.toString("base64url")).join(".");
+const token = jwt({ sub: "client_synthetic" }, { alg: "HS256" });
+const accessToken = () => jwt({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 3600 });
+const sessionToken = () => jwt({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 120 });
 const endpoint = "https://auth.suno.com/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
+const mintEndpoint = "https://auth.suno.com/v1/client/sessions/sess_selected/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
+const touchEndpoint = "https://auth.suno.com/v1/client/sessions/sess_selected/touch?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
+const legacyTouchEndpoint = "https://clerk.suno.com/v1/client/sessions/sess_selected/touch?__clerk_api_version=2025-04-10&_clerk_js_version=5.103.1";
 const signal = () => createHostAbortController().signal;
 const session = (id = "sess_selected", accountId = "user_selected") => ({
   object: "session", id, status: "active", expire_at: Date.now() + 60_000,
@@ -17,8 +24,9 @@ const session = (id = "sess_selected", accountId = "user_selected") => ({
 const payload = (sessions: unknown[] = [session()], selected: unknown = "sess_selected") => ({
   response: { object: "client", id: "client_synthetic", last_active_session_id: selected, sessions },
 });
-function verifier(value: unknown) {
-  return createSunoSessionVerifier(async () => Response.json(value));
+function verifier(value: unknown, minted: unknown = { jwt: accessToken() }) {
+  let calls = 0;
+  return createSunoSessionVerifier(async () => Response.json(++calls === 1 ? value : minted));
 }
 function safeFailure(error: unknown): boolean {
   assert.ok(error instanceof Error);
@@ -27,34 +35,110 @@ function safeFailure(error: unknown): boolean {
   return true;
 }
 
-test("normalization accepts one explicit client cookie or raw JWT, never bulk cookies", () => {
-  assert.equal(normalizeSunoSessionValue(`  ${token}  `), token);
-  assert.equal(normalizeSunoSessionValue(`__client=${token}`), token);
-  for (const value of [null, {}, 1, "", "a.b.c", `Bearer ${token}`, `Cookie: __client=${token}`,
-    `__client=${token}; other=secret`, `__client=${token};`, `__client=${token}\r\nX-Test: injected`,
-    `__client =${token}`, `${token}=`, `${token}.extra`, "a".repeat(9000)]) {
+function generatedClientSession(value: unknown, expectedToken = token): void {
+  assert.equal(typeof value, "string");
+  const prefix = `__client=${expectedToken}; ajs_anonymous_id=`;
+  assert.ok((value as string).startsWith(prefix));
+  assert.match((value as string).slice(prefix.length), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+}
+
+test("normalization accepts client or session Cookies and discards unrelated browser cookies", () => {
+  const canonicalClient = `__client=${token}`;
+  assert.equal(normalizeSunoSessionValue(`  ${token}  `), canonicalClient);
+  assert.equal(normalizeSunoSessionValue(canonicalClient), canonicalClient);
+  assert.equal(normalizeSunoSessionValue(`Cookie: ignored=private; ${canonicalClient}; __client_uat=123; __cf_bm=private`),
+    `${canonicalClient}; __client_uat=123`);
+  const currentSession = sessionToken();
+  assert.equal(normalizeSunoSessionValue(`__client_uat=123; __session=${currentSession}; ajs_anonymous_id=%22AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA%22`),
+    `__session=${currentSession}; __client_uat=123; ajs_anonymous_id=%22AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA%22`);
+  assert.equal(normalizeSunoSessionValue(currentSession), `__session=${currentSession}`);
+  for (const value of [null, {}, 1, "", "a.b.c", `Bearer ${token}`,
+    `__client=${token}; __client=${token}`, `__client=${token}\r\nX-Test: injected`,
+    `__client =${token}`, `${token}=`, `${token}.extra`, "a".repeat(17_000),
+    `__client_uat=123`, `__session=${jwt({ sub: "user_selected" })}`, `__session=${sessionToken()}; __client_uat=not-a-time`]) {
     assert.throws(() => normalizeSunoSessionValue(value), safeFailure);
   }
 });
 
-test("verification makes one fixed GET with only the imported credential and returns bounded selected user fields", async () => {
+test("client Cookie verification selects one account and mints a matching bearer without forwarding unrelated cookies", async () => {
   let calls = 0;
   const verify = createSunoSessionVerifier(async (url, init) => {
     calls++;
-    assert.equal(url, endpoint);
-    assert.equal(init?.method, "GET");
+    assert.equal(url, calls === 1 ? endpoint : mintEndpoint);
+    assert.equal(init?.method, calls === 1 ? "GET" : "POST");
     assert.equal(init?.redirect, "error");
     assert.equal(init?.credentials, "omit");
-    assert.equal(init?.body, undefined);
+    assert.equal(init?.body, calls === 1 ? undefined : "");
     const headers = new Headers(init?.headers);
     assert.equal(headers.get("Authorization"), token);
     assert.equal(headers.get("Cookie"), `__client=${token}`);
     assert.equal(headers.get("User-Agent"), null);
     assert.equal(headers.get("browser-token"), null);
-    return Response.json(payload([session("sess_other", "user_other"), session()]));
+    return calls === 1 ? Response.json(payload([session("sess_other", "user_other"), session()]))
+      : Response.json({ jwt: accessToken() });
   });
-  assert.deepEqual(await verify(token, signal()), { accountId: "user_selected", accountName: "Ada Lovelace" });
+  const result = await verify(token, signal());
+  assert.equal(result.accountId, "user_selected");
+  assert.equal(result.accountName, "Ada Lovelace");
+  generatedClientSession(result.sessionValue);
+  assert.equal(calls, 2);
+});
+
+test("Clerk session route IDs are bounded opaque identifiers rather than a sess_ naming contract", async () => {
+  const opaqueSessionId = "opaque-session-id_123";
+  let calls = 0;
+  const verify = createSunoSessionVerifier(async () => Response.json(++calls === 1
+    ? payload([session(opaqueSessionId)], opaqueSessionId)
+    : { jwt: jwt({ sub: "user_selected", sid: opaqueSessionId, exp: Math.floor(Date.now() / 1000) + 3600 }) }));
+  const result = await verify(token, signal());
+  assert.equal(result.accountId, "user_selected");
+  generatedClientSession(result.sessionValue);
+  assert.equal(calls, 2);
+});
+
+test("session Cookie plus __client_uat uses Clerk touch, rotates the private session and preserves its device", async () => {
+  const imported = sessionToken();
+  const fresh = accessToken();
+  const cookie = `__session=${imported}; __client_uat=123; ajs_anonymous_id=%22AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA%22`;
+  let calls = 0;
+  const resolve = createSunoSessionResolver(async (url, init) => {
+    calls++;
+    assert.equal(url, touchEndpoint);
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.body, "__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0&active_organization_id=");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("Authorization"), null);
+    assert.equal(headers.get("Cookie"), cookie);
+    assert.equal(headers.get("Origin"), "https://suno.com");
+    return Response.json({ response: { object: "session", id: "sess_selected", status: "active",
+      user: session().user, last_active_token: { jwt: fresh } } }, { headers: { "set-cookie": "__client_uat=456; Path=/; Secure" } });
+  });
+  assert.deepEqual(await resolve(cookie, signal()), {
+    accountId: "user_selected", accountName: "Ada Lovelace", sessionId: "sess_selected", accessToken: fresh,
+    sessionValue: `__session=${fresh}; __client_uat=456; ajs_anonymous_id=%22AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA%22`,
+    deviceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expiresAt: JSON.parse(Buffer.from(fresh.split(".")[1]!, "base64url").toString()).exp * 1000,
+  });
   assert.equal(calls, 1);
+});
+
+test("session Cookie touch falls back only between Suno's two observed Clerk hosts", async () => {
+  const imported = sessionToken();
+  const fresh = accessToken();
+  const cookie = `__session=${imported}; __client_uat=123`;
+  const calls: string[] = [];
+  const resolve = createSunoSessionResolver(async (url, init) => {
+    calls.push(String(url));
+    assert.equal(new Headers(init?.headers).get("Cookie"), cookie);
+    if (url === touchEndpoint) return new Response(null, { status: 404 });
+    assert.equal(url, legacyTouchEndpoint);
+    assert.equal(init?.body, "__clerk_api_version=2025-04-10&_clerk_js_version=5.103.1&active_organization_id=");
+    return Response.json({ response: { object: "session", id: "sess_selected", status: "active",
+      last_active_token: { jwt: fresh } } });
+  });
+  const result = await resolve(cookie, signal());
+  assert.equal(result.accountId, "user_selected");
+  assert.equal(result.accessToken, fresh);
+  assert.deepEqual(calls, [touchEndpoint, legacyTouchEndpoint]);
 });
 
 test("last active session never falls back to another account or a public user stub", async () => {
@@ -77,10 +161,14 @@ test("identity excludes metadata, invalid Clerk user IDs, controls and credentia
     { ...session().user, id: "account_other" }, { ...session().user, first_name: "Ada\nCookie" }]) {
     await assert.rejects(verifier(payload([{ ...session(), user }]))(token, signal()), safeFailure);
   }
-  assert.deepEqual(await verifier(payload([{ ...session(), user: {
+  const privateResult = await verifier(payload([{ ...session(), user: {
     object: "user", id: "user_only", first_name: null, last_name: null, username: null,
     private_metadata: { token }, email_addresses: [{ email_address: "private@example.test" }],
-  } }]))(token, signal()), { accountId: "user_only" });
+  } }]), { jwt: jwt({ sub: "user_only", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 3600 }) })
+    (token, signal());
+  assert.equal(privateResult.accountId, "user_only");
+  assert.equal(privateResult.accountName, undefined);
+  generatedClientSession(privateResult.sessionValue);
 });
 
 test("long verified display names are bounded without discarding the account identity", async () => {
@@ -94,9 +182,10 @@ test("long verified display names are bounded without discarding the account ide
 
 test("a dotted username is a valid account label when the full name is absent", async () => {
   const user = { ...session().user, first_name: null, last_name: null, username: "sam.kuler.music" };
-  assert.deepEqual(await verifier(payload([{ ...session(), user }]))(token, signal()), {
-    accountId: "user_selected", accountName: "sam.kuler.music",
-  });
+  const result = await verifier(payload([{ ...session(), user }]))(token, signal());
+  assert.equal(result.accountId, "user_selected");
+  assert.equal(result.accountName, "sam.kuler.music");
+  generatedClientSession(result.sessionValue);
 });
 
 test("401 is expired, other failures are unavailable and discard response bodies and exception causes", async () => {
@@ -174,7 +263,7 @@ test("deadline bounds an unresponsive Fetch and cleans up a late response", asyn
 test("invalid and pre-cancelled input never reaches Fetch", async () => {
   let calls = 0;
   const verify = createSunoSessionVerifier(async () => { calls++; return Response.json(payload()); });
-  await assert.rejects(verify(`__client=${token}; other=private`, signal()), safeFailure);
+  await assert.rejects(verify(`__client=${token}; __client=${token}`, signal()), safeFailure);
   const controller = createHostAbortController(); controller.abort(new Error(token));
   await assert.rejects(verify(token, controller.signal), safeFailure);
   assert.equal(calls, 0);

@@ -8,19 +8,15 @@ import { createHostAbortController, resolveFetchImplementation, waitForPromiseWi
 import { MAX_AUDIO_ASSET_BYTES } from "./contracts.js";
 import { readAudioResponseBytes } from "./response-bytes.js";
 import { sunoErrorDiagnostic } from "./suno-errors.js";
-import { createSunoActiveSessionResolver, normalizeSunoSessionIdentity, normalizeSunoSessionValue,
-  SunoSessionExpiredError } from "./suno-session.js";
+import { createSunoSessionResolver, normalizeSunoSessionIdentity, normalizeSunoSessionValue, sunoSessionSecrets,
+  SunoSessionExpiredError, SunoSessionTimeoutError } from "./suno-session.js";
 
 const API_BASE = "https://studio-api-prod.suno.com";
-const AUTH_BASE = "https://auth.suno.com/v1/client/sessions/";
-const AUTH_QUERY = "?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
 const MAX_JSON_BYTES = 1024 * 1024;
-const MAX_AUTH_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 120_000;
-const AUTH_TIMEOUT_MS = 15_000;
+const MEDIA_TIMEOUT_MS = 10 * 60_000;
 const SUBMIT_STOP_GRACE_MS = 3_000;
-const TOKEN_REFRESH_MARGIN_MS = 10_000;
-const MAX_TOKEN_LIFETIME_MS = 60 * 60 * 1000;
+const TOKEN_REFRESH_MARGIN_MS = 30 * 60_000;
 const UUID = "[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}";
 const FEED_IDS = new RegExp(`^/api/feed/\\?ids=${UUID}(?:,${UUID}){0,49}$`, "u");
 const PERSONA = new RegExp(`^/api/persona/get-persona-paginated/${UUID}/\\?page=(?:0|[1-9][0-9]{0,3})$`, "u");
@@ -32,6 +28,9 @@ const DOWNLOAD_ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-
 const AUDIO_HOSTS = new Set(["cdn1.suno.ai", "cdn2.suno.ai", "cdn.suno.ai", "suno-data-uploads.s3.amazonaws.com"]);
 
 class SunoHttpError extends Error {}
+export type SunoSessionRefreshHandler = (
+  previousSessionValue: string, nextSessionValue: string, signal: AbortSignal,
+) => void | Promise<void>;
 
 /** Trusted local diagnostics only; network failures never supply their messages. */
 function fail(detail: string): Error {
@@ -43,6 +42,11 @@ function active(signal: AbortSignal): void {
   const error = fail("request cancelled; remote generation may still complete.");
   error.name = "AbortError";
   throw error;
+}
+
+function browserToken(): string {
+  const token = Buffer.from(JSON.stringify({ timestamp: Date.now() }), "utf8").toString("base64url");
+  return JSON.stringify({ token });
 }
 
 function validateJson(value: unknown): void {
@@ -83,17 +87,22 @@ function allowedRoute(method: string, path: string): boolean {
     "/api/download/authorize"].includes(path);
 }
 
-export function createSunoHttp(session: { clientToken: string; accountId: string }, injected?: typeof fetch) {
+export function createSunoHttp(
+  session: { clientToken: string; accountId: string }, injected?: typeof fetch,
+  onSessionRefresh?: SunoSessionRefreshHandler,
+) {
   // Snapshot the exact admitted connection; never reload mutable settings here.
-  let clientToken: string;
+  let sessionValue: string;
   let accountId: string;
   try {
-    clientToken = normalizeSunoSessionValue(session.clientToken);
-    accountId = normalizeSunoSessionIdentity({ accountId: session.accountId }, clientToken).accountId;
+    sessionValue = normalizeSunoSessionValue(session.clientToken);
+    accountId = normalizeSunoSessionIdentity({ accountId: session.accountId }, sessionValue).accountId;
     if (/[^A-Za-z0-9_-]/u.test(accountId)) throw new Error();
   } catch { throw fail("invalid saved session."); }
-  const resolveSession = createSunoActiveSessionResolver(injected);
+  const resolveSession = createSunoSessionResolver(injected);
+  const credentialSecrets = new Set(sunoSessionSecrets(sessionValue));
   let boundSessionId: string | undefined;
+  let deviceId = "00000000-0000-0000-0000-000000000000";
   let cached: { jwt: string; expiresAt: number } | undefined;
 
   const read = async (
@@ -139,7 +148,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
         // cannot replace it with a transport/unknown-outcome failure.
         rejection = fail(detail);
         const diagnostic = url.startsWith(`${API_BASE}/`) && !audio
-          ? await sunoErrorDiagnostic(response, controller.signal, [clientToken, ...(cached ? [cached.jwt] : [])], init.body) : "";
+          ? await sunoErrorDiagnostic(response, controller.signal, [...credentialSecrets, ...(cached ? [cached.jwt] : [])], init.body) : "";
         if (diagnostic) rejection = fail(`${detail} Provider diagnostic: ${diagnostic}`);
         throw rejection;
       }
@@ -172,10 +181,11 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
     if (cached && cached.expiresAt > Date.now() + TOKEN_REFRESH_MARGIN_MS) return cached.jwt;
     cached = undefined;
     let identity: Awaited<ReturnType<typeof resolveSession>>;
-    try { identity = await resolveSession(clientToken, signal); }
+    try { identity = await resolveSession(sessionValue, signal); }
     catch (error) {
       active(signal);
       if (error instanceof SunoSessionExpiredError) throw fail("session expired; import a current Suno session.");
+      if (error instanceof SunoSessionTimeoutError) throw fail("session verification timed out.");
       throw fail("session verification failed.");
     }
     active(signal);
@@ -184,28 +194,20 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
       throw fail("active account or session changed; reconnect Suno.");
     }
     boundSessionId = identity.sessionId;
-    // Clerk FAPI Create Session Token returns {jwt}; no template or organization switch.
-    // https://github.com/clerk/openapi-specs/blob/main/fapi/2025-11-10.yml
-    const data = object(parseJson(await read(`${AUTH_BASE}${boundSessionId}/tokens${AUTH_QUERY}`, {
-      method: "POST", body: "", headers: { Authorization: clientToken, Cookie: `__client=${clientToken}`,
-        Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-    }, signal, MAX_AUTH_BYTES, AUTH_TIMEOUT_MS)));
-    try {
-      if (typeof data.jwt !== "string" || data.jwt !== data.jwt.trim() || data.jwt.startsWith("__client=")) throw new Error();
-      const jwt = normalizeSunoSessionValue(data.jwt);
-      const [header, payload] = jwt.split(".");
-      if (object(parseJson(Buffer.from(header!, "base64url"))).alg !== "RS256") throw new Error();
-      const claims = object(parseJson(Buffer.from(payload!, "base64url")));
-      if (claims.sub !== accountId || claims.sid !== boundSessionId || !Number.isSafeInteger(claims.exp)) throw new Error();
-      const expiresAt = (claims.exp as number) * 1000;
-      if (expiresAt <= Date.now() + TOKEN_REFRESH_MARGIN_MS || expiresAt > Date.now() + MAX_TOKEN_LIFETIME_MS) throw new Error();
-      active(signal);
-      cached = { jwt, expiresAt };
-      return jwt;
-    } catch {
-      active(signal);
-      throw fail("invalid session token.");
+    const previousSessionValue = sessionValue;
+    if (identity.sessionValue !== previousSessionValue && onSessionRefresh) {
+      try { await onSessionRefresh(previousSessionValue, identity.sessionValue, signal); }
+      catch {
+        active(signal);
+        throw fail("the refreshed session could not be saved; reconnect Suno.");
+      }
     }
+    sessionValue = identity.sessionValue;
+    deviceId = identity.deviceId;
+    for (const secret of [...sunoSessionSecrets(sessionValue), identity.accessToken]) credentialSecrets.add(secret);
+    active(signal);
+    cached = { jwt: identity.accessToken, expiresAt: identity.expiresAt };
+    return identity.accessToken;
   };
 
   const outputUrl = (value: unknown): string => {
@@ -215,7 +217,8 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
       const decoded = decodeURIComponent(value);
       if (url.protocol !== "https:" || !AUDIO_HOSTS.has(url.hostname) || url.port || url.username || url.password || url.hash ||
           !value.startsWith(`https://${url.hostname}/`) || url.pathname === "/" ||
-          /[\s\\\u0000-\u001f\u007f]/u.test(decoded) || decoded.includes(clientToken) || (cached && decoded.includes(cached.jwt))) throw new Error();
+          /[\s\\\u0000-\u001f\u007f]/u.test(decoded) || [...credentialSecrets].some((secret) => decoded.includes(secret)) ||
+          (cached && decoded.includes(cached.jwt))) throw new Error();
       return url.href;
     } catch { throw fail("untrusted audio URL."); }
   };
@@ -226,7 +229,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
     /** Validate the final bounded public projection while both credentials are private here. */
     publicResult<T>(value: T): T {
       const text = JSON.stringify(value);
-      if (text.includes(clientToken) || (cached && text.includes(cached.jwt))) {
+      if ([...credentialSecrets].some((secret) => text.includes(secret)) || (cached && text.includes(cached.jwt))) {
         throw fail("credential-bearing public response.");
       }
       return value;
@@ -253,6 +256,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
       try {
         return parseJson(await read(`${API_BASE}${path}`, {
           method, headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json",
+            "Device-Id": deviceId, "Browser-Token": browserToken(), Origin: "https://suno.com", Referer: "https://suno.com/",
             ...(encoded !== undefined ? { "Content-Type": "application/json" } : {}) },
           ...(encoded !== undefined ? { body: encoded } : {}),
         }, signal, MAX_JSON_BYTES, REQUEST_TIMEOUT_MS, false, preserveReceipt));
@@ -265,7 +269,7 @@ export function createSunoHttp(session: { clientToken: string; accountId: string
     async download(value: string, signal: AbortSignal): Promise<Uint8Array> {
       active(signal);
       return read(outputUrl(value), { method: "GET", headers: { Accept: "audio/mpeg, audio/wav, application/octet-stream" } },
-        signal, MAX_AUDIO_ASSET_BYTES, REQUEST_TIMEOUT_MS, true);
+        signal, MAX_AUDIO_ASSET_BYTES, MEDIA_TIMEOUT_MS, true);
     },
   };
 }

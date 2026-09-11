@@ -45,13 +45,16 @@ type JobConfiguration = Pick<AudioJob,
 const jobFields = [
   "id", "sessionId", ...jobConfigurationFields,
   "status", "createdAt", "updatedAt", "sourceAssetId", "remoteSourceId",
-  "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs", "outputAssets", "message",
+  "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs", "remoteTaskTerminal", "failedOutputKeys",
+  "outputAssets", "message",
 ];
 const updateFields = [
-  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs", "outputAssets", "message",
+  "status", "sourceAssetId", "remoteSourceId", "remoteTaskId", "expectedOutputRoles", "expectedOutputs", "remoteOutputs",
+  "remoteTaskTerminal", "failedOutputKeys", "outputAssets", "message",
 ];
 type JobUpdate = Partial<Pick<AudioJob,
-  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "expectedOutputs" | "remoteOutputs" | "outputAssets" | "message"
+  "status" | "sourceAssetId" | "remoteSourceId" | "remoteTaskId" | "expectedOutputRoles" | "expectedOutputs" | "remoteOutputs" |
+  "remoteTaskTerminal" | "failedOutputKeys" | "outputAssets" | "message"
 >>;
 type InitialRetrievalReceipt = {
   remoteTaskId: string;
@@ -154,6 +157,10 @@ export async function updateAudioJob(
       job.expectedOutputs?.map((output) => output.role) ?? job.expectedOutputRoles)) {
       throw new AudioStorageError("The confirmed audio result shape changed.");
     }
+    if (current.remoteTaskTerminal && job.remoteTaskTerminal !== current.remoteTaskTerminal ||
+      current.failedOutputKeys && !isDeepStrictEqual(current.failedOutputKeys, job.failedOutputKeys)) {
+      throw new AudioStorageError("The confirmed remote audio failure changed.");
+    }
     assertAudioJsonSize(job, MAX_AUDIO_JOB_METADATA_BYTES);
     const directory = (await bindAudioDirectory(storageDirectory, sessionId))!;
     await verifyJobAssets(directory, job);
@@ -203,6 +210,9 @@ function isAudioJob(value: unknown): value is AudioJob {
       (!Object.hasOwn(value, "expectedOutputs") && validExpectedOutputRoles(value, value.expectedOutputRoles))) &&
     (!Object.hasOwn(value, "expectedOutputs") || validExpectedOutputs(value)) &&
     (!Object.hasOwn(value, "remoteOutputs") || validRemoteOutputs(value)) &&
+    (!Object.hasOwn(value, "remoteTaskTerminal") || ["failed", "cancelled"].includes(value.remoteTaskTerminal as string) &&
+      validProviderIdentifier(value.remoteTaskId)) &&
+    (!Object.hasOwn(value, "failedOutputKeys") || validFailedOutputKeys(value)) &&
     (value.status !== "ready" || Array.isArray(value.remoteOutputs) && value.remoteOutputs.length > 0) &&
     (value.operation !== "retrieve_music" || Object.hasOwn(value, "expectedOutputs")) &&
     (!Object.hasOwn(value, "message") || boundedAudioText(value.message, 1024, true)) &&
@@ -218,6 +228,7 @@ function isJobConfiguration(value: Record<string, unknown>): value is Record<str
   // availability; a disabled provider's historical jobs remain readable.
   const validOperation = value.provider === "lalal" ? value.operation === "separate_stems"
     : value.provider === "elevenlabs" ? ["generate_music", "generate_sound_effect"].includes(value.operation as string)
+    : value.provider === "suno-platform" ? value.operation === "generate_music"
     : value.provider === "suno" ? ["generate_music", "extend_music", "get_whole_song", "retrieve_music"].includes(value.operation as string)
     : value.provider === "sunoapi" && value.operation === "generate_music";
   return validOperation && isSafeStorageId(value.serviceId) && isAudioHash(value.connectionFingerprint) &&
@@ -259,6 +270,16 @@ function validRemoteOutputs(job: Record<string, unknown> & JobConfiguration): bo
     new Set(outputs.map((output) => output.key)).size === outputs.length;
 }
 
+function validFailedOutputKeys(job: Record<string, unknown> & JobConfiguration): boolean {
+  const failed = job.failedOutputKeys;
+  const expected = job.expectedOutputs;
+  const successful = job.remoteOutputs;
+  return Array.isArray(failed) && failed.length > 0 && Array.isArray(expected) &&
+    failed.every((key: unknown) => typeof key === "string" && expected.some((output) => output.key === key)) &&
+    new Set(failed).size === failed.length &&
+    (!Array.isArray(successful) || failed.every((key) => !successful.some((output) => output.key === key)));
+}
+
 export function audioJobOwnsAssetRole(
   job: Pick<AudioJob, "provider" | "operation" | "stems"> & { expectedOutputRoles?: unknown; expectedOutputs?: unknown }, role: AudioAsset["role"],
 ): boolean {
@@ -269,7 +290,7 @@ export function audioJobOwnsAssetRole(
   switch (job.operation) {
     case "separate_stems": return job.provider === "lalal" &&
       (role === "source" || role === "residual" || job.stems.some((stem) => stem === role));
-    case "generate_music": return (job.provider === "elevenlabs" && role === "music") ||
+    case "generate_music": return (["elevenlabs", "suno-platform"].includes(job.provider) && role === "music") ||
       (["sunoapi", "suno"].includes(job.provider) && (role === "music" || role === "music_alternative"));
     case "extend_music":
     case "retrieve_music": return job.provider === "suno" && (role === "music" || role === "music_alternative");

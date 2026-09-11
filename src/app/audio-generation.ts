@@ -2,14 +2,16 @@ import { setTimeout as delay } from "node:timers/promises";
 import { setTimeout, clearTimeout } from "node:timers";
 import { isDeepStrictEqual } from "node:util";
 import { parseRetrievalClipIds } from "../agent/music-tools.js";
-import type {
-  AudioGenerationAdapter, AudioGenerationRequest, AudioJob,
-  GeneratedAudioOutput, RemoteAudioStatus,
+import {
+  audioJobRemoteSettled,
+  type AudioGenerationAdapter, type AudioGenerationRequest, type AudioJob,
+  type GeneratedAudioOutput, type RemoteAudioStatus,
 } from "../audio-services/contracts.js";
 import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
 import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
 import { AttachmentProcessingError } from "../attachments/contracts.js";
 import { createElevenLabsAudioAdapter } from "../audio-services/elevenlabs.js";
+import { createSunoPlatformAudioAdapter } from "../audio-services/suno-platform.js";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
 import { createSunoAudioAdapter } from "../audio-services/suno.js";
 import { createHostAbortController, throwIfAborted, waitForPromiseWithSignal } from "../runtime/host.js";
@@ -19,6 +21,7 @@ import { acquireAudioJob, boundedAudioMessage, reconcileLocalAudioJob, safeAudio
 import { audioConnectionFingerprint, resolveAudioService, type RuntimeAudioServiceConnection } from "./audio-service-connections.js";
 import type { AudioProcessingContext } from "./audio-processing.js";
 import { providerFetchForStorage } from "./provider-fetch.js";
+import { persistRotatedSunoSession } from "./suno-session-manager.js";
 
 function generationAdapter(
   context: AudioProcessingContext, settings: RuntimeAudioServiceConnection, authorizeDownloads = false,
@@ -33,6 +36,11 @@ function generationAdapter(
       ...(settings.modelId ? { modelId: settings.modelId } : {}),
     });
   }
+  if (settings.provider === "suno-platform") {
+    return createSunoPlatformAudioAdapter(settings.apiKey, {
+      fetchImpl: providerFetchForStorage(context.storageDirectory),
+    });
+  }
   if (settings.provider === "sunoapi" && settings.callbackUrl) {
     return createSunoApiAudioAdapter(settings.apiKey, {
       fetchImpl: providerFetchForStorage(context.storageDirectory), callbackUrl: settings.callbackUrl,
@@ -43,6 +51,9 @@ function generationAdapter(
     return createSunoAudioAdapter(settings.sunoSession, {
       fetchImpl: providerFetchForStorage(context.storageDirectory),
       authorizeDownloads,
+      onSessionRefresh: (previous, next, signal) => persistRotatedSunoSession(
+        context.storageDirectory, settings.id, settings.sunoSession!.accountId, previous, next, signal,
+      ),
       ...(settings.modelId ? { modelId: settings.modelId } : {}),
     });
   }
@@ -56,12 +67,25 @@ export async function generateAudio(
   const settings = await resolveAudioService(context.storageDirectory, serviceId, request.operation, context.admittedConnections);
   if ((request.operation === "generate_music" || request.operation === "extend_music") && request.options &&
     !AUDIO_SERVICE_CAPABILITIES[settings.provider].customMusic) throw new Error("This service does not support custom music parameters.");
+  if ((request.operation === "generate_music" || request.operation === "extend_music") && request.options &&
+    Object.keys(request.options).some((field) => field !== "mode" &&
+      !AUDIO_SERVICE_CAPABILITIES[settings.provider].customMusicOptions?.includes(field as never))) {
+    throw new Error("This service does not support one or more custom music parameters.");
+  }
+  if ((request.operation === "generate_music" || request.operation === "extend_music") && request.options &&
+    AUDIO_SERVICE_CAPABILITIES[settings.provider].requiredCustomMusicOptions?.some((field) => request.options?.[field] === undefined)) {
+    throw new Error("This service requires another custom music parameter.");
+  }
   if (request.operation === "generate_music" && exceedsAudioPromptLimit(request.prompt, AUDIO_SERVICE_CAPABILITIES[settings.provider].musicPromptCharacters)) {
     throw new Error("The music prompt exceeds this service's supported limit.");
   }
-  if (request.operation === "generate_music" && request.durationSeconds !== undefined &&
-    !AUDIO_SERVICE_CAPABILITIES[settings.provider].musicDuration) {
-    throw new Error("This service does not support an explicit music duration.");
+  if (request.operation === "generate_music" && request.durationSeconds !== undefined) {
+    const range = AUDIO_SERVICE_CAPABILITIES[settings.provider].musicDuration;
+    if (!range) throw new Error("This service does not support an explicit music duration.");
+    if (request.durationSeconds < range.minimumSeconds ||
+      request.durationSeconds > range.maximumSeconds) {
+      throw new Error("The music duration is outside this service's supported range.");
+    }
   }
   const adapter = generationAdapter(context, settings);
   if (settings.provider !== "suno") await assertAudioOutputCapacity(context.storageDirectory, context.sessionId,
@@ -106,7 +130,7 @@ export async function retrieveMusic(
       job = await loadAudioJob(context.storageDirectory, context.sessionId, job.id);
       if (job.status === "completed" || job.status === "cancelled") return job;
       job = await reconcileLocalAudioJob(context.storageDirectory, context.sessionId, job, context.signal);
-      if (job.status === "completed" || job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length) return job;
+      if (job.status === "completed" || audioJobRemoteSettled(job)) return job;
       await resolveAudioService(context.storageDirectory, serviceId, "retrieve_music", [settings]);
       return await runGeneration(context, job, settings, generationAdapter(context, settings));
     } finally { release(); }
@@ -114,7 +138,7 @@ export async function retrieveMusic(
 }
 
 export async function resumeAudioGeneration(context: AudioProcessingContext, job: AudioJob): Promise<AudioJob> {
-  if (job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length) return job;
+  if (audioJobRemoteSettled(job)) return job;
   const settings = await resolveAudioService(context.storageDirectory, job.serviceId, job.operation);
   if (settings.provider !== job.provider || audioConnectionFingerprint(settings) !== job.connectionFingerprint) {
     throw new Error("This audio job belongs to a different service connection. Restore that connection to retrieve it.");
@@ -149,16 +173,16 @@ export async function downloadAudioOutput(
     try {
       await assertAudioOutputCapacity(context.storageDirectory, context.sessionId, 1);
       await context.onProgress?.("Downloading the selected Suno song");
-      await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
+      const currentSettings = await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
       throwIfAborted(context.signal);
-      const adapter = generationAdapter(context, settings, true);
+      const adapter = generationAdapter(context, currentSettings, true);
       if (!adapter.downloadSelected) throw new Error("This service cannot download the selected output.");
       await update({ status: "collecting", message: "Downloading the selected Suno song." });
       throwIfAborted(context.signal);
       const bytes = await adapter.downloadSelected(selected, context.signal, (signal, authorize) => {
         if (!context.withDownloadAuthorization) throw new Error("Download authorization requires the connection lifecycle fence.");
         return context.withDownloadAuthorization(signal, async () => {
-          await resolveAudioService(context.storageDirectory, settings.id, job.operation, [settings]);
+          await resolveAudioService(context.storageDirectory, currentSettings.id, job.operation, [currentSettings]);
           throwIfAborted(signal);
           // The provider calls this only at the actual allowance boundary. Keep
           // token minting and the complete POST inside the same settings lease.
@@ -173,7 +197,7 @@ export async function downloadAudioOutput(
       const outputAssets = [...job.outputAssets, asset];
       const complete = job.expectedOutputs!.every((entry) => outputAssets.some((saved) => saved.role === entry.role));
       await retryLocalCommit(() => update({ outputAssets, status: complete ? "completed" : "partial",
-        message: "Selected audio is saved. Importing it into Live is a separate scoped Apply operation." }));
+        message: `Selected audio is saved. Importing it into Live is a separate scoped Apply operation.${job.failedOutputKeys?.length ? " One or more confirmed sibling outputs failed to generate." : ""}` }));
     } catch (error) {
       await update({ status: job.outputAssets.length ? "partial" : "ready",
         message: context.signal.aborted
@@ -261,7 +285,8 @@ async function runGeneration(
       throwIfAborted(context.signal);
       const remote = await adapter.inspect(acceptedTaskId, context.signal, acceptedOutputs);
       if (remote.status === "failed" || remote.status === "cancelled") {
-        await update({ status: job.remoteOutputs?.length ? job.outputAssets.length ? "partial" : "ready"
+        await update({ remoteTaskTerminal: remote.status,
+          status: job.remoteOutputs?.length ? job.outputAssets.length ? "partial" : "ready"
           : remote.status === "cancelled" ? "cancelled" : job.outputAssets.length ? "partial" : "failed",
           message: remote.status === "failed" ? remote.message : "The audio service confirmed cancellation." });
         return job;
@@ -275,6 +300,7 @@ async function runGeneration(
           const successful = new Set([...job.remoteOutputs ?? [], ...remote.outputs].map((output) => output.key));
           const remoteOutputs = expectedOutputs.filter((output) => successful.has(output.key));
           await retryLocalCommit(() => update({ expectedOutputs, remoteOutputs,
+            ...(failed.length ? { failedOutputKeys: failed } : {}),
             status: job.outputAssets.length ? "partial" : remoteOutputs.length ? "ready" : "failed",
             message: remoteOutputs.length
               ? `Suno audio is ready. Open this job's Preview action for the Suno online player. Use the selected output's Download action and confirm to save its file before importing into Live.${failed.length ? " Some confirmed outputs failed to generate." : ""}`
@@ -282,7 +308,8 @@ async function runGeneration(
           throwIfAborted(context.signal);
           return job;
         }
-        await retryLocalCommit(() => update({ status: "collecting", expectedOutputs }));
+        await retryLocalCommit(() => update({ status: "collecting", expectedOutputs,
+          ...(failed.length ? { failedOutputKeys: failed } : {}) }));
         const failures: string[] = failed.length ? ["The service failed to generate one or more confirmed outputs."] : [];
         for (const output of remote.outputs) {
           if (job.outputAssets.some((asset) => asset.role === output.role)) continue;

@@ -6,6 +6,7 @@ import { loadAgentSettings } from "../storage/settings.js";
 import { SunoSessions } from "../storage/suno-sessions.js";
 import type { SunoModelCatalogView } from "../ui/chat-state.js";
 import { ChatBridgeConflictError } from "./chat-bridge.js";
+import { persistRotatedSunoSession } from "./suno-session-manager.js";
 
 /** One dialog-owned catalog. Neither credentials nor catalog results are persisted. */
 export class SunoModelCatalog {
@@ -31,7 +32,10 @@ export class SunoModelCatalog {
     this.entry = entry;
     try {
       const catalog = await waitForPromiseWithSignal(
-        this.read(owner.session, { query: "catalog" }, signal, this.providerFetch), signal,
+        this.read(owner.session, { query: "catalog" }, signal, this.providerFetch,
+          (previous, next, refreshSignal) => persistRotatedSunoSession(
+            this.storageDirectory, serviceId, owner.session.accountId, previous, next, refreshSignal,
+          )), signal,
       );
       throwIfAborted(signal);
       const current = await this.owner(serviceId);
@@ -84,10 +88,10 @@ export class SunoModelCatalog {
       const session = await new SunoSessions(this.storageDirectory).load(serviceId, transaction);
       if (!session) throw new ChatBridgeConflictError("Import a Suno session for this connection before loading models.");
       const revision = settings.audioServices!.revision;
-      // Catalog ownership is the saved account credential, not editor metadata
-      // or generation preferences. Revision is projected only after revalidation.
+      // Automatic Clerk rotation is not a new catalog owner. Explicit auth
+      // commands still clear the dialog catalog before changing this record.
       const fingerprint = createHash("sha256").update(JSON.stringify([
-        connection.id, connection.provider, session.accountId, session.clientToken,
+        connection.id, connection.provider, session.accountId,
       ])).digest("hex");
       return { session, revision, fingerprint };
     });

@@ -1,4 +1,4 @@
-import { createSunoHttp } from "./suno-http.js";
+import { createSunoHttp, type SunoSessionRefreshHandler } from "./suno-http.js";
 
 type SunoHttp = ReturnType<typeof createSunoHttp>;
 export type SunoSession = { clientToken: string; accountId: string };
@@ -16,6 +16,7 @@ export interface SunoMusicModel {
   name: string;
   canUse?: boolean;
   isDefault?: boolean;
+  supportsDuration?: boolean;
   maxLengths: Partial<Record<LimitField, number>>;
 }
 
@@ -75,10 +76,16 @@ export async function readSunoCatalog(http: SunoHttp, session: SunoSession, sign
       }
       maxLengths[key] = value;
     }
+    const majorVersion = model.major_version;
+    if (majorVersion !== undefined &&
+      (typeof majorVersion !== "number" || !Number.isSafeInteger(majorVersion) || majorVersion < 0 || majorVersion > 100)) {
+      throw http.fail("invalid catalog model major version.");
+    }
     return {
       id: model.external_key, name: display(model.name, session.clientToken, 160),
       ...(typeof model.can_use === "boolean" ? { canUse: model.can_use } : {}),
       ...(typeof model.is_default_model === "boolean" ? { isDefault: model.is_default_model } : {}), maxLengths,
+      ...(typeof majorVersion === "number" ? { supportsDuration: majorVersion >= 6 } : {}),
     };
   });
   if (new Set(models.map((model) => model.id)).size !== models.length) throw http.fail("duplicate catalog model identifier.");
@@ -124,8 +131,9 @@ function projectClip(value: unknown, session: SunoSession, http: SunoHttp) {
 /** One bounded read; no pagination loop, generation, or inferred ownership. */
 export async function readSunoMusicService(
   session: SunoSession, request: SunoMusicServiceRequest, signal: AbortSignal, fetchImpl?: typeof fetch,
+  onSessionRefresh?: SunoSessionRefreshHandler,
 ) {
-  const http = createSunoHttp(session, fetchImpl);
+  const http = createSunoHttp(session, fetchImpl, onSessionRefresh);
   sunoActive(signal, http);
   const input = sunoObject(request, http);
   const fields = request.query === "library" ? ["query", "search", "cursor"]

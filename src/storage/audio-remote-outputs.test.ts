@@ -13,19 +13,33 @@ const input = { provider: "suno" as const, serviceId: "website", operation: "gen
 test("remote success subset survives storage and projects only independent key/role copies", async (t) => {
   const h = await audioStorageHarness(t, input);
   const job = await updateAudioJob(h.storage, h.session.id, h.job.id, {
-    remoteTaskId: first, expectedOutputs, remoteOutputs: [expectedOutputs[1]!], status: "ready",
+    remoteTaskId: first, expectedOutputs, remoteOutputs: [expectedOutputs[1]!],
+    failedOutputKeys: [first], status: "ready",
   });
   const saved = await loadAudioJob(h.storage, h.session.id, job.id);
   assert.equal(saved.status, "ready");
   assert.deepEqual(saved.outputAssets, []);
   assert.deepEqual(saved.remoteOutputs, [expectedOutputs[1]]);
+  assert.deepEqual(saved.failedOutputKeys, [first]);
   const view = audioJobView(saved);
   assert.deepEqual(view.remoteOutputs, saved.remoteOutputs);
   assert.deepEqual(Object.keys(view.remoteOutputs![0]!).sort(), ["key", "role"]);
   view.remoteOutputs![0]!.key = first;
   assert.equal(saved.remoteOutputs![0]!.key, second);
   assert.equal(Object.hasOwn(view, "expectedOutputs"), false);
+  assert.equal(Object.hasOwn(view, "failedOutputKeys"), false);
+  assert.equal(view.resumable, false);
   assert.equal(Object.hasOwn(view, "connectionFingerprint"), false);
+});
+
+test("task-level cancellation is immutable terminal state even when a successful preview remains", async (t) => {
+  const h = await audioStorageHarness(t, input);
+  const job = await updateAudioJob(h.storage, h.session.id, h.job.id, {
+    remoteTaskId: first, expectedOutputs, remoteOutputs: [expectedOutputs[0]!],
+    remoteTaskTerminal: "cancelled", status: "ready",
+  });
+  assert.equal(audioJobView(job).resumable, false);
+  await assert.rejects(updateAudioJob(h.storage, h.session.id, job.id, { remoteTaskTerminal: "failed" }), AudioStorageError);
 });
 
 test("remote readiness rejects orphan, duplicate, noncanonical, wrong-role and URL identities on write and read", async (t) => {
@@ -49,6 +63,11 @@ test("remote readiness rejects orphan, duplicate, noncanonical, wrong-role and U
     { ...valid, remoteTaskId: second, remoteOutputs: [expectedOutputs[0]] },
     { ...valid, provider: "sunoapi", remoteOutputs: [expectedOutputs[0]] },
     { ...valid, expectedOutputs: [{ key: "opaque", role: "music" }], remoteOutputs: [{ key: "opaque", role: "music" }] },
+    { ...valid, failedOutputKeys: [first, first] },
+    { ...valid, remoteOutputs: [expectedOutputs[0]], failedOutputKeys: [first] },
+    { ...valid, failedOutputKeys: ["cccccccc-3333-4333-8333-333333333333"] },
+    { ...valid, remoteTaskTerminal: "done" },
+    { ...valid, remoteTaskId: undefined, remoteTaskTerminal: "failed" },
   ]) {
     await overwriteJson(target, invalid);
     await assert.rejects(loadAudioJob(h.storage, h.session.id, h.job.id), AudioStorageError);

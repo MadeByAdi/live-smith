@@ -35,18 +35,20 @@ test("ready survives reopening, retrieval reuse and Resume with no implicit down
   assert.deepEqual(h.calls, { prepare: 0, submit: 0, inspect: 1, downloads: [] });
 });
 
-test("mixed remote success retains previews even when a later poll fails", async (t) => {
+test("mixed remote success and a confirmed failed sibling are terminal without another poll", async (t) => {
   const h = await retrievalHarness(t);
   h.mode.failed.add(clipIds[0]!);
   const job = await retrieveMusic(h.context, connection.id, clipIds);
   assert.equal(job.status, "ready");
   assert.deepEqual(job.remoteOutputs, [manifest[1]]);
   assert.deepEqual(job.outputAssets, []);
-  assert.equal((await audioJobViews(h.directory, h.session.id))[0]!.resumable, true);
+  assert.equal((await audioJobViews(h.directory, h.session.id))[0]!.resumable, false);
+  const inspections = h.calls.inspect;
   h.adapter.inspect = async () => ({ status: "failed", message: "Remote unavailable." });
   const retried = await resumeAudioJob(h.context, job.id);
   assert.equal(retried.status, "ready");
   assert.deepEqual(retried.remoteOutputs, job.remoteOutputs);
+  assert.equal(h.calls.inspect, inspections);
   assert.deepEqual(h.calls.downloads, []);
 });
 

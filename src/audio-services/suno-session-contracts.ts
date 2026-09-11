@@ -5,8 +5,8 @@ export interface SunoSessionIdentity {
 }
 
 export type SunoSessionVerifier = (
-  clientToken: string, signal: AbortSignal,
-) => Promise<SunoSessionIdentity>;
+  sessionValue: string, signal: AbortSignal,
+) => Promise<SunoSessionIdentity & { sessionValue?: string }>;
 
 export interface SunoAccountView {
   serviceId: string;

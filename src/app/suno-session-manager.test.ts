@@ -7,10 +7,10 @@ import { createHostAbortController } from "../runtime/host.js";
 import { isStorageCommitOutcomeUnknownError, StorageCommitOutcomeUnknownError, withStorageTransaction } from "../storage/persistence.js";
 import { loadAgentSettings, saveGlobalSettings } from "../storage/settings.js";
 import { SunoSessions, SunoSessionStorageError } from "../storage/suno-sessions.js";
-import { SunoSessionManager } from "./suno-session-manager.js";
+import { persistRotatedSunoSession, SunoSessionManager } from "./suno-session-manager.js";
 
-const token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGlj";
-const replacement = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXBsYWNlbWVudCJ9.c3ludGhldGlj";
+const token = "__client=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGlj";
+const replacement = "__client=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyZXBsYWNlbWVudCJ9.c3ludGhldGlj";
 const connection = { id: "suno-one", name: "Suno", provider: "suno" as const, enabled: false, apiKey: "" };
 async function harness(t: TestContext) {
   const directory = await fs.mkdtemp("/private/tmp/live-smith-suno-session-manager-");
@@ -31,13 +31,33 @@ test("views never fetch; disk-only evidence is saved and live verification is sh
   await new SunoSessions(h.directory).save(connection.id, { clientToken: token, accountId: "user_fixture", accountName: "Fixture" });
   assert.deepEqual(await h.manager.views([connection]), [{ serviceId: connection.id, status: "saved", accountId: "user_fixture", accountName: "Fixture" }]);
   assert.equal(h.calls.length, 0);
-  await h.manager.importSession(connection.id, `__client=${token}`, h.signal);
+  await h.manager.importSession(connection.id, token, h.signal);
   assert.deepEqual(h.calls, [token]);
   assert.deepEqual(await h.manager.views([connection]), [{ serviceId: connection.id, status: "signed_in", accountId: "user_fixture", accountName: "Fixture" }]);
   const peer = new SunoSessionManager(h.directory, h.verify);
   assert.deepEqual(await peer.views([connection]), [{ serviceId: connection.id, status: "signed_in", accountId: "user_fixture", accountName: "Fixture" }]);
   assert.equal(h.calls.length, 1);
   assert.ok(!JSON.stringify(await loadAgentSettings(h.directory)).includes(token));
+});
+
+test("verified Cookie rotation persists atomically without overwriting a concurrent reimport", async (t) => {
+  const h = await harness(t);
+  const store = new SunoSessions(h.directory);
+  await store.save(connection.id, { clientToken: token, accountId: "user_fixture", accountName: "Fixture" });
+  await persistRotatedSunoSession(h.directory, connection.id, "user_fixture", token, replacement, h.signal);
+  assert.equal((await store.load(connection.id))?.clientToken, replacement);
+  assert.equal((await h.manager.views([connection]))[0]?.status, "signed_in");
+
+  const concurrent = "__client=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjb25jdXJyZW50In0.c3ludGhldGlj";
+  await store.save(connection.id, { clientToken: concurrent, accountId: "user_fixture", accountName: "Fixture" });
+  await persistRotatedSunoSession(h.directory, connection.id, "user_fixture", token, replacement, h.signal);
+  assert.equal((await store.load(connection.id))?.clientToken, concurrent);
+
+  await store.save(connection.id, { clientToken: concurrent, accountId: "user_other" });
+  await assert.rejects(
+    persistRotatedSunoSession(h.directory, connection.id, "user_fixture", concurrent, replacement, h.signal),
+  );
+  assert.equal((await store.load(connection.id))?.accountId, "user_other");
 });
 
 test("import and refresh require the exact saved Suno owner before contacting the verifier", async (t) => {

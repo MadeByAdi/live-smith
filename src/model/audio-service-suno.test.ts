@@ -27,6 +27,7 @@ const single = [MANIFEST[0]!];
 const signal = () => createHostAbortController().signal;
 function model(overrides: Record<string, unknown> = {}) {
   return { external_key: MODEL, name: "Music model", can_use: true, is_default_model: true,
+    major_version: 6,
     max_lengths: { prompt: 5000, gpt_description_prompt: 1000, title: 160, tags: 1000, negative_tags: 1000 }, ...overrides };
 }
 function catalog(models: unknown[] = [model()], extra: Record<string, unknown> = {}) {
@@ -122,14 +123,25 @@ test("prepare selects the catalog default, gates once, and submit sends the comp
     continued_aligned_prompt: null, continue_at: null, transaction_uuid: body.transaction_uuid,
   });
   assert.deepEqual(h.api()[1]!.body, { ctype: "generation" });
+  let deviceId: string | undefined;
   for (const entry of h.api()) {
     assert.equal(entry.init.redirect, "error");
     assert.equal(entry.init.credentials, "omit");
     assert.equal(entry.init.referrerPolicy, "no-referrer");
-    assert.deepEqual(Object.fromEntries(entry.headers), {
+    const headers = Object.fromEntries(entry.headers);
+    const currentDeviceId = headers["device-id"]!;
+    assert.match(currentDeviceId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+    deviceId ??= currentDeviceId;
+    assert.equal(currentDeviceId, deviceId);
+    assert.deepEqual(headers, {
       accept: "application/json", authorization: `Bearer ${h.jwt}`,
+      "browser-token": headers["browser-token"], "device-id": currentDeviceId,
+      origin: "https://suno.com", referer: "https://suno.com/",
       ...(entry.init.method === "POST" ? { "content-type": "application/json" } : {}),
     });
+    const browser = JSON.parse(headers["browser-token"]!);
+    assert.match(browser.token, /^[A-Za-z0-9_-]+$/u);
+    assert.equal(typeof JSON.parse(Buffer.from(browser.token, "base64url").toString()).timestamp, "number");
   }
   h.done();
 });
@@ -141,8 +153,9 @@ test("custom fields, percent sliders and exact existing persona are preserved wi
     { path: `/api/persona/get-persona-paginated/${C}/?page=0`, value: { persona: { id: C, name: "Singer" } } },
     gateStep(), submitStep(receipt([A])),
   ], chosen);
-  const request: AudioGenerationRequest = { operation: "generate_music", prompt: "[Verse]\nSing this", instrumental: false,
-    options: { mode: "custom", title: "New song", styles: "folk", negativeStyles: "drums", weirdness: 25, styleInfluence: 80, personaId: C } };
+  const request: AudioGenerationRequest = { operation: "generate_music", prompt: "[Verse]\nSing this", durationSeconds: 120,
+    instrumental: false, options: { mode: "custom", title: "New song", styles: "folk", negativeStyles: "drums",
+      weirdness: 25, styleInfluence: 80, vocalGender: "female", personaId: C } };
   assert.deepEqual(await preparedSubmit(h, request), { kind: "task", taskId: A, expectedOutputs: single });
   const body = h.api().at(-1)!.body as Record<string, unknown>;
   assert.equal(body.mv, chosen);
@@ -153,7 +166,9 @@ test("custom fields, percent sliders and exact existing persona are preserved wi
   assert.equal(body.negative_tags, "drums");
   assert.equal(body.persona_id, C);
   assert.equal(body.make_instrumental, false);
+  assert.equal(body.duration, 120);
   assert.deepEqual((body.metadata as Record<string, unknown>).control_sliders, { weirdness_constraint: 0.25, style_weight: 0.8 });
+  assert.equal((body.metadata as Record<string, unknown>).vocal_gender, "f");
   assert.equal((body.metadata as Record<string, unknown>).create_mode, "custom");
   h.done();
 });
@@ -172,12 +187,14 @@ test("empty lyrics are accepted for instrumental custom requests and implicitly 
 });
 
 test("local operation and option validation precedes any authentication or paid request", async () => {
-  const invalid: unknown[] = [null, {}, { ...MUSIC, durationSeconds: 30 }, { ...MUSIC, instrumental: "true" },
+  const invalid: unknown[] = [null, {}, { ...MUSIC, durationSeconds: 9 }, { ...MUSIC, durationSeconds: 481 },
+    { ...MUSIC, durationSeconds: NaN }, { ...MUSIC, instrumental: "true" },
     { ...MUSIC, operation: "generate_sound_effect", durationSeconds: 3, loop: true },
     { ...MUSIC, operation: "cover" }, { ...MUSIC, prompt: 2 }, { ...MUSIC, prompt: "🎵".repeat(5001) },
     { ...MUSIC, prompt: "x".repeat(3001) }, { ...MUSIC, prompt: "nul\0byte" },
     ...[null, {}, { mode: "simple" }, { mode: "custom", audioInfluence: 10 }, { mode: "custom", vocal_gender: "m" },
-      { mode: "custom", title: 2 }, { mode: "custom", title: "x".repeat(81) }, { mode: "custom", styles: "x".repeat(1001) },
+      { mode: "custom", vocalGender: "unspecified" },
+      { mode: "custom", title: 2 }, { mode: "custom", title: "x".repeat(101) }, { mode: "custom", styles: "x".repeat(1001) },
       ...["title", "styles", "negativeStyles"].map((key) => ({ mode: "custom", [key]: "nul\0byte" })),
       { mode: "custom", personaId: A.toUpperCase().replace("000000000001", "00000000000A") },
       ...[-1, 101, NaN, Infinity, null, "1"].flatMap((value) => [
@@ -185,6 +202,8 @@ test("local operation and option validation precedes any authentication or paid 
       ])].map((options) => ({ ...MUSIC, options })),
     { operation: "get_whole_song", clipId: "../../" }, { operation: "get_whole_song", clipId: A, prompt: "x" },
     ...[-1, NaN, Infinity, "1"].map((startSeconds) => ({ ...MUSIC, operation: "extend_music", clipId: A, startSeconds })),
+    { operation: "extend_music", clipId: A, startSeconds: 1, prompt: "Continue", instrumental: false,
+      options: { mode: "custom", personaId: C } },
   ];
   const h = replay();
   for (const request of invalid) await safeFailure(h.adapter.prepare!(request as AudioGenerationRequest, signal()));
@@ -202,6 +221,15 @@ test("unknown, unusable, duplicate and ambiguous model selections fail before CA
     await safeFailure(h.adapter.prepare!({ ...MUSIC }, signal()));
     assert.equal(h.api().length, 1);
   }
+});
+
+test("requested duration requires current catalog model support", async () => {
+  const supported = replay([accountStep(), gateStep(), submitStep()]);
+  await preparedSubmit(supported, { ...MUSIC, durationSeconds: 10 });
+  assert.equal((supported.api().at(-1)!.body as Record<string, unknown>).duration, 10);
+  const unsupported = replay([accountStep(catalog([model({ major_version: 5 })]))]);
+  await safeFailure(unsupported.adapter.prepare!({ ...MUSIC, durationSeconds: 10 }, signal()));
+  assert.equal(unsupported.api().length, 1);
 });
 
 test("catalog character limits count code points and map description versus custom lyrics correctly", async () => {
@@ -238,9 +266,9 @@ test("only explicit required false passes CAPTCHA and unknown/failed checks cann
   }
 });
 
-test("required human verification describes the website-to-preview handoff without submitting", async () => {
+test("required human verification describes the website file handoff without submitting", async () => {
   const h = replay([accountStep(), gateStep({ required: true, captcha_version: 2 })]);
-  await safeFailure(h.adapter.prepare!({ ...MUSIC }, signal()), /No generation was submitted\. Complete verification and generate on Suno\.com, then use Retrieve existing Suno songs in Audio tools to preview them\./);
+  await safeFailure(h.adapter.prepare!({ ...MUSIC }, signal()), /No generation was submitted\. Complete verification and generation on Suno\.com, then drag or paste the downloaded WAV or MP3 into Live Smith\./);
   assert.deepEqual(h.api().map(entry => entry.path), ["/api/billing/info/", "/api/c/check"]);
 });
 
@@ -307,8 +335,10 @@ test("extend observes the exact completed source and sends seconds plus custom c
   assert.equal(body.continue_at, 12.5);
   assert.equal(body.make_instrumental, false);
   assert.equal(body.prompt, "[Chorus]");
-  assert.equal(body.task, undefined);
+  assert.equal(body.task, "extend");
   assert.equal((body.metadata as Record<string, unknown>).create_mode, "custom");
+  assert.equal((body.metadata as Record<string, unknown>).is_remix, true);
+  assert.equal((body.metadata as Record<string, unknown>).lyrics_updated, false);
 });
 
 test("extend rejects absent, mismatched, duplicate, unfinished and invalid-duration sources before submit", async () => {
@@ -321,10 +351,16 @@ test("extend rejects absent, mismatched, duplicate, unfinished and invalid-durat
 });
 
 test("get whole song acknowledges a single clip and does not read a generation model catalog", async () => {
-  const h = replay([pollStep([clip(C)], C), gateStep(),
+  const h = replay([pollStep([clip(C, "complete", { metadata: { duration: 30, task: "extend" } })], C), gateStep(),
     { path: "/api/generate/concat/v2/", value: clip(A, "submitted") }]);
   assert.deepEqual(await preparedSubmit(h, { operation: "get_whole_song", clipId: C }), { kind: "task", taskId: A, expectedOutputs: single });
   assert.deepEqual(h.api().at(-1)!.body, { clip_id: C });
+});
+
+test("get whole song rejects a completed clip without extension lineage before submission", async () => {
+  const h = replay([pollStep([clip(C)], C)]);
+  await safeFailure(h.adapter.prepare!({ operation: "get_whole_song", clipId: C }, signal()));
+  assert.equal(h.api().length, 1);
 });
 
 test("submission receipts require one or two unique canonical UUIDs and never reflect remote messages", async () => {
@@ -515,7 +551,7 @@ test("MP3 preparation waits for its existing file without submitting generation 
   h.done();
 });
 
-test("download preparation honors cancellation and an overall deadline without leaking reasons", async (t) => {
+test("download preparation honors cancellation and its API deadline without leaking reasons", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] }); syncBuiltinESMExports();
   t.after(() => { t.mock.timers.reset(); syncBuiltinESMExports(); });
   for (const mode of ["stop", "deadline"]) {
@@ -529,7 +565,7 @@ test("download preparation honors cancellation and an overall deadline without l
     await started.promise;
     if (mode === "stop") controller.abort(new Error(clientToken));
     else t.mock.timers.tick(120_000);
-    await safeFailure(pending, mode === "stop" ? /cancelled/ : /download timed out/);
+    await safeFailure(pending, mode === "stop" ? /cancelled/ : /request timed out/);
     assert.equal(h.api().length, 2);
     assert.equal(h.api().at(-1)!.init.signal?.aborted, true);
     assert.equal(getEventListeners(controller.signal, "abort").length, 0);
@@ -555,6 +591,7 @@ test("catalog projection keeps bounded model evidence and omits account metadata
   assert.equal(result.query, "catalog");
   if (result.query !== "catalog") return;
   assert.deepEqual(result.models[0]?.maxLengths, model().max_lengths);
+  assert.equal(result.models[0]?.supportsDuration, true);
   assert.equal(result.models[0]?.canUse, true);
   assert.equal(result.models[0]?.id, MODEL);
   assert.equal(result.creditsLeft, 123);

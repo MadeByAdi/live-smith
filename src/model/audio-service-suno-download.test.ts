@@ -39,7 +39,7 @@ const media = (): Step => ({ path: MEDIA, run: () => new Response(new Uint8Array
 function replay(steps: Step[], authorizeDownloads?: boolean) {
   const calls: Array<{ path: string; init: RequestInit }> = [];
   const pending = [...steps];
-  const jwt = token({ sub: session.accountId, sid: "sess_fixture", exp: Math.floor(Date.now() / 1000) + 600 });
+  const jwt = token({ sub: session.accountId, sid: "sess_fixture", exp: Math.floor(Date.now() / 1000) + 3600 });
   const fetchImpl: typeof fetch = async (url, init = {}) => {
     const path = String(url).startsWith(API) ? String(url).slice(API.length) : String(url);
     calls.push({ path, init });
@@ -250,7 +250,7 @@ test("selected-output collection accepts only key/role and verifies the exact co
   h.done();
 });
 
-test("Stop and the single 120-second deadline bound every download stage without reauthorizing", async (t) => {
+test("Stop, two-minute API deadlines and the ten-minute download deadline never reauthorize", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] }); syncBuiltinESMExports();
   t.after(() => { t.mock.timers.reset(); syncBuiltinESMExports(); });
   for (const mode of ["stop", "deadline"]) for (let stage = 0; stage < 5; stage++) {
@@ -268,13 +268,15 @@ test("Stop and the single 120-second deadline bound every download stage without
     const requestSignal = h.calls.at(-1)!.init.signal;
     if (mode === "stop") controller.abort(new Error(session.clientToken));
     else {
-      t.mock.timers.tick(120_000 - stage * 20_000 - 1);
+      const remaining = stage === 4 ? 600_000 - stage * 20_000 : 120_000;
+      t.mock.timers.tick(remaining - 1);
       assert.equal(requestSignal?.aborted, false);
       t.mock.timers.tick(1);
     }
     await assert.rejects(pending, error => {
       safeFailure(error);
-      assert.match((error as Error).message, mode === "stop" ? /cancelled/u : /download timed out.*Retry Download for this song/u);
+      assert.match((error as Error).message, mode === "stop" ? /cancelled/u : stage === 4
+        ? /download timed out.*Retry Download for this song/u : /request timed out/u);
       if (mode === "stop") assert.equal((error as Error).name, "AbortError");
       return true;
     });
@@ -330,7 +332,7 @@ test("Stop and timeout require full authorization receipt EOF and bound stalled 
     const pending = h.adapter.download!(output, controller.signal);
     await reading.promise;
     if (mode === "stop") controller.abort(new Error(session.clientToken));
-    else t.mock.timers.tick(120_000);
+    else t.mock.timers.tick(transfer ? 600_000 : 120_000);
     await assert.rejects(pending, safeFailure);
     assert.equal(cancels, 1);
     assert.equal(h.api().filter(call => call.init.method === "POST").length, 1);
