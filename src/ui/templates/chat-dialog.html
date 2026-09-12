@@ -140,16 +140,10 @@
         stroke-width: 1.7;
       }
 
-      .settings-button[aria-expanded="true"] {
+      .header-tool-button[aria-expanded="true"] {
         color: var(--accent);
-        border-color: rgba(255, 159, 26, 0.55);
-        background: var(--accent-soft);
-      }
-
-      .sessions-toggle-button[aria-expanded="true"] {
-        color: var(--accent);
-        border-color: rgba(255, 159, 26, 0.55);
-        background: var(--accent-soft);
+        border-color: var(--line-hover);
+        background: var(--surface-hover);
       }
 
       main {
@@ -160,16 +154,8 @@
         overflow: hidden;
       }
 
-      .app.inspector-open main {
-        grid-template-columns: var(--sessions-pane-width) minmax(0, 1fr) var(--inspector-pane-width);
-      }
-
       .app.sessions-collapsed main {
         grid-template-columns: minmax(0, 1fr);
-      }
-
-      .app.sessions-collapsed.inspector-open main {
-        grid-template-columns: minmax(0, 1fr) var(--inspector-pane-width);
       }
 
       .sessions-pane,
@@ -191,7 +177,17 @@
       }
 
       .inspector-pane {
+        position: absolute;
+        z-index: 30;
+        inset: 0 0 0 auto;
+        width: min(var(--inspector-pane-width), calc(100% - var(--sessions-pane-width)));
+        border-left: 1px solid var(--line);
         border-right: 0;
+        box-shadow: -12px 0 24px rgba(0, 0, 0, 0.32);
+      }
+
+      .app.sessions-collapsed .inspector-pane {
+        width: min(var(--inspector-pane-width), 100%);
       }
 
       .pane-header {
@@ -1324,9 +1320,10 @@
         content: attr(data-tooltip);
         position: absolute;
         z-index: 20;
+        box-sizing: border-box;
         top: calc(100% + 7px);
-        right: -5px;
-        width: 250px;
+        right: 0;
+        width: min(250px, 100%);
         max-width: calc(100vw - 32px);
         padding: 7px 9px;
         border: 1px solid var(--line-soft);
@@ -1693,8 +1690,7 @@
         padding: 5px 10px 0;
         text-align: left;
         background: var(--field);
-        border: 1px solid var(--composer-border, var(--line-soft));
-        border-bottom: 0;
+        border: 0;
         border-radius: 9px 9px 0 0;
         font-size: 11px;
         line-height: 16px;
@@ -1765,6 +1761,9 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         min-width: 0;
+        background: var(--field);
+        border: 1px solid var(--composer-border);
+        border-radius: 9px;
       }
 
       .composer-surface:focus-within {
@@ -1833,14 +1832,12 @@
         max-height: min(160px, 24vh);
         padding: 8px 10px;
         overflow-y: auto;
-        border-color: var(--composer-border);
-        border-bottom-color: transparent;
+        border: 0;
         border-radius: 9px 9px 0 0;
         background: var(--field);
       }
 
       .composer-surface:has(.live-context-summary:not([hidden])) > textarea {
-        border-top-color: transparent;
         border-radius: 0;
       }
 
@@ -1854,8 +1851,7 @@
         min-width: 0;
         min-height: 42px;
         padding: 5px 7px;
-        border: 1px solid var(--composer-border);
-        border-top: 0;
+        border: 0;
         border-radius: 0 0 9px 9px;
         background: var(--field);
       }
@@ -1864,7 +1860,6 @@
       .composer-surface > textarea:focus-visible { outline: none; }
 
       .composer-surface > textarea:focus {
-        border-bottom-color: transparent;
         box-shadow: none;
       }
 
@@ -2402,6 +2397,7 @@
         min-height: 0;
         overflow-y: scroll;
         overscroll-behavior: contain;
+        scroll-padding-bottom: calc(var(--control-height) + var(--space-6));
       }
 
       .tab-panel[hidden] {
@@ -2500,12 +2496,14 @@
       .audio-job audio { display: block; width: 100%; margin-bottom: var(--space-2); }
       .audio-job h5 { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-small); font-weight: 500; }
       .audio-job [hidden] { display: none; }
-      .audio-remote-output, [data-audio-output] { flex: 1 1 240px; min-width: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-control); background: var(--field); }
+      .audio-remote-output, [data-audio-output] { flex: 1 1 240px; min-width: 0; padding: var(--space-3); border: 0; border-radius: var(--radius-control); background: var(--field); }
       .audio-remote-output iframe { display: block; width: 100%; height: 180px; margin-top: var(--space-2); border: 0; border-radius: var(--radius-control); }
       [data-download-local-audio] { font-size: var(--text-small); }
       #audioSettingsSection [hidden] { display: none; }
       #audioSettingsSection { gap: var(--space-2); }
+      #audioServiceFields:not([open]) + .audio-commit-actions { display: none; }
       .audio-settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+      .audio-settings-actions:not(.settings-peer-actions) { justify-content: flex-end; }
       .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: 0; }
       .audio-section-heading h3 { margin: 0; }
       .audio-service-list { display: grid; gap: var(--space-1); max-height: 230px; overflow-y: auto; overscroll-behavior: contain; }
@@ -2518,18 +2516,15 @@
       .audio-service-label small { display: block; margin-top: var(--space-1); color: var(--muted); font-size: var(--text-small); line-height: 1.4; overflow-wrap: anywhere; }
       .audio-service-status { flex: 0 0 auto; max-width: 118px; text-align: right; }
       .audio-connection-editor { margin-top: 0; }
-      .audio-connection-editor > summary { padding: 6px var(--space-2); cursor: pointer; border-radius: var(--radius-control); background: var(--pane-2); font-size: var(--text-label); font-weight: 600; overflow-wrap: anywhere; }
       .audio-editor-body { display: grid; gap: var(--space-2); padding-top: var(--space-2); }
       .audio-editor-body > * { margin-block: 0; }
       .audio-editor-body .field { margin: 0; }
       .audio-editor-body .field-hint { line-height: 1.4; }
       #sunoAccountName { overflow-wrap: anywhere; }
-      #sunoCookieHelp li + li { margin-top: var(--space-1); }
       .audio-model-options { margin-top: var(--space-1); }
       .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: var(--text-small); border-radius: var(--radius-control); }
       .audio-model-options > summary:hover { color: var(--text); background: rgba(255, 255, 255, 0.035); }
       .settings-disclosure > .field, .audio-model-options > .field { margin-block: var(--space-2); }
-      .settings-group { margin-top: var(--space-4); }
       .settings-subheading { font-size: var(--text-label); margin: 0 0 var(--space-2); font-weight: 600; }
       .settings-subheading-row .settings-subheading { margin: 0; }
       .connection-state { color: var(--muted); font-size: var(--text-label); margin: 0 0 var(--space-1); }
@@ -2538,10 +2533,7 @@
       .field-with-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; }
       .field-with-action button { padding-inline: var(--space-2); }
       #audioServiceModel { font-family: var(--font-code); }
-      .audio-maintenance { margin-top: var(--space-2); }
-      .audio-commit-actions { margin-top: var(--space-2); }
-      .audio-service-maintenance { margin-top: var(--space-2); }
-      .danger-action { color: var(--danger); background: transparent; border-color: transparent; }
+      .danger-action { color: var(--danger); }
       .audio-output-meta { color: var(--quiet); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
 
       .inspector-scope-header h2 {
@@ -2881,13 +2873,6 @@
         color: var(--quiet);
       }
 
-      .subscription-auth-actions {
-        display: grid;
-        grid-auto-columns: minmax(0, 1fr);
-        grid-auto-flow: column;
-        gap: 6px;
-      }
-
       .subscription-auth-actions button {
         align-self: stretch;
         width: 100%;
@@ -2948,7 +2933,6 @@
         align-items: center;
         column-gap: 12px;
         row-gap: 4px;
-        margin-top: 3px;
         color: var(--quiet);
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 9px;
@@ -2999,20 +2983,68 @@
         margin-top: 4px;
       }
 
+      .settings-switch {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .settings-switch > input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .settings-switch-track {
+        position: relative;
+        width: 28px;
+        height: 16px;
+        border-radius: 999px;
+        background: var(--line-hover);
+        transition: background-color 120ms ease;
+      }
+
+      .settings-switch-track::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--text);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        transition: transform 120ms ease;
+      }
+
+      .settings-switch > input:checked + .settings-switch-track {
+        background: var(--accent);
+      }
+
+      .settings-switch > input:checked + .settings-switch-track::after {
+        transform: translateX(12px);
+      }
+
+      .settings-switch > input:focus-visible + .settings-switch-track {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .settings-switch > input:disabled + .settings-switch-track {
+        opacity: 0.5;
+      }
+
       .hosted-tool-control {
         display: grid;
-        gap: 5px;
-        padding: 9px 10px;
-        background: rgba(255, 255, 255, 0.025);
-        border: 1px solid var(--line-soft);
-        border-radius: 6px;
+        gap: 2px;
       }
 
       .hosted-tool-toggle {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        align-items: start;
-        gap: 8px;
         color: var(--text);
         font-size: 11px;
         line-height: 1.35;
@@ -3020,21 +3052,10 @@
         cursor: pointer;
       }
 
-      .hosted-tool-toggle input {
-        width: 14px;
-        height: 14px;
-        margin: 1px 0 0;
-        accent-color: var(--accent);
-      }
-
       .hosted-tool-toggle strong {
         display: block;
         font-size: 11px;
         font-weight: 650;
-      }
-
-      .hosted-tool-control .field-hint {
-        padding-left: 22px;
       }
 
       .citation-sources {
@@ -3094,10 +3115,18 @@
         color: var(--quiet);
       }
 
-      .profile-actions {
+      .settings-peer-actions {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 5px;
+        grid-auto-columns: minmax(0, 1fr);
+        grid-auto-flow: column;
+        gap: var(--space-1);
+        min-width: 0;
+      }
+
+      .settings-peer-actions > button {
+        width: 100%;
+        min-width: 0;
+        padding-inline: var(--space-2);
       }
 
       .saved-profile-controls {
@@ -3162,12 +3191,6 @@
         overflow-wrap: anywhere;
       }
 
-      .model-config-actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 5px;
-      }
-
       .model-config-actions button {
         min-width: 0;
         padding: 0 5px;
@@ -3188,7 +3211,6 @@
       }
 
       .profile-actions button,
-      .audio-settings-actions button,
       .audio-job > button {
         min-width: 0;
         padding: 0 5px;
@@ -3196,7 +3218,11 @@
 
       .skill-manager {
         display: grid;
-        gap: 7px;
+        gap: var(--space-4);
+      }
+
+      .skill-manager > .inspector-scope-header {
+        margin-bottom: 0;
       }
 
       .skill-manager[hidden],
@@ -3207,10 +3233,6 @@
       .skill-group {
         display: grid;
         gap: var(--space-2);
-      }
-
-      .skill-group + .skill-group {
-        margin-top: var(--space-4);
       }
 
       .skill-group h3 {
@@ -3225,6 +3247,10 @@
       .skill-list {
         display: grid;
         gap: 5px;
+      }
+
+      .skill-list:empty {
+        display: none;
       }
 
       .skill-row {
@@ -3274,6 +3300,10 @@
         color: var(--quiet);
         font-size: 11px;
         line-height: 1.35;
+      }
+
+      .skill-empty {
+        margin: 0;
       }
 
       .skill-delete,
@@ -3326,7 +3356,6 @@
 
       .skill-viewer-body {
         min-width: 0;
-        margin-top: var(--space-3);
         font-size: 12px;
         line-height: 1.6;
         overflow-wrap: anywhere;
@@ -3362,17 +3391,20 @@
       }
 
       .settings-actions {
-        position: static;
-        z-index: 2;
+        position: sticky;
+        z-index: 4;
+        bottom: 0;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto auto;
         align-items: center;
         gap: var(--space-2);
         margin-top: var(--space-4);
-        padding: var(--space-2);
+        margin-bottom: calc(-1 * var(--inspector-padding));
+        padding: var(--space-2) 0;
         border: 0;
-        border-radius: var(--radius-control);
-        background: rgba(255, 255, 255, 0.025);
+        border-top: 1px solid var(--line-divider);
+        border-radius: 0;
+        background: var(--pane);
       }
 
       .settings-actions button,
@@ -3472,12 +3504,8 @@
         padding: var(--space-2);
       }
 
-      .capability-settings-section > .settings-disclosure {
-        margin-top: var(--space-2);
-      }
-
-      .capability-settings-section > .settings-disclosure + .settings-disclosure {
-        margin-top: var(--space-2);
+      .capability-settings-section {
+        gap: var(--space-2);
       }
 
       #audioSettingsSection details > summary {
@@ -3490,18 +3518,13 @@
       }
 
       #audioSettingsSection details > .field-hint,
-      #audioSettingsSection details > .audio-settings-actions,
-      #sunoCookieHelp > ol {
+      #audioSettingsSection details > .audio-settings-actions {
         margin: var(--space-1) var(--space-2) 0;
-      }
-
-      #sunoCookieHelp > ol {
-        padding-left: 20px;
       }
 
       #audioSettingsSection .settings-actions {
         margin-top: 0;
-        padding: var(--space-1) var(--space-2);
+        padding: var(--space-1) 0;
       }
 
       .advanced-groups {
@@ -3593,10 +3616,6 @@
         font-size: 12px;
       }
 
-      .skill-paste {
-        margin-top: var(--space-2);
-      }
-
       .skill-paste > summary {
         color: var(--muted);
         cursor: pointer;
@@ -3606,6 +3625,11 @@
       .skill-paste-fields {
         display: grid;
         gap: var(--space-2);
+      }
+
+      .skill-paste-fields > button {
+        justify-self: end;
+        min-width: 82px;
       }
 
       .skill-import-body {
@@ -3767,29 +3791,6 @@
         line-height: 1.4;
         overflow-wrap: anywhere;
         white-space: pre-wrap;
-      }
-
-      @media (max-width: __INSPECTOR_DRAWER_MAX_WIDTH__px) {
-        .app.inspector-open main {
-          grid-template-columns: var(--sessions-pane-width) minmax(0, 1fr);
-        }
-
-        .app.sessions-collapsed.inspector-open main {
-          grid-template-columns: minmax(0, 1fr);
-        }
-
-        .app.inspector-open .inspector-pane {
-          position: absolute;
-          z-index: 30;
-          inset: 0 0 0 auto;
-          width: min(var(--inspector-pane-width), calc(100% - var(--sessions-pane-width)));
-          border-left: 1px solid var(--line);
-          box-shadow: -12px 0 24px rgba(0, 0, 0, 0.32);
-        }
-
-        .app.sessions-collapsed.inspector-open .inspector-pane {
-          width: min(var(--inspector-pane-width), 100%);
-        }
       }
 
       @container composer (max-width: 446px) {
@@ -3979,10 +3980,10 @@
                     <label for="profileSelector" data-i18n="Saved profile">Saved profile</label>
                     <select id="profileSelector" name="profileSelector" autocomplete="off" onchange="LiveSmithUI.handleProfileSelection()"></select>
                   </div>
-                  <div class="profile-actions">
+                  <div class="profile-actions settings-peer-actions">
                     <button id="addProfileButton" class="secondary" type="button" onclick="LiveSmithUI.addProfile()" data-i18n="Add">Add</button>
                     <button id="duplicateProfileButton" class="secondary" type="button" onclick="LiveSmithUI.duplicateProfile()" data-i18n="Duplicate">Duplicate</button>
-                    <button id="deleteProfileButton" class="secondary" type="button" data-idle-label="Delete" data-i18n-data-idle-label="Delete" onclick="LiveSmithUI.deleteProfile()" data-i18n="Delete">Delete</button>
+                    <button id="deleteProfileButton" class="secondary danger-action" type="button" data-idle-label="Delete" data-i18n-data-idle-label="Delete" onclick="LiveSmithUI.deleteProfile()" data-i18n="Delete">Delete</button>
                   </div>
                 </div>
                 <div class="field">
@@ -4067,7 +4068,7 @@
                       <p class="subscription-auth-device-guidance" data-i18n="Keep this window open while sign-in completes.">Keep this window open while sign-in completes.</p>
                     </div>
                   </div>
-                  <div class="subscription-auth-actions">
+                  <div class="subscription-auth-actions settings-peer-actions">
                     <button id="oauthSignInButton" class="primary" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign in" data-i18n-data-idle-label="Sign in" onclick="LiveSmithUI.startOAuthLogin()" data-i18n="Sign in">Sign in</button>
                     <button id="oauthCheckAccountButton" class="secondary" type="button" aria-describedby="oauthAuthState" data-idle-label="Check existing session" data-i18n-data-idle-label="Check existing session" onclick="LiveSmithUI.refreshOAuthAccount()" data-i18n="Check existing session">Check existing session</button>
                     <button id="oauthLogoutButton" class="subscription-auth-quiet-action" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign out" data-i18n-data-idle-label="Sign out" onclick="LiveSmithUI.logoutOAuth()" hidden data-i18n="Sign out">Sign out</button>
@@ -4101,7 +4102,7 @@
                     <div id="inputCapabilitiesPreview" data-label="Inputs" data-i18n-data-label="Inputs" class="capability-preview" role="status" aria-live="polite" aria-atomic="true"></div>
                     <div id="providerCapabilityNote" class="field-hint provider-capability-note" role="note" hidden></div>
                   </div>
-                  <div class="model-config-actions">
+                  <div class="model-config-actions settings-peer-actions">
                     <button id="removeModelConfigButton" class="secondary" type="button" onclick="LiveSmithUI.removeModelConfig()" data-i18n="Remove">Remove</button>
                     <button id="setDefaultModelButton" class="secondary" type="button" onclick="LiveSmithUI.setDefaultModel()" data-i18n="Make Default">Make Default</button>
                   </div>
@@ -4119,9 +4120,10 @@
               <section id="capabilitySettingsSection" class="settings-section capability-settings-section" aria-labelledby="capabilitySettingsHeading">
                 <h3 id="capabilitySettingsHeading" data-i18n="Model Behavior">Model Behavior</h3>
                 <div class="hosted-tool-control">
-                  <label class="hosted-tool-toggle" for="webSearchEnabled">
-                    <input id="webSearchEnabled" name="webSearchEnabled" type="checkbox" aria-describedby="webSearchHint" onchange="LiveSmithUI.handleWebSearchChange(this)" />
+                  <label class="hosted-tool-toggle settings-switch" for="webSearchEnabled">
                     <span><strong data-i18n="Allow Web Search">Allow Web Search</strong></span>
+                    <input id="webSearchEnabled" name="webSearchEnabled" type="checkbox" role="switch" aria-describedby="webSearchHint" onchange="LiveSmithUI.handleWebSearchChange(this)" />
+                    <span class="settings-switch-track" aria-hidden="true"></span>
                   </label>
                   <span id="webSearchHint" class="field-hint" role="status" aria-live="polite" aria-atomic="true" data-i18n="Unavailable with Chat Completions.">Unavailable with Chat Completions.</span>
                 </div>
@@ -4291,9 +4293,10 @@
                     <option value="steer" data-i18n="Steer current response">Steer current response</option>
                   </select>
                 </div>
-                <label class="context-usage-setting" for="showContextUsage">
-                  <input id="showContextUsage" name="showContextUsage" type="checkbox" onchange="LiveSmithUI.saveContextUsageVisibility()" />
+                <label class="context-usage-setting settings-switch" for="showContextUsage">
                   <span data-i18n="Show context meter">Show context meter</span>
+                  <input id="showContextUsage" name="showContextUsage" type="checkbox" role="switch" onchange="LiveSmithUI.saveContextUsageVisibility()" />
+                  <span class="settings-switch-track" aria-hidden="true"></span>
                 </label>
               </section>
               <section id="networkSettingsSection" class="settings-section" aria-labelledby="networkSettingsHeading">
@@ -4335,7 +4338,7 @@
                 </div>
                 <div id="audioServiceSelector" class="audio-service-list" role="group" aria-label="Audio connections" data-i18n-aria-label="Audio connections"></div>
                 <p id="audioServiceEmpty" class="field-hint" data-i18n="Add a named connection for audio tools or a Suno Cookie. Each connection keeps its own local setup.">Add a named connection for audio tools or a Suno Cookie. Each connection keeps its own local setup.</p>
-                <details id="audioServiceFields" class="audio-connection-editor" hidden>
+                <details id="audioServiceFields" class="audio-connection-editor settings-disclosure" hidden>
                   <summary id="audioServiceEditorSummary" data-i18n="Connection settings">Connection settings</summary>
                   <div class="audio-editor-body">
                   <div class="field">
@@ -4366,25 +4369,18 @@
                     </div>
                     <details id="sunoCookieEditor" class="settings-disclosure">
                     <summary data-i18n="Connect or replace Cookie">Connect or replace Cookie</summary>
-                    <details id="sunoCookieHelp" class="audio-model-options">
-                      <summary data-i18n="How to find your Suno Cookie">How to find your Suno Cookie</summary>
-                      <ol class="field-hint">
-                        <li data-i18n="Open Suno and sign in yourself in your browser. No browser extension is needed.">Open Suno and sign in yourself in your browser. No browser extension is needed.</li>
-                        <li data-i18n="Open browser developer tools → Network, reload Suno, and select a request to auth.suno.com or studio-api-prod.suno.com.">Open browser developer tools → Network, reload Suno, and select a request to auth.suno.com or studio-api-prod.suno.com.</li>
-                        <li data-i18n="Copy its request Cookie header. Current sessions may contain __session and __client_uat instead of __client; both forms are supported.">Copy its request Cookie header. Current sessions may contain __session and __client_uat instead of __client; both forms are supported.</li>
-                        <li data-i18n="Paste it into the local Suno session field and choose Connect. Live Smith keeps only required Suno/Clerk fields and discards unrelated cookies. Never paste it into chat or share it.">Paste it into the local Suno session field and choose Connect. Live Smith keeps only required Suno/Clerk fields and discards unrelated cookies. Never paste it into chat or share it.</li>
-                      </ol>
-                    </details>
                     <div class="field">
-                      <label for="sunoSessionValue" data-i18n="Suno session Cookie">Suno session Cookie</label>
-                      <input id="sunoSessionValue" name="sunoSessionCookie" type="password" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure sunoCookieHint" />
-                      <span id="sunoCookieHint" class="field-hint" data-i18n="Accepts a __client or __session value, or a Cookie header containing one of them. Saved and refreshed privately for this connection; unrelated cookies are discarded and the field clears when submitted.">Accepts a __client or __session value, or a Cookie header containing one of them. Saved and refreshed privately for this connection; unrelated cookies are discarded and the field clears when submitted.</span>
+                      <div class="field-label-row">
+                        <label for="sunoSessionValue" data-i18n="Suno session Cookie">Suno session Cookie</label>
+                        <span id="sunoCookieHelp" class="inline-help" tabindex="0" role="note" aria-label="Sign in to Suno in your browser; no browser extension is needed. In developer tools → Network, reload Suno, then open a request to auth.suno.com or studio-api-prod.suno.com and copy its Cookie request header. Paste either that full header or its __client or __session value here; current sessions may use __session and __client_uat instead of __client, and all of these forms are supported. Live Smith privately saves and refreshes only required Suno/Clerk fields for this connection, discards unrelated cookies, and clears this field after submission. Never paste the Cookie into chat or share it." data-tooltip="Sign in to Suno in your browser; no browser extension is needed. In developer tools → Network, reload Suno, then open a request to auth.suno.com or studio-api-prod.suno.com and copy its Cookie request header. Paste either that full header or its __client or __session value here; current sessions may use __session and __client_uat instead of __client, and all of these forms are supported. Live Smith privately saves and refreshes only required Suno/Clerk fields for this connection, discards unrelated cookies, and clears this field after submission. Never paste the Cookie into chat or share it." data-i18n-aria-label="Sign in to Suno in your browser; no browser extension is needed. In developer tools → Network, reload Suno, then open a request to auth.suno.com or studio-api-prod.suno.com and copy its Cookie request header. Paste either that full header or its __client or __session value here; current sessions may use __session and __client_uat instead of __client, and all of these forms are supported. Live Smith privately saves and refreshes only required Suno/Clerk fields for this connection, discards unrelated cookies, and clears this field after submission. Never paste the Cookie into chat or share it." data-i18n-data-tooltip="Sign in to Suno in your browser; no browser extension is needed. In developer tools → Network, reload Suno, then open a request to auth.suno.com or studio-api-prod.suno.com and copy its Cookie request header. Paste either that full header or its __client or __session value here; current sessions may use __session and __client_uat instead of __client, and all of these forms are supported. Live Smith privately saves and refreshes only required Suno/Clerk fields for this connection, discards unrelated cookies, and clears this field after submission. Never paste the Cookie into chat or share it.">?</span>
+                      </div>
+                      <input id="sunoSessionValue" name="sunoSessionCookie" type="password" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure" />
                     </div>
                     <div class="audio-settings-actions">
                       <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
                     </div>
                     </details>
-                    <div id="sunoModelSelection" class="settings-group">
+                    <div id="sunoModelSelection">
                       <div class="field">
                         <label for="sunoModelPicker" data-i18n="Music version">Music version</label>
                         <div class="field-with-action">
@@ -4404,10 +4400,6 @@
                       <span id="audioServiceModelHint" class="field-hint"></span>
                     </div>
                   </details>
-                  <label id="audioServiceEnabledField" class="context-usage-setting" for="audioServiceEnabled">
-                    <input id="audioServiceEnabled" name="audioConnectionEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
-                    <span data-i18n="Enable connection">Enable connection</span>
-                  </label>
                   <div class="field" id="audioServiceKeyField">
                     <label for="audioServiceApiKey" data-i18n="API key">API key</label>
                     <input id="audioServiceApiKey" name="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
@@ -4418,25 +4410,30 @@
                     </div>
                   </div>
                   <p id="audioServiceConflict" class="field-hint" role="status" hidden data-i18n="Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.">Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.</p>
-                  <details id="audioServiceMaintenance" class="settings-disclosure audio-service-maintenance" hidden>
+                  <details id="audioServiceMaintenance" class="settings-disclosure" hidden>
                     <summary data-i18n="Connection maintenance">Connection maintenance</summary>
                     <p id="audioServiceMaintenanceHint" class="field-hint"></p>
-                    <div class="audio-settings-actions audio-maintenance">
+                    <div class="audio-settings-actions settings-peer-actions">
                       <button id="logoutSunoButton" class="secondary danger-action" type="button" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
                       <button id="clearAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" hidden disabled>Clear key</button>
                       <button id="removeAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
                     </div>
                   </details>
-                  <div class="settings-actions audio-commit-actions" role="group" aria-labelledby="audioConnectionActionsLabel">
-                    <span class="settings-actions-status">
-                      <span id="audioConnectionActionsLabel" class="settings-actions-owner" data-i18n="Audio connection">Audio connection</span>
-                      <span id="audioDraftStatus" class="draft-status" role="status" aria-live="polite"></span>
-                    </span>
-                    <button id="reloadAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.reloadAudioService()" data-i18n="Reload connection" hidden>Reload connection</button>
-                    <button id="saveAudioServiceButton" class="primary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings()" data-i18n="Save audio settings" disabled>Save audio settings</button>
-                  </div>
+                  <label id="audioServiceEnabledField" class="context-usage-setting settings-switch" for="audioServiceEnabled">
+                    <span data-i18n="Enable connection">Enable connection</span>
+                    <input id="audioServiceEnabled" name="audioConnectionEnabled" type="checkbox" role="switch" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
+                    <span class="settings-switch-track" aria-hidden="true"></span>
+                  </label>
                   </div>
                 </details>
+                <div class="settings-actions audio-commit-actions" role="group" aria-labelledby="audioConnectionActionsLabel">
+                  <span class="settings-actions-status">
+                    <span id="audioConnectionActionsLabel" class="settings-actions-owner" data-i18n="Audio connection">Audio connection</span>
+                    <span id="audioDraftStatus" class="draft-status" role="status" aria-live="polite"></span>
+                  </span>
+                  <button id="reloadAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.reloadAudioService()" data-i18n="Reload connection" hidden>Reload connection</button>
+                  <button id="saveAudioServiceButton" class="primary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings()" data-i18n="Save audio settings" disabled>Save audio settings</button>
+                </div>
               </section>
               </section>
             </div>
@@ -4483,8 +4480,10 @@
                         <strong data-i18n="Drop SKILL.md">Drop SKILL.md</strong>
                       </div>
                       <div class="skill-paste-fields">
-                        <label for="skillPasteText" data-i18n="Paste SKILL.md">Paste SKILL.md</label>
-                        <textarea id="skillPasteText" name="skillMarkdown" autocomplete="off" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What this Skill does&#10;---&#10;Instructions…"></textarea>
+                        <div class="field">
+                          <label for="skillPasteText" data-i18n="Paste SKILL.md">Paste SKILL.md</label>
+                          <textarea id="skillPasteText" name="skillMarkdown" autocomplete="off" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What this Skill does&#10;---&#10;Instructions…"></textarea>
+                        </div>
                         <button id="installPastedSkillButton" class="secondary" type="button" disabled data-i18n="Install Skill">Install Skill</button>
                       </div>
                     </div>

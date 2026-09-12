@@ -42,9 +42,6 @@ import { SEPARATION_STEMS, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_DURATION_SECON
 
 import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
 
-// Shared by the CSS media query and the client's drawer focus boundary.
-export const INSPECTOR_DRAWER_MAX_WIDTH = 1038;
-
 export interface ChatClientScripts {
   actionPreview: string;
   i18n: string;
@@ -220,7 +217,6 @@ export function composeChatDocument(
     builtInSkillDefinitions(),
   );
   const substitutions: Record<string, string> = {
-    __INSPECTOR_DRAWER_MAX_WIDTH__: String(INSPECTOR_DRAWER_MAX_WIDTH),
     __STATE__: JSON.stringify(serializeChatStateForHtml(state)),
     __BRIDGE__: JSON.stringify(bridge),
     __HOST_ADAPTER_SCRIPT__: scripts.hostAdapter,
@@ -233,8 +229,7 @@ export function composeChatDocument(
     __MARKDOWN_RENDERER_SCRIPT__: scripts.markdownRenderer,
     __SESSION_TIMELINE_SCRIPT__: injectSessionContract(scripts.sessionTimeline),
     __ACTION_PREVIEW_SCRIPT__: scripts.actionPreview,
-    __BOOTSTRAP_SCRIPT__: injectEditScopeContract(scripts.bootstrap)
-      .replaceAll("__INSPECTOR_DRAWER_MAX_WIDTH__", String(INSPECTOR_DRAWER_MAX_WIDTH)),
+    __BOOTSTRAP_SCRIPT__: injectEditScopeContract(scripts.bootstrap),
   };
   // Substitute the authored template once; inserted Session data and scripts are not templates.
   return template.replace(/__[A-Z0-9_]+__/g, (placeholder) =>

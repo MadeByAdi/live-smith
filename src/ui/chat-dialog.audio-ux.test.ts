@@ -41,11 +41,7 @@ test("connection maintenance closes when its selected connection changes", async
   const h = await createDialogHarness(audioState([service, musicService]));
   try {
     selectAudioService(h, service.id);
-    const editor = h.document.querySelector("#audioServiceFields .audio-editor-body")!;
     const maintenance = h.document.querySelector<HTMLDetailsElement>("#audioServiceMaintenance")!;
-    const saveActions = h.document.querySelector(".audio-commit-actions")!;
-    assert.ok([...editor.children].indexOf(maintenance) < [...editor.children].indexOf(saveActions),
-      "maintenance belongs before the editor's final save action");
     h.click("#audioServiceMaintenance > summary");
     assert.equal(maintenance.open, true);
     selectAudioService(h, musicService.id);
@@ -87,6 +83,16 @@ test("clearing or removing a saved connection requires confirmation and cancelli
     h.click("#removeAudioServiceButton");
     await h.acceptAppConfirmation(); await h.settle();
     assert.equal(audioCommands(h).at(-1)?.audioServices.action, "remove");
+    const editor = h.document.querySelector<HTMLDetailsElement>(
+      "#audioServiceFields",
+    )!;
+    const saveActions = h.document.querySelector<HTMLElement>(
+      ".audio-commit-actions",
+    )!;
+    assert.equal(h.document.querySelectorAll("[data-audio-service-id]").length, 0);
+    assert.equal(editor.hidden, true);
+    assert.equal(editor.open, false);
+    assert.equal(h.window.getComputedStyle(saveActions).display, "none");
   } finally { h.close(); }
 });
 

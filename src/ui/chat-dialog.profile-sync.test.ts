@@ -771,3 +771,98 @@ test("a Profile delete that never reached the bridge preserves its local Draft",
     harness.close();
   }
 });
+
+test("deleting the final Profile enters a clean first-run Draft", async () => {
+  const state = stateFixture();
+  state.settings.profiles = [state.settings.profiles[0]!];
+  const harness = await createDialogHarness(state);
+  const ui = (harness.window as unknown as {
+    LiveSmithUI: { deleteProfile(): Promise<void> };
+  }).LiveSmithUI;
+  try {
+    const deletion = ui.deleteProfile();
+    await harness.acceptAppConfirmation();
+    await deletion;
+    await harness.settle();
+
+    assert.deepEqual(
+      commandCalls(harness)
+        .map((call) => call.body as { kind?: string; profileId?: string })
+        .filter((body) => body.kind === "delete_profile"),
+      [{ kind: "delete_profile", profileId: "profile-1" }],
+    );
+    assert.equal(
+      harness.document.querySelector<HTMLElement>("#savedProfileControls")
+        ?.hidden,
+      true,
+    );
+    assert.equal(
+      harness.document.querySelector<HTMLElement>("#modelSetupGuide")?.hidden,
+      false,
+    );
+    assert.equal(
+      harness.document.querySelector<HTMLInputElement>("#profileName")?.value,
+      "",
+    );
+    assert.deepEqual(
+      [...harness.document.querySelectorAll<HTMLOptionElement>(
+        "#modelConfigSelector option",
+      )].map((option) => option.textContent),
+      ["No model added yet"],
+    );
+    assert.equal(
+      harness.document.querySelector<HTMLButtonElement>(
+        "#removeModelConfigButton",
+      )?.disabled,
+      true,
+    );
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Profile deletion keeps the confirmed target across an external activation", async () => {
+  const state = stateFixture();
+  const harness = await createDialogHarness(state);
+  const ui = (harness.window as unknown as {
+    LiveSmithUI: { deleteProfile(): Promise<void> };
+  }).LiveSmithUI;
+  try {
+    const deletion = ui.deleteProfile();
+    assert.match(
+      harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "",
+      /Studio/,
+    );
+
+    harness.setServerState(activateSecondProfile(state));
+    harness.emitServerEvent({
+      type: "profile_settings_changed",
+      commandId: "external-profile-activation-during-delete-confirmation",
+    });
+    await harness.settle();
+    assert.equal(
+      harness.document.querySelector<HTMLInputElement>("#profileName")?.value,
+      "Mix review",
+    );
+
+    await harness.acceptAppConfirmation();
+    await deletion;
+    await harness.settle();
+
+    assert.deepEqual(
+      commandCalls(harness)
+        .map((call) => call.body as { kind?: string; profileId?: string })
+        .filter((body) => body.kind === "delete_profile"),
+      [{ kind: "delete_profile", profileId: "profile-1" }],
+    );
+    assert.equal(
+      harness.document.querySelector<HTMLSelectElement>("#profileSelector")
+        ?.value,
+      "profile-2",
+    );
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});

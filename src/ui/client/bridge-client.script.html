@@ -6074,7 +6074,6 @@
         if (cookie.dataset.connection !== cookieOwner) {
           clearSunoCookieInput();
           cookie.dataset.connection = cookieOwner;
-          document.getElementById("sunoCookieHelp").open = false;
         }
         document.getElementById("sunoAccountName").textContent = "";
         document.getElementById("sunoAccountName").hidden = true;
@@ -6109,7 +6108,9 @@
         }
         picker.hidden = !choices.size;
         document.getElementById("addAudioServiceButton").disabled = busy || choices.size >= __MAX_AUDIO_SERVICES__;
-        document.getElementById("audioServiceFields").hidden = !service;
+        const editor = document.getElementById("audioServiceFields");
+        editor.hidden = !service;
+        if (!service) editor.open = false;
         document.getElementById("audioServiceEmpty").hidden = Boolean(service);
         const provider = document.getElementById("audioServiceProvider");
         provider.replaceChildren();

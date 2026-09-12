@@ -41,7 +41,6 @@
           skillInProgress: false,
         };
         let contextTokenFormatter = new Intl.NumberFormat(i18n.locale);
-        const INSPECTOR_DRAWER_MAX_WIDTH = __INSPECTOR_DRAWER_MAX_WIDTH__;
         const editScopeIds = __EDIT_SCOPES__;
         const editScopeLabels = __EDIT_SCOPE_LABELS__;
         const editScopeShortLabels = {
@@ -772,14 +771,11 @@
           setSessionsPaneCollapsed(!sessionsPaneCollapsed);
         }
 
-        function synchronizeInspectorDrawerIsolation() {
-          const app = document.querySelector(".app");
+        function synchronizeInspectorIsolation() {
           const chat = document.querySelector(".chat-pane");
           const inspector = document.getElementById("inspectorPane");
-          if (!app || !chat || !inspector) return;
-          const isolateChat = app.classList.contains("inspector-open") &&
-            !inspector.hidden &&
-            window.innerWidth <= INSPECTOR_DRAWER_MAX_WIDTH;
+          if (!chat || !inspector) return;
+          const isolateChat = !inspector.hidden;
           const focusWasCovered = isolateChat && chat.contains(document.activeElement);
           chat.toggleAttribute("inert", isolateChat);
           if (focusWasCovered) {
@@ -791,7 +787,6 @@
         function setInspectorOpen(open) {
           const inspector = document.getElementById("inspectorPane");
           const focusWasInside = !open && inspector.contains(document.activeElement);
-          document.querySelector(".app").classList.toggle("inspector-open", open);
           inspector.hidden = !open;
           const settingsButton = document.getElementById("settingsButton");
           settingsButton.setAttribute("aria-expanded", String(open));
@@ -799,7 +794,7 @@
             "aria-label",
             open ? t("Close Inspector") : t("Open Inspector"),
           );
-          synchronizeInspectorDrawerIsolation();
+          synchronizeInspectorIsolation();
           if (focusWasInside) settingsButton.focus({ preventScroll: true });
         }
 
@@ -1639,7 +1634,6 @@
           setSessionsPaneCollapsed(false);
           setInspectorOpen(Boolean(getState().openSettingsOnLoad || !activeProfile()));
           sessionTimeline.switchInspectorTab("agent");
-          window.addEventListener("resize", synchronizeInspectorDrawerIsolation);
           window.addEventListener("languagechange", () => {
             if (i18n.preference === "system") renderApplication({ preserveStatus: true });
           });

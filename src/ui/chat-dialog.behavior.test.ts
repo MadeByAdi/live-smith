@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { DirectApiProfile, SavedProfile } from "../model/profile.js";
-import { INSPECTOR_DRAWER_MAX_WIDTH } from "./chat-document.js";
 import type { ChatDialogState } from "./chat-state.js";
 import {
   capabilities,
@@ -57,13 +56,11 @@ test("a valid Profile starts in chat-first mode and exposes an accessible Inspec
   state.openSettingsOnLoad = false;
   const harness = await createDialogHarness(state);
   try {
-    const app = harness.document.querySelector(".app");
     const inspector = harness.document.querySelector<HTMLElement>("#inspectorPane");
     const profileControl = harness.document.querySelector<HTMLButtonElement>(
       "#settingsButton",
     );
     assert.equal(harness.document.querySelector("#inspectorToggleButton"), null);
-    assert.equal(app?.classList.contains("inspector-open"), false);
     assert.equal(inspector?.hidden, true);
     assert.equal(profileControl?.getAttribute("aria-expanded"), "false");
     assert.equal(
@@ -82,7 +79,6 @@ test("a valid Profile starts in chat-first mode and exposes an accessible Inspec
 
     profileControl?.click();
 
-    assert.equal(app?.classList.contains("inspector-open"), true);
     assert.equal(inspector?.hidden, false);
     assert.equal(profileControl?.getAttribute("aria-expanded"), "true");
     assert.equal(
@@ -127,20 +123,11 @@ test("a valid Profile starts in chat-first mode and exposes an accessible Inspec
   }
 });
 
-test("the narrow Inspector drawer isolates covered chat and restores focus on close", async () => {
+test("the Inspector drawer isolates covered chat and restores focus on close", async () => {
   const state = stateFixture();
   state.openSettingsOnLoad = false;
   const harness = await createDialogHarness(state);
   try {
-    const setViewportWidth = (width: number) => {
-      Object.defineProperty(harness.window, "innerWidth", {
-        configurable: true,
-        value: width,
-      });
-      harness.window.dispatchEvent(new harness.window.Event("resize"));
-    };
-    setViewportWidth(INSPECTOR_DRAWER_MAX_WIDTH);
-
     const chat = harness.document.querySelector<HTMLElement>(".chat-pane");
     const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
     const settings = harness.document.querySelector<HTMLButtonElement>("#settingsButton");
@@ -148,15 +135,6 @@ test("the narrow Inspector drawer isolates covered chat and restores focus on cl
     assert.equal(harness.document.activeElement, prompt);
 
     settings?.click();
-    assert.equal(chat?.hasAttribute("inert"), true);
-    assert.equal(harness.document.activeElement?.id, "agentTab");
-
-    setViewportWidth(INSPECTOR_DRAWER_MAX_WIDTH + 1);
-    assert.equal(chat?.hasAttribute("inert"), false);
-    prompt?.focus();
-    assert.equal(harness.document.activeElement, prompt);
-
-    setViewportWidth(INSPECTOR_DRAWER_MAX_WIDTH);
     assert.equal(chat?.hasAttribute("inert"), true);
     assert.equal(harness.document.activeElement?.id, "agentTab");
 
@@ -377,7 +355,6 @@ test("first-run model setup is primary while advanced controls stay collapsed", 
 test("the compact workbench prioritizes chat and makes model connection sequential", async () => {
   const harness = await createDialogHarness();
   try {
-    const app = harness.document.querySelector<HTMLElement>(".app");
     assert.equal(harness.document.querySelector("#inspectorToggleButton"), null);
     assert.equal(
       harness.document.querySelector("#apiFamily option")?.textContent,
@@ -420,7 +397,6 @@ test("the compact workbench prioritizes chat and makes model connection sequenti
       0,
     );
     assert.ok(harness.document.querySelector("#advancedSettings > .advanced-groups"));
-    assert.equal(app?.classList.contains("inspector-open"), true);
     assert.deepEqual(harness.errors, []);
   } finally {
     harness.close();

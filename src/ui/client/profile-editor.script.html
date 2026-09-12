@@ -507,10 +507,10 @@
         return value === "anthropic" || value === "google" ? value : "openai";
       }
 
-      function oauthProviderLabel() {
-        return oauthProvider() === "anthropic"
+      function oauthProviderLabel(provider = oauthProvider()) {
+        return provider === "anthropic"
           ? "Claude"
-          : oauthProvider() === "google"
+          : provider === "google"
             ? "Antigravity"
             : "ChatGPT";
       }
@@ -1626,6 +1626,7 @@
         sourceId,
         provider = oauthProvider(),
         fields = {},
+        profileId = draftProfile?.id,
       ) {
         if (isAnyOperationInProgress()) {
           showStatus(t("Wait for the current operation to finish."));
@@ -1633,8 +1634,7 @@
         }
         const source = document.getElementById(sourceId);
         const shouldRestoreFocus = document.activeElement === source;
-        if (!draftProfile?.id) throw new Error(t("OAuth requires a Profile ID."));
-        const profileId = draftProfile.id;
+        if (!profileId) throw new Error(t("OAuth requires a Profile ID."));
         const provisional = oauthScopeIsProvisional(profileId, provider);
         if (kind !== "logout_oauth" && provisional) {
           provisionalOAuthScopes.add(oauthScopeKey(profileId, provider));
@@ -1709,14 +1709,23 @@
       }
 
       async function logoutOAuth() {
-        const providerLabel = oauthProviderLabel();
+        const profileId = draftProfile?.id;
+        if (!profileId) throw new Error(t("OAuth requires a Profile ID."));
+        const provider = oauthProvider();
+        const providerLabel = oauthProviderLabel(provider);
         if (!(await confirmAction({
           title: window.LiveSmithI18n.message("Sign out of {providerLabel}?", { providerLabel: providerLabel }),
           message: window.LiveSmithI18n.message("Remove this Profile’s {providerLabel} OAuth session? Any pending login for this Profile will be cancelled.", { providerLabel: providerLabel }),
           acceptLabel: window.LiveSmithI18n.message("Sign Out"),
           danger: true,
         }))) return;
-        await runOAuthAuthCommand("logout_oauth", "oauthLogoutButton");
+        await runOAuthAuthCommand(
+          "logout_oauth",
+          "oauthLogoutButton",
+          provider,
+          {},
+          profileId,
+        );
       }
 
       async function addProfile() {
@@ -1784,16 +1793,19 @@
       }
 
       async function deleteProfile() {
-        if (!savedProfileSnapshot) return;
+        const target = savedProfileSnapshot
+          ? { id: savedProfileSnapshot.id, name: savedProfileSnapshot.name }
+          : null;
+        if (!target) return;
         if (!(await confirmAction({
           title: window.LiveSmithI18n.message("Delete Profile?"),
-          message: window.LiveSmithI18n.message("Delete “{name}”? This cannot be undone.", { name: savedProfileSnapshot.name }),
+          message: window.LiveSmithI18n.message("Delete “{name}”? This cannot be undone.", { name: target.name }),
           acceptLabel: window.LiveSmithI18n.message("Delete"),
           danger: true,
         }))) return;
         if (await runCommand("delete_profile", {
-          profileId: savedProfileSnapshot.id,
-        })) clearProvisionalOAuthScopes(savedProfileSnapshot.id);
+          profileId: target.id,
+        })) clearProvisionalOAuthScopes(target.id);
       }
 
       async function discoverModels() {

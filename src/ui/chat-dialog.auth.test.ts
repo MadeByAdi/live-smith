@@ -2524,6 +2524,81 @@ test("an unavailable OAuth account can sign out before starting over", async () 
   }
 });
 
+test("OAuth sign-out keeps the confirmed Profile across an external activation", async () => {
+  const state = stateFixture();
+  const profile = subscriptionProfile();
+  state.settings.profiles[0] = profile;
+  state.settings.activeProfileId = profile.id;
+  state.activeProfileRevision = profileRevisionFixture(profile);
+  state.modelStateSource = modelStateSourceFixture(profile);
+  state.runtimeProfile = runtimeSummaryForHarnessProfile(profile);
+  state.configuredModels = profile.models.map((model) => ({
+    model: model.model,
+    label: model.model,
+  }));
+  state.oauthAuthProfileId = profile.id;
+  state.oauthAuthProvider = "openai";
+  state.oauthAuth = {
+    status: "signed-in",
+    accountLabel: "studio@example.test",
+    planType: "pro",
+    subscriptionEligible: true,
+  };
+  const harness = await createDialogHarness(state);
+  try {
+    harness.click("#oauthLogoutButton");
+    assert.match(
+      harness.document.querySelector("#appConfirmation")?.textContent ?? "",
+      /Sign out of ChatGPT/i,
+    );
+
+    const external = cloneState(state);
+    const nextProfile = external.settings.profiles[1]!;
+    external.settings.activeProfileId = nextProfile.id;
+    external.activeProfileRevision = profileRevisionFixture(nextProfile);
+    external.modelStateSource = modelStateSourceFixture(nextProfile);
+    external.runtimeProfile = runtimeSummaryForHarnessProfile(nextProfile);
+    external.configuredModels = nextProfile.models.map((model) => ({
+      model: model.model,
+      label: model.model,
+    }));
+    delete external.oauthAuth;
+    delete external.oauthAuthProfileId;
+    delete external.oauthAuthProvider;
+    harness.setServerState(external);
+    harness.emitServerEvent({
+      type: "profile_settings_changed",
+      commandId: "external-activation-during-oauth-sign-out",
+    });
+    await harness.settle();
+    assert.equal(
+      harness.document.querySelector<HTMLInputElement>("#profileName")?.value,
+      nextProfile.name,
+    );
+
+    await harness.acceptAppConfirmation();
+    await harness.settle();
+
+    assert.deepEqual(
+      commandCalls(harness)
+        .map((call) => call.body as {
+          kind?: string;
+          profileId?: string;
+          provider?: string;
+        })
+        .filter((body) => body.kind === "logout_oauth"),
+      [{
+        kind: "logout_oauth",
+        profileId: profile.id,
+        provider: "openai",
+      }],
+    );
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
 test("clean subscription Profiles enable Send for an eligible signed-in account", async () => {
   const state = stateFixture();
   const profile = subscriptionProfile();

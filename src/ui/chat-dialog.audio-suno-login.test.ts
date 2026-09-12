@@ -295,11 +295,33 @@ test("Chinese Cookie connection labels, help, account name and local-clear confi
     assert.equal(text(harness, "#refreshSunoLoginButton"), "刷新连接");
     assert.equal(text(harness, "#logoutSunoButton"), "清除本地 Cookie");
     assert.equal(text(harness, "#sunoAccountName"), "Suno 账户：Personal musician");
-    harness.click("#sunoCookieHelp summary");
-    assert.equal(harness.document.querySelector<HTMLDetailsElement>("#sunoCookieHelp")!.open, true);
-    assert.match(text(harness, "#sunoCookieHelp"), /auth.suno.com/);
-    assert.match(text(harness, "#sunoCookieHelp"), /复制该请求的 Cookie 请求头/);
-    assert.match(text(harness, "#sunoCookieHelp"), /__session/);
+    const cookieHelp = harness.document.querySelector<HTMLElement>(
+      "#sunoCookieHelp",
+    )!;
+    assert.equal(cookieHelp.textContent, "?");
+    assert.equal(cookieHelp.getAttribute("role"), "note");
+    assert.equal(cookieHelp.tabIndex, 0);
+    assert.equal(Object.hasOwn(cookieHelp, "open"), false);
+    assert.match(cookieHelp.dataset.tooltip ?? "", /auth.suno.com/);
+    assert.match(cookieHelp.dataset.tooltip ?? "", /复制其 Cookie 请求头/);
+    assert.match(cookieHelp.dataset.tooltip ?? "", /__session/);
+    assert.match(cookieHelp.dataset.tooltip ?? "", /完整请求头/);
+    assert.match(cookieHelp.dataset.tooltip ?? "", /提交后清空输入框/);
+    assert.equal(
+      cookieHelp.getAttribute("aria-label"),
+      cookieHelp.dataset.tooltip,
+    );
+    assert.equal(
+      cookieHelp.closest(".field-label-row")?.querySelector("label")?.htmlFor,
+      "sunoSessionValue",
+    );
+    assert.equal(harness.document.querySelector("#sunoCookieHint"), null);
+    assert.equal(
+      harness.document.querySelector("#sunoSessionValue")?.getAttribute(
+        "aria-describedby",
+      ),
+      "audioServiceDisclosure",
+    );
     harness.click("#logoutSunoButton");
     await harness.settle();
     assert.match(text(harness, "body"), /浏览器中的 Suno 登录和窗口会保留/);

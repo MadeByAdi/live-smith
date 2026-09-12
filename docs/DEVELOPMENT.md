@@ -98,7 +98,7 @@ The dialog's shared visual tokens live in the template's `:root`: semantic
 surfaces, typography, spacing, control heights, radii and focus color. Reuse
 these tokens and existing control/disclosure styles instead of adding a
 provider-specific theme or a later override layer. Visual verification includes
-Agent and App settings, the collapsed/open Session audio shelf, narrow
+Agent and App settings, the collapsed/open Session audio shelf, Inspector
 drawer focus, and long translated labels. The Suno version picker can be tested
 with a read-only catalog load; selecting, saving or discarding a version must
 not generate audio or implicitly enable a connection.
