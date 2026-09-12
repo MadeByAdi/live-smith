@@ -1070,6 +1070,28 @@
         text-transform: none;
       }
 
+      .timeline-item.reasoning {
+        margin-bottom: 8px;
+      }
+
+      .timeline-item.reasoning > .timeline-label,
+      .timeline-item.reasoning > summary {
+        color: var(--trace);
+      }
+
+      .timeline-item.reasoning.streaming > .timeline-label,
+      .timeline-item.reasoning.streaming > summary {
+        color: var(--accent);
+      }
+
+      .timeline-item.reasoning .timeline-content {
+        padding: 8px 10px;
+        color: var(--muted);
+        background: rgba(120, 185, 232, 0.05);
+        border-color: rgba(120, 185, 232, 0.22);
+        border-left-width: 2px;
+      }
+
       details.timeline-item {
         margin-bottom: 8px;
       }

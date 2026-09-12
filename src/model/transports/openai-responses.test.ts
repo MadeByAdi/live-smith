@@ -3160,3 +3160,172 @@ test("OpenAI Responses errors never expose an echoed request body", async () => 
     },
   );
 });
+
+test("OpenAI Responses surfaces documented reasoning summary stream events", async () => {
+  const reasoning = {
+    id: "reasoning-visible",
+    type: "reasoning",
+    encrypted_content: "opaque-ciphertext",
+    summary: [{ type: "summary_text", text: "Inspecting the current clip." }],
+  };
+  const message = {
+    id: "message-visible",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content: [{ type: "output_text", text: "The clip is ready.", annotations: [] }],
+  };
+  let body: Record<string, unknown> = {};
+  const transport = createOpenAIResponsesTransport({
+    fetchImpl: async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response([
+        { type: "response.output_item.added", output_index: 0, item: { ...reasoning, summary: [] } },
+        {
+          type: "response.reasoning_summary_part.added",
+          output_index: 0,
+          summary_index: 0,
+          part: { type: "summary_text", text: "Inspecting " },
+        },
+        { type: "response.reasoning_summary_text.delta", output_index: 0, summary_index: 0, delta: "Inspecting " },
+        { type: "response.reasoning_summary_text.delta", output_index: 0, summary_index: 0, delta: "the current clip." },
+        { type: "response.completed", response: { status: "completed", output: [reasoning, message] } },
+      ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    },
+  });
+  const updates: unknown[] = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(body.reasoning, { effort: "high" });
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "Inspecting " },
+    { type: "delta", delta: "the current clip." },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "Inspecting the current clip." });
+  assert.equal(JSON.stringify(turn.reasoning).includes("opaque-ciphertext"), false);
+});
+
+test("OpenAI Responses keeps indexed multi-part reasoning identical while streaming and complete", async () => {
+  const reasoning = {
+    id: "reasoning-multipart",
+    type: "reasoning",
+    encrypted_content: "opaque-ciphertext",
+    summary: [{ type: "summary_text", text: "AB" }, {
+      type: "summary_text",
+      text: "XY",
+    }],
+    content: [{ type: "reasoning_text", text: "C" }],
+  };
+  const message = {
+    id: "message-multipart",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content: [{ type: "output_text", text: "Done", annotations: [] }],
+  };
+  const events = [
+    {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { ...reasoning, summary: [], content: [] },
+    },
+    {
+      type: "response.reasoning_summary_text.delta",
+      output_index: 0,
+      summary_index: 0,
+      delta: "A",
+    },
+    {
+      type: "response.reasoning_summary_text.delta",
+      output_index: 0,
+      summary_index: 1,
+      delta: "X",
+    },
+    {
+      type: "response.reasoning_summary_text.delta",
+      output_index: 0,
+      summary_index: 0,
+      delta: "B",
+    },
+    {
+      type: "response.reasoning_summary_text.delta",
+      output_index: 0,
+      summary_index: 1,
+      delta: "Y",
+    },
+    {
+      type: "response.reasoning_text.delta",
+      output_index: 0,
+      content_index: 0,
+      delta: "C",
+    },
+    { type: "response.output_item.done", output_index: 0, item: reasoning },
+    {
+      type: "response.completed",
+      response: { status: "completed", output: [reasoning, message] },
+    },
+  ];
+  const transport = createOpenAIResponsesTransport({
+    fetchImpl: async () => new Response(
+      events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ),
+  });
+  const updates: Array<
+    { type: "start" } | { type: "delta"; delta: string } |
+      { type: "replace"; content: string }
+  > = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "A" },
+    { type: "delta", delta: "\n\nX" },
+    { type: "replace", content: "AB\n\nX" },
+    { type: "delta", delta: "Y" },
+    { type: "delta", delta: "\n\nC" },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "AB\n\nXY\n\nC" });
+  let streamed = "";
+  for (const update of updates) {
+    if (update.type === "delta") streamed += update.delta;
+    if (update.type === "replace") streamed = update.content;
+  }
+  assert.equal(streamed, turn.reasoning.content);
+});
+
+test("OpenAI Responses preserves a reasoning-only stage without exposing ciphertext", async () => {
+  const transport = createOpenAIResponsesTransport({
+    fetchImpl: async () => new Response(JSON.stringify({
+      status: "completed",
+      output: [{
+        id: "reasoning-stage",
+        type: "reasoning",
+        encrypted_content: "private-ciphertext",
+        summary: [],
+      }, {
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        content: [{ type: "output_text", text: "Done", annotations: [] }],
+      }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const turn = await transport.createToolTurn(request(profile()));
+
+  assert.deepEqual(turn.reasoning, { content: "" });
+  assert.equal(JSON.stringify(turn.reasoning).includes("private-ciphertext"), false);
+});

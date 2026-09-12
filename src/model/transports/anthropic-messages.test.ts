@@ -112,7 +112,27 @@ test("Anthropic Messages maps adaptive thinking and preserves content blocks", a
   assert.deepEqual(body.output_config, { effort: "high" });
   assert.equal("temperature" in body, false);
   assert.equal(turn.toolCalls[0]?.id, "tool-1");
+  assert.deepEqual(turn.reasoning, { content: "hidden" });
   assert.equal((turn.providerState as { content: unknown[] }).content.length, 2);
+});
+
+test("Anthropic Messages keeps an omitted thinking stage without exposing its signature", async () => {
+  const transport = createAnthropicMessagesTransport({
+    fetchImpl: async () => new Response(JSON.stringify({
+      type: "message",
+      role: "assistant",
+      stop_reason: "end_turn",
+      content: [
+        { type: "thinking", thinking: "", signature: "private-signature" },
+        { type: "text", text: "Done" },
+      ],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const turn = await transport.createToolTurn(request(profile()));
+
+  assert.deepEqual(turn.reasoning, { content: "" });
+  assert.equal(JSON.stringify(turn.reasoning).includes("private-signature"), false);
 });
 
 test("Anthropic Messages attaches terminal usage including cached input tokens", async () => {
@@ -1472,12 +1492,15 @@ test("Anthropic Messages accepts a configured stop sequence as complete", async 
 
 test("Anthropic Messages continues pause_turn responses and replays every opaque block", async () => {
   const bodies: Array<Record<string, unknown>> = [];
-  const pausedContent = [{
-    type: "server_tool_use",
-    id: "search-1",
-    name: "web_search",
-    input: { query: "Ableton Live release" },
-  }];
+  const pausedContent = [
+    { type: "thinking", thinking: "First stage", signature: "sig-1" },
+    {
+      type: "server_tool_use",
+      id: "search-1",
+      name: "web_search",
+      input: { query: "Ableton Live release" },
+    },
+  ];
   let call = 0;
   const p = profile({ advanced: { hostedTools: { webSearch: true } } });
   const req = request(p);
@@ -1497,20 +1520,27 @@ test("Anthropic Messages continues pause_turn responses and replays every opaque
             type: "message",
             role: "assistant",
             stop_reason: "end_turn",
-            content: [{ type: "text", text: "Done" }],
+            content: [
+              { type: "thinking", thinking: "Second stage", signature: "sig-2" },
+              { type: "text", text: "Done" },
+            ],
           }), { status: 200, headers: { "Content-Type": "application/json" } });
     },
   });
 
   const turn = await transport.createToolTurn(req);
   assert.equal(call, 2);
+  assert.deepEqual(turn.reasoning, { content: "First stage\n\nSecond stage" });
   assert.deepEqual((bodies[1]?.messages as unknown[]).at(-1), {
     role: "assistant",
     content: pausedContent,
   });
   assert.deepEqual(turn.providerState, {
     kind: "anthropic-messages",
-    content: [{ type: "text", text: "Done" }],
+    content: [
+      { type: "thinking", thinking: "Second stage", signature: "sig-2" },
+      { type: "text", text: "Done" },
+    ],
     continuationContent: [pausedContent],
   });
 
@@ -1532,7 +1562,10 @@ test("Anthropic Messages continues pause_turn responses and replays every opaque
   await replayTransport.createToolTurn(replayRequest);
   assert.deepEqual(replayMessages.slice(-2), [
     { role: "assistant", content: pausedContent },
-    { role: "assistant", content: [{ type: "text", text: "Done" }] },
+    { role: "assistant", content: [
+      { type: "thinking", thinking: "Second stage", signature: "sig-2" },
+      { type: "text", text: "Done" },
+    ] },
   ]);
 });
 
@@ -2765,9 +2798,16 @@ test("Anthropic streaming assembles thinking signatures and fragmented tool inpu
   });
   const req = request(profile());
   req.onDelta = () => undefined;
+  const reasoningUpdates: unknown[] = [];
+  req.onReasoning = (update) => { reasoningUpdates.push(update); };
 
   const turn = await transport.createToolTurn(req);
 
+  assert.deepEqual(reasoningUpdates, [
+    { type: "start" },
+    { type: "delta", delta: "hidden" },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "hidden" });
   assert.deepEqual(turn.toolCalls, [{
     id: "tool-1",
     name: "inspect",
@@ -2777,6 +2817,57 @@ test("Anthropic streaming assembles thinking signatures and fragmented tool inpu
     { type: "thinking", thinking: "hidden", signature: "sig" },
     { type: "tool_use", id: "tool-1", name: "inspect", input: { clip: "selected" } },
   ]);
+});
+
+test("Anthropic streaming keeps multiple thinking blocks identical to the terminal turn", async () => {
+  const events = [
+    { type: "message_start", message: { type: "message", role: "assistant", content: [] } },
+    { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "", signature: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "First" } },
+    { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig-1" } },
+    { type: "content_block_stop", index: 0 },
+    { type: "content_block_start", index: 1, content_block: { type: "thinking", thinking: "", signature: "" } },
+    { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "Second" } },
+    { type: "content_block_delta", index: 1, delta: { type: "signature_delta", signature: "sig-2" } },
+    { type: "content_block_stop", index: 1 },
+    { type: "content_block_start", index: 2, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 2, delta: { type: "text_delta", text: "Done" } },
+    { type: "content_block_stop", index: 2 },
+    { type: "message_delta", delta: { stop_reason: "end_turn" } },
+    { type: "message_stop" },
+  ];
+  const transport = createAnthropicMessagesTransport({
+    fetchImpl: async () => new Response(events
+      .map((event) =>
+        `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
+      )
+      .join(""), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+  });
+  const req = request(profile());
+  req.onDelta = () => undefined;
+  const reasoningUpdates: Array<
+    { type: "start" } | { type: "delta"; delta: string } |
+      { type: "replace"; content: string }
+  > = [];
+  req.onReasoning = (update) => { reasoningUpdates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(reasoningUpdates, [
+    { type: "start" },
+    { type: "delta", delta: "First" },
+    { type: "delta", delta: "\n\nSecond" },
+  ]);
+  let streamed = "";
+  for (const update of reasoningUpdates) {
+    if (update.type === "delta") streamed += update.delta;
+    if (update.type === "replace") streamed = update.content;
+  }
+  assert.equal(streamed, "First\n\nSecond");
+  assert.equal(streamed, turn.reasoning?.content);
 });
 
 test("Anthropic streaming errors expose only fixed safe context", async () => {

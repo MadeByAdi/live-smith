@@ -914,12 +914,19 @@ async function createDialogHarness(
     if (event.type === "confirm_request" && event.kind === undefined) {
       event.kind = "apply";
     }
+    if (
+      event.type === "model_turn_state" &&
+      !Object.hasOwn(event, "reasoningDraft")
+    ) {
+      event.reasoningDraft = null;
+    }
     const sendId = typeof event.sendId === "string" ? event.sendId : undefined;
     if (
       sendId &&
       [
         "assistant_delta",
         "assistant_reset",
+        "reasoning_update",
         "confirm_request",
         "model_turn_state",
         "session_event",

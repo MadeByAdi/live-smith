@@ -74,6 +74,13 @@ test("agent request rebuilds only the current model turn while reconnecting", {
       onDelta: (delta) => {
         events.push(`delta:${delta}`);
       },
+      onReasoningUpdate: (update) => {
+        events.push(update.type === "start"
+          ? "reasoning:start"
+          : update.type === "delta"
+            ? `reasoning:${update.delta}`
+            : `reasoning:replace:${update.content}`);
+      },
       onAssistantReset: () => {
         events.push("reset");
       },
@@ -97,12 +104,17 @@ test("agent request rebuilds only the current model turn while reconnecting", {
       reconnectStates.push(input.reconnectState);
       hostedAllowances.push(hostedWebSearchAllowance(input.tools));
       if (modelCalls === 1) {
+        await input.onReasoning?.({ type: "start" });
+        await input.onReasoning?.({ type: "delta", delta: "partial thought" });
         await input.onDelta("partial");
         await input.onHostedWebSearch?.(searchingWebSearch("search-before-drop"));
         throw new ModelConnectionError();
       }
+      await input.onReasoning?.({ type: "start" });
+      await input.onReasoning?.({ type: "delta", delta: "fresh thought" });
       await input.onDelta("fresh");
       return {
+        reasoning: { content: "fresh thought" },
         content: "Recovered response.",
         toolCalls: [],
         contextUsage: { usedTokens: 640, contextWindowTokens: 16_000 },
@@ -131,6 +143,7 @@ test("agent request rebuilds only the current model turn while reconnecting", {
   assert.equal(reconnectingIndex > resetIndex, true);
   assert.equal(reconnectedIndex > reconnectingIndex, true);
   assert.equal(freshDeltaIndex > reconnectedIndex, true);
+  assert.equal(events.indexOf("reasoning:fresh thought") > reconnectedIndex, true);
   assert.equal(
     events.slice(reconnectedIndex + 1).includes("progress:Reading model response"),
     false,
@@ -139,9 +152,103 @@ test("agent request rebuilds only the current model turn while reconnecting", {
   const storedEvents = await loadSessionEvents(storageDirectory, session.id);
   assert.equal(storedEvents.filter((event) => event.kind === "user").length, 1);
   assert.equal(storedEvents.filter((event) => event.kind === "assistant").length, 1);
+  assert.equal(storedEvents.filter((event) => event.kind === "reasoning").length, 1);
   assert.equal(storedEvents.some((event) => event.kind === "error"), false);
   assert.equal(storedEvents.some((event) => event.kind === "web_search"), false);
   assert.equal(published.filter((event) => event.kind === "user").length, 1);
+});
+
+test("output-limit continuation retries preserve completed transient prefixes", {
+  timeout: 3_000,
+}, async (t) => {
+  const storageDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "live-smith-continuation-reconnect-"),
+  );
+  t.after(() => fs.rm(storageDirectory, { recursive: true, force: true }));
+  const session = await createSession(storageDirectory, {
+    title: "Continuation reconnect",
+    projectKey: "project-a",
+    scope: { kind: "track", identity: "track-1", label: "Lead" },
+  });
+  const lifecycle: string[] = [];
+  let modelCalls = 0;
+
+  const callbacks = {
+    signal: new AbortController().signal,
+    onDelta: () => {},
+    onReasoningUpdate: () => {},
+    onModelRequestStarted: () => {
+      lifecycle.push("request-started");
+    },
+    onModelRequestRetry: () => {
+      lifecycle.push("request-retry");
+    },
+    onAssistantReset: () => {
+      lifecycle.push("full-reset");
+    },
+    onProgress: () => {},
+    onSessionEvent: () => {},
+    confirmActions: async () => true,
+  };
+  const result = await handleAgentRequest(
+    { environment: { storageDirectory } } as never,
+    storageDirectory,
+    interaction(),
+    "Continue through reconnect",
+    runtimeProfileForSavedProfile(profile),
+    "project-a",
+    session.id,
+    callbacks,
+    async (input) => {
+      modelCalls += 1;
+      if (modelCalls === 1) {
+        await input.onReasoning?.({ type: "delta", delta: "First thought" });
+        await input.onDelta("First ");
+        return {
+          reasoning: { content: "First thought" },
+          content: "First ",
+          toolCalls: [],
+          continuation: { reason: "output_limit" },
+          providerState: { kind: "test-output-limit", attempt: 1 },
+        };
+      }
+      if (modelCalls === 2) {
+        await input.onReasoning?.({ type: "delta", delta: "Discarded thought" });
+        await input.onDelta("discarded");
+        throw new ModelConnectionError();
+      }
+      await input.onReasoning?.({ type: "delta", delta: "Final thought" });
+      await input.onDelta("answer.");
+      return {
+        reasoning: { content: "Final thought" },
+        content: "answer.",
+        toolCalls: [],
+      };
+    },
+    undefined,
+    undefined,
+    undefined,
+    async () => {},
+  );
+
+  assert.equal(result, "First answer.");
+  assert.equal(modelCalls, 3);
+  assert.deepEqual(lifecycle, [
+    "request-started",
+    "request-started",
+    "request-retry",
+  ]);
+  const storedEvents = await loadSessionEvents(storageDirectory, session.id);
+  assert.deepEqual(
+    storedEvents.filter((event) => event.kind === "reasoning")
+      .map((event) => event.content),
+    ["First thought\n\nFinal thought"],
+  );
+  assert.deepEqual(
+    storedEvents.filter((event) => event.kind === "assistant")
+      .map((event) => event.content),
+    ["First answer."],
+  );
 });
 
 test("steering during reconnect backoff cancels the retry and replans", {

@@ -1,9 +1,14 @@
 import {
   requireModelContextUsage,
+  type ModelReasoningStreamUpdate,
   type ModelTurn,
 } from "../contracts.js";
 import { ModelConnectionError } from "../connection-error.js";
 import { cloneJsonValue } from "../json-clone.js";
+import {
+  createModelReasoningStreamReporter,
+  modelReasoningFromContent,
+} from "../reasoning.js";
 import type {
   ModelTransport,
   TransportFactoryOptions,
@@ -44,6 +49,19 @@ const protectedFields = [
   "modalities",
   "audio",
 ] as const;
+
+const chatReasoningSources = [
+  "reasoning_details",
+  "reasoning",
+  "reasoning_content",
+] as const;
+
+type ChatReasoningSource = typeof chatReasoningSources[number];
+
+interface ChatReasoningStreamState {
+  content: Record<ChatReasoningSource, string>;
+  source?: ChatReasoningSource;
+}
 
 export function createOpenAIChatTransport(
   options: TransportFactoryOptions = {},
@@ -194,7 +212,17 @@ async function streamChatTurn(
   let refusal = "";
   let finishReason: unknown;
   let contextUsage: ModelTurn["contextUsage"];
+  const reasoningState: ChatReasoningStreamState = {
+    content: {
+      reasoning_details: "",
+      reasoning: "",
+      reasoning_content: "",
+    },
+  };
   const rawToolCalls = new Map<number, Record<string, unknown>>();
+  const reportReasoning = createModelReasoningStreamReporter(
+    request.onReasoning,
+  );
 
   for await (const chunk of streamOpenAIEvents(
     request.runtimeProfile.profile,
@@ -233,6 +261,15 @@ async function streamChatTurn(
       }
       assertChatDeltaText(delta, "content");
       assertChatDeltaText(delta, "refusal");
+      const reasoningUpdates = chatReasoningStreamUpdates(
+        delta,
+        rawMessage.reasoning_details,
+        reasoningState,
+        "OpenAI Chat Completions",
+      );
+      for (const update of reasoningUpdates) {
+        await reportReasoning(update);
+      }
       if (typeof delta.content === "string" && delta.content) {
         content += delta.content;
         if (visibleContentKind && visibleContentKind !== "content") {
@@ -287,12 +324,18 @@ async function streamChatTurn(
       rawMessage,
       "OpenAI Chat Completions",
       contextUsage,
+      reasoningState.source,
     );
   }
   requireOpenAIChatAssistantMessage(rawMessage, "OpenAI Chat Completions");
   const toolCalls = requireOpenAIChatToolCalls(
     completedRawToolCalls,
     "OpenAI Chat Completions",
+  );
+  const reasoning = chatAssistantReasoning(
+    rawMessage,
+    "OpenAI Chat Completions",
+    reasoningState.source,
   );
   assertCompleteChatFinishReason(
     // Some compatible streams report stop after emitting complete tool calls.
@@ -307,6 +350,7 @@ async function streamChatTurn(
   return {
     content: visibleContent || null,
     toolCalls,
+    ...(reasoning ? { reasoning } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     providerState: { kind: "openai-chat", message: rawMessage },
   };
@@ -416,11 +460,13 @@ function turnFromRawMessage(
 ): ModelTurn {
   const message = requireOpenAIChatAssistantMessage(value, label);
   const content = chatAssistantContent(message, label);
+  const reasoning = chatAssistantReasoning(message, label);
   const toolCalls = requireOpenAIChatToolCalls(message.tool_calls, label);
   if (!content && !toolCalls.length) throw new Error(`${label} returned an empty response.`);
   return {
     content,
     toolCalls,
+    ...(reasoning ? { reasoning } : {}),
     providerState: {
       kind: "openai-chat",
       message: cloneJsonValue(message),
@@ -432,14 +478,17 @@ function outputLimitTurnFromRawMessage(
   value: unknown,
   label: string,
   contextUsage: ModelTurn["contextUsage"],
+  reasoningSource?: ChatReasoningSource,
 ): ModelTurn {
   const message = requireOpenAIChatAssistantMessage(value, label);
+  const reasoning = chatAssistantReasoning(message, label, reasoningSource);
   requireOpenAIChatToolCalls(message.tool_calls, label, {
     allowIncompleteArguments: true,
   });
   return {
     content: chatAssistantContent(message, label),
     toolCalls: [],
+    ...(reasoning ? { reasoning } : {}),
     continuation: { reason: "output_limit" },
     ...(contextUsage ? { contextUsage } : {}),
     providerState: {
@@ -448,6 +497,185 @@ function outputLimitTurnFromRawMessage(
       outputLimited: true,
     },
   };
+}
+
+function chatAssistantReasoning(
+  value: Record<string, unknown>,
+  label: string,
+  preferredSource?: ChatReasoningSource,
+): ModelTurn["reasoning"] {
+  const details = chatReasoningDetails(
+    value.reasoning_details,
+    undefined,
+    label,
+    "message",
+  );
+  const candidates: Record<ChatReasoningSource, string> = {
+    reasoning_details: details.content,
+    reasoning: optionalChatReasoningText(
+      value.reasoning,
+      "reasoning",
+      label,
+      "message",
+    ),
+    reasoning_content: optionalChatReasoningText(
+      value.reasoning_content,
+      "reasoning_content",
+      label,
+      "message",
+    ),
+  };
+  if (preferredSource && candidates[preferredSource]) {
+    return modelReasoningFromContent(candidates[preferredSource], true);
+  }
+  for (const source of chatReasoningSources) {
+    if (candidates[source]) {
+      return modelReasoningFromContent(candidates[source], true);
+    }
+  }
+  return modelReasoningFromContent("", details.stageObserved);
+}
+
+function chatReasoningStreamUpdates(
+  delta: Record<string, unknown>,
+  currentDetails: unknown,
+  state: ChatReasoningStreamState,
+  label: string,
+): ModelReasoningStreamUpdate[] {
+  const detailDelta = chatReasoningDetails(
+    delta.reasoning_details,
+    currentDetails,
+    label,
+    "delta",
+  );
+  const mergedDetails = Array.isArray(delta.reasoning_details)
+    ? mergeReasoningDetails(currentDetails, delta.reasoning_details)
+    : currentDetails;
+  const chunks: Record<
+    Exclude<ChatReasoningSource, "reasoning_details">,
+    string
+  > = {
+    reasoning: optionalChatReasoningText(
+      delta.reasoning,
+      "reasoning",
+      label,
+      "delta",
+    ),
+    reasoning_content: optionalChatReasoningText(
+      delta.reasoning_content,
+      "reasoning_content",
+      label,
+      "delta",
+    ),
+  };
+  const previousSource = state.source;
+  const previousContent = previousSource ? state.content[previousSource] : "";
+  state.content.reasoning_details = chatReasoningDetails(
+    mergedDetails,
+    undefined,
+    label,
+    "message",
+  ).content;
+  for (const source of ["reasoning", "reasoning_content"] as const) {
+    state.content[source] += chunks[source];
+  }
+  const bestSource = chatReasoningSources.find((source) =>
+    state.content[source].length > 0
+  );
+  const updates: ModelReasoningStreamUpdate[] = detailDelta.stageObserved
+    ? [{ type: "start" }]
+    : [];
+  if (!bestSource) return updates;
+  const nextContent = state.content[bestSource];
+  if (previousSource === bestSource) {
+    if (nextContent !== previousContent) {
+      updates.push(nextContent.startsWith(previousContent)
+        ? { type: "delta", delta: nextContent.slice(previousContent.length) }
+        : { type: "replace", content: nextContent });
+    }
+    return updates;
+  }
+  state.source = bestSource;
+  updates.push(previousSource
+    ? { type: "replace", content: nextContent }
+    : { type: "delta", delta: nextContent });
+  return updates;
+}
+
+function optionalChatReasoningText(
+  value: unknown,
+  field: "reasoning" | "reasoning_content",
+  label: string,
+  scope: "delta" | "message",
+): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") {
+    throw new Error(`${label} returned malformed ${scope} ${field}.`);
+  }
+  return value;
+}
+
+function chatReasoningDetails(
+  value: unknown,
+  current: unknown,
+  label: string,
+  scope: "delta" | "message",
+): { content: string; stageObserved: boolean } {
+  if (value === undefined || value === null) {
+    return { content: "", stageObserved: false };
+  }
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} returned malformed ${scope} reasoning_details.`);
+  }
+  const entries = value.map((entry) => {
+    if (!isRecord(entry)) {
+      throw new Error(`${label} returned malformed ${scope} reasoning_details.`);
+    }
+    if (
+      entry.index !== undefined &&
+      (!Number.isSafeInteger(entry.index) || (entry.index as number) < 0)
+    ) {
+      throw new Error(`${label} returned malformed ${scope} reasoning_details.`);
+    }
+    if (entry.type !== undefined && typeof entry.type !== "string") {
+      throw new Error(`${label} returned malformed ${scope} reasoning_details.`);
+    }
+    return entry;
+  }).sort(compareReasoningDetailOrder);
+  const content = entries.map((entry) => {
+    const type = chatReasoningDetailType(entry, current);
+    if (type === "reasoning.summary") {
+      if (entry.summary !== undefined) {
+        if (typeof entry.summary !== "string") {
+          throw new Error(`${label} returned malformed reasoning summary.`);
+        }
+        return entry.summary;
+      }
+    }
+    if (type === "reasoning.text" && entry.text !== undefined) {
+      if (typeof entry.text !== "string") {
+        throw new Error(`${label} returned malformed reasoning text.`);
+      }
+      return entry.text;
+    }
+    return "";
+  }).join("");
+  return { content, stageObserved: value.length > 0 };
+}
+
+function chatReasoningDetailType(
+  entry: Record<string, unknown>,
+  current: unknown,
+): string | undefined {
+  if (typeof entry.type === "string") return entry.type;
+  const index = reasoningDetailIndex(entry);
+  if (index === undefined || !Array.isArray(current)) return undefined;
+  const existing = current.find((candidate) =>
+    reasoningDetailIndex(candidate) === index
+  );
+  return isRecord(existing) && typeof existing.type === "string"
+    ? existing.type
+    : undefined;
 }
 
 function chatAssistantContent(
@@ -488,7 +716,11 @@ function accumulateUnknownDelta(
   for (const [key, value] of Object.entries(delta)) {
     if (
       key === "role" || key === "content" || key === "refusal" ||
-      key === "tool_calls" || value === undefined
+      key === "tool_calls" || value === undefined ||
+      (
+        (key === "reasoning" || key === "reasoning_content" ||
+          key === "reasoning_details") && value === null
+      )
     ) {
       continue;
     }
@@ -520,13 +752,15 @@ function mergeReasoningDetails(
       result.push(cloneJsonValue(entry));
     }
   }
-  return result.sort((left, right) => {
-    const leftIndex = reasoningDetailIndex(left);
-    const rightIndex = reasoningDetailIndex(right);
-    if (leftIndex === undefined) return rightIndex === undefined ? 0 : 1;
-    if (rightIndex === undefined) return -1;
-    return leftIndex - rightIndex;
-  });
+  return result.sort(compareReasoningDetailOrder);
+}
+
+function compareReasoningDetailOrder(left: unknown, right: unknown): number {
+  const leftIndex = reasoningDetailIndex(left);
+  const rightIndex = reasoningDetailIndex(right);
+  if (leftIndex === undefined) return rightIndex === undefined ? 0 : 1;
+  if (rightIndex === undefined) return -1;
+  return leftIndex - rightIndex;
 }
 
 function mergeReasoningDetailRecord(

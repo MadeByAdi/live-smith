@@ -3,6 +3,7 @@ import {
   type ModelConversationMessage,
   type ModelHostedWebSearch,
   type ModelInputPart,
+  type ModelReasoningStreamUpdate,
   type ModelToolCall,
   type ModelTurn,
 } from "../contracts.js";
@@ -27,6 +28,11 @@ import {
   safeModelWebSearchId,
 } from "../web-search.js";
 import { cloneJsonValue } from "../json-clone.js";
+import {
+  createModelReasoningStreamReporter,
+  mergeModelReasoning,
+  modelReasoningFromContent,
+} from "../reasoning.js";
 import { anthropicMessagesInputSupport } from "../input-support.js";
 import type {
   DiscoveredModelInfo,
@@ -244,9 +250,16 @@ async function anthropicTurnWithContinuations(
         ...continuationContent.flat(),
         ...responseContent,
       ], initialSearchCalls);
+      const reasoning = mergeModelReasoning([
+        ...continuationContent.map((content) =>
+          reasoningFromAnthropicContent(content)
+        ),
+        turn.reasoning,
+      ]);
       return {
         ...turn,
         content: combinedText || null,
+        ...(reasoning ? { reasoning } : {}),
         ...(citations.length ? { citations } : {}),
         ...(hostedWebSearches.length ? { hostedWebSearches } : {}),
         ...(isRecord(turn.providerState)
@@ -705,6 +718,30 @@ async function streamAnthropicMessage(
   const startedContentBlocks = new Set<number>();
   const closedContentBlocks = new Set<number>();
   const seenWebSearchResultIds = new Set<string>();
+  const reportReasoning = createModelReasoningStreamReporter(
+    request.onReasoning,
+  );
+  let reportedReasoningContent = "";
+  const reportCurrentReasoning = async (): Promise<void> => {
+    const reasoning = reasoningFromAnthropicContent(
+      [...contentBlocks.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, block]) => block),
+    );
+    if (!reasoning) return;
+    await reportReasoning({ type: "start" });
+    if (reasoning.content === reportedReasoningContent) return;
+    const update: ModelReasoningStreamUpdate = reasoning.content.startsWith(
+        reportedReasoningContent,
+      )
+      ? {
+          type: "delta",
+          delta: reasoning.content.slice(reportedReasoningContent.length),
+        }
+      : { type: "replace", content: reasoning.content };
+    reportedReasoningContent = reasoning.content;
+    await reportReasoning(update);
+  };
   let pendingToolInputError: Error | undefined;
   let messageStarted = false;
   let stopped = false;
@@ -759,6 +796,12 @@ async function streamAnthropicMessage(
       startedContentBlocks.add(index);
       contentBlocks.set(index, cloneJsonValue(contentBlock));
       if (
+        contentBlock.type === "thinking" ||
+        contentBlock.type === "redacted_thinking"
+      ) {
+        await reportCurrentReasoning();
+      }
+      if (
         contentBlock.type === "web_search_tool_result" &&
         typeof contentBlock.tool_use_id === "string" &&
         isAnthropicWebSearchResultContent(contentBlock.content)
@@ -806,6 +849,7 @@ async function streamAnthropicMessage(
             throw new Error("Anthropic stream returned an invalid thinking_delta event.");
           }
           appendBlockText(block, "thinking", event.delta.thinking);
+          await reportCurrentReasoning();
           break;
         case "signature_delta":
           requireAnthropicDeltaBlock(block, "thinking", "signature_delta");
@@ -950,6 +994,7 @@ function turnFromAnthropicMessage(
   );
   const contentBlocks = requireAnthropicContentBlocks(message.content);
   const text = textFromAnthropicContent(contentBlocks);
+  const reasoning = reasoningFromAnthropicContent(contentBlocks);
   const contextUsage = anthropicContextUsage(
     message.usage,
     contextWindowTokens,
@@ -973,6 +1018,7 @@ function turnFromAnthropicMessage(
       return {
         content: text || null,
         toolCalls: [],
+        ...(reasoning ? { reasoning } : {}),
         termination: { reason: "output_limit" },
         ...(citations.length ? { citations } : {}),
         ...(contextUsage ? { contextUsage } : {}),
@@ -985,6 +1031,7 @@ function turnFromAnthropicMessage(
       return {
         content: text || null,
         toolCalls: [],
+        ...(reasoning ? { reasoning } : {}),
         termination: { reason: "output_limit" },
         ...(citations.length ? { citations } : {}),
         ...(contextUsage ? { contextUsage } : {}),
@@ -994,6 +1041,7 @@ function turnFromAnthropicMessage(
     return {
       content: text || null,
       toolCalls: [],
+      ...(reasoning ? { reasoning } : {}),
       ...(stopReason === "max_tokens"
         ? {
             continuation: { reason: "output_limit" as const },
@@ -1029,11 +1077,28 @@ function turnFromAnthropicMessage(
   return {
     content: assistantContent || null,
     toolCalls,
+    ...(reasoning ? { reasoning } : {}),
     ...(citations.length ? { citations } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     ...(hostedWebSearches.length ? { hostedWebSearches } : {}),
     providerState: anthropicProviderState(contentBlocks),
   };
+}
+
+function reasoningFromAnthropicContent(
+  content: readonly AnthropicContentBlock[],
+): ModelTurn["reasoning"] {
+  const reasoningBlocks = content.filter((block) =>
+    block.type === "thinking" || block.type === "redacted_thinking"
+  );
+  return modelReasoningFromContent(
+    reasoningBlocks.flatMap((block) =>
+      block.type === "thinking" && typeof block.thinking === "string"
+        ? [block.thinking]
+        : []
+    ).filter((content) => content.length > 0).join("\n\n"),
+    reasoningBlocks.length > 0,
+  );
 }
 
 function hasUnresolvedAnthropicServerTool(

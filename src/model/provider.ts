@@ -3,6 +3,7 @@ import type {
   ModelHostedWebSearch,
   ModelInputPart,
   ModelConversationMessage,
+  ModelReasoningStreamUpdate,
   ModelTurn,
 } from "./contracts.js";
 import type {
@@ -182,6 +183,9 @@ export interface TransportRequest {
   reconnectState?: object;
   signal?: AbortSignal;
   onDelta?: ((delta: string) => Promise<void> | void) | undefined;
+  onReasoning?: ((
+    update: ModelReasoningStreamUpdate,
+  ) => Promise<void> | void) | undefined;
   onHostedWebSearch?: ((
     update: ModelHostedWebSearch,
   ) => Promise<void> | void) | undefined;

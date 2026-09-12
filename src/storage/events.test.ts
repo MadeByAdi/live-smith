@@ -696,6 +696,10 @@ test("appendSessionEvent accepts non-tool event kinds", async () => {
     content: "I can set that up.",
   });
   await appendSessionEvent(dir, sessionId, {
+    kind: "reasoning",
+    content: "",
+  });
+  await appendSessionEvent(dir, sessionId, {
     kind: "apply_requested",
     content: "Apply 1 action?",
     name: "confirm_apply",
@@ -712,9 +716,9 @@ test("appendSessionEvent accepts non-tool event kinds", async () => {
   const events = await loadSessionEvents(dir, sessionId);
   assert.deepEqual(
     events.map((event) => event.kind),
-    ["assistant", "apply_requested", "apply_auto_approved", "compaction"],
+    ["assistant", "reasoning", "apply_requested", "apply_auto_approved", "compaction"],
   );
-  assert.equal(events[1]?.name, "confirm_apply");
+  assert.equal(events[2]?.name, "confirm_apply");
 });
 
 test("apply results persist a strict structured recovery ledger", async () => {

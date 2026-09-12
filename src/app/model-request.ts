@@ -3,6 +3,7 @@ import type {
   ModelConversationMessage,
   ModelHostedWebSearch,
   ModelInputPart,
+  ModelReasoningStreamUpdate,
 } from "../model/contracts.js";
 import type { EditScope } from "../agent/edit-scopes.js";
 import { resolveModelCapabilitiesWithEvidence } from "../model/capabilities.js";
@@ -70,6 +71,7 @@ export interface ModelTurnRequestInput {
   reconnectState?: object;
   signal: AbortSignal;
   onDelta(delta: string): Promise<void> | void;
+  onReasoning?(update: ModelReasoningStreamUpdate): Promise<void> | void;
   onHostedWebSearch?(
     update: ModelHostedWebSearch,
   ): Promise<void> | void;
@@ -96,6 +98,9 @@ export function buildModelRequest(input: {
   reconnectState?: object;
   signal?: AbortSignal;
   onDelta?: ((delta: string) => Promise<void> | void) | undefined;
+  onReasoning?: ((
+    update: ModelReasoningStreamUpdate,
+  ) => Promise<void> | void) | undefined;
   onHostedWebSearch?: ((
     update: ModelHostedWebSearch,
   ) => Promise<void> | void) | undefined;
@@ -140,6 +145,7 @@ export function buildModelRequest(input: {
   if (input.reconnectState) request.reconnectState = input.reconnectState;
   if (input.signal) request.signal = input.signal;
   if (input.onDelta) request.onDelta = input.onDelta;
+  if (input.onReasoning) request.onReasoning = input.onReasoning;
   if (input.onHostedWebSearch) {
     request.onHostedWebSearch = input.onHostedWebSearch;
   }

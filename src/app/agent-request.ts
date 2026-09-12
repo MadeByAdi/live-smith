@@ -39,6 +39,7 @@ import type {
   ModelInputPart,
   ModelContextUsage,
   ModelHostedWebSearch,
+  ModelReasoningStreamUpdate,
   ModelTurn,
 } from "../model/contracts.js";
 import type { RuntimeProfile } from "../model/provider.js";
@@ -594,9 +595,12 @@ export async function handleAgentRequest(
           if (!input.continuation) {
             await maybeCompactContext(input.messages, tools, editScopes, turnSignal);
           }
+          await callbacks.onModelRequestStarted?.();
           const result = await requestModelWithReconnect({
             signal: turnSignal,
-            resetTransient: () => callbacks.onAssistantReset?.(),
+            resetTransient: () => callbacks.onModelRequestRetry
+              ? callbacks.onModelRequestRetry()
+              : callbacks.onAssistantReset?.(),
             onProgress: callbacks.onProgress,
             ...(waitForReconnectDelay
               ? { waitForDelay: waitForReconnectDelay }
@@ -626,6 +630,10 @@ export async function handleAgentRequest(
                 onDelta: async (delta) => {
                   await markResponseStarted();
                   await callbacks.onDelta(delta);
+                },
+                onReasoning: async (update) => {
+                  await markResponseStarted();
+                  await callbacks.onReasoningUpdate?.(update);
                 },
                 onHostedWebSearch: async (update) => {
                   await markResponseStarted();
@@ -1152,6 +1160,11 @@ interface AgentRequestCallbacks {
   steering?: SteeringChannel;
   steeringSendId?: string;
   onDelta(delta: string): Promise<void> | void;
+  onReasoningUpdate?(
+    update: ModelReasoningStreamUpdate,
+  ): Promise<void> | void;
+  onModelRequestStarted?(): Promise<void> | void;
+  onModelRequestRetry?(): Promise<void> | void;
   onAssistantReset?(): Promise<void> | void;
   onModelTurnAccepted?(usage: ModelContextUsage | undefined): Promise<void> | void;
   onProgress(message: string): Promise<void> | void;

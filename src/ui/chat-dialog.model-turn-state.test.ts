@@ -33,6 +33,7 @@ function modelTurnState(
     sessionId: "session-1",
     modelTurnEpoch: 0,
     assistantDraft: "Authoritative draft",
+    reasoningDraft: null,
     webSearchUpdates: [webSearch("search-snapshot")],
     progress: "Authoritative progress",
     resolvedConfirmationGeneration: 0,
@@ -174,10 +175,17 @@ test("model-turn snapshots reject malformed exact or nested wire data atomically
     );
     const invalidPayloads = [
       without("progress"),
+      without("reasoningDraft"),
       { ...valid, extra: true },
       { ...valid, modelTurnEpoch: -1 },
       { ...valid, modelTurnEpoch: 0.5 },
       { ...valid, progress: 7 },
+      { ...valid, reasoningDraft: 7 },
+      {
+        ...valid,
+        reasoningDraft:
+          `${"é".repeat(MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES / 2)}a`,
+      },
       { ...valid, resolvedConfirmationGeneration: -1 },
       { ...valid, resolvedConfirmationGeneration: 0.5 },
       {
@@ -308,6 +316,13 @@ test("every epoch-scoped decoder rejects missing, negative, and fractional epoch
         sessionId: "session-1",
         ...epoch,
         delta: " poisoned delta",
+      });
+      harness.emitRawServerEvent({
+        type: "reasoning_update",
+        sendId,
+        sessionId: "session-1",
+        ...epoch,
+        update: { type: "delta", delta: " poisoned reasoning" },
       });
       harness.emitRawServerEvent({
         type: "assistant_reset",

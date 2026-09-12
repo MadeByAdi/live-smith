@@ -2,6 +2,7 @@
       window.LiveSmithFactories.createSessionTimeline = function createSessionTimeline({
         getState,
         getAssistantDraft,
+        getReasoningDraft,
         getQueuedFollowUps,
         getWebSearchUpdates,
         getPendingConfirmation,
@@ -36,7 +37,9 @@
       let renderedTimelineKey = null;
       let renderedTimelineSessionId = null;
       let renderedAssistantDraft = "";
+      let renderedReasoningDraft = null;
       let renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
+      let pendingReasoningSummaryFocus = null;
       const messageRenderSnapshots = new WeakMap();
       const scrollbarIdleTimers = new WeakMap();
       let pendingTimelinePosition = null;
@@ -1481,6 +1484,52 @@
         return item;
       }
 
+      function reasoningSummary(content, streaming) {
+        if (!content) return streaming ? t("Thinking…") : t("Thinking");
+        const firstLine = content.split("\n")[0] || "";
+        const rendered = document.createElement("span");
+        renderMarkdown(rendered, firstLine);
+        const summary = rendered.textContent?.trim() || firstLine;
+        return t("{label} — {summary}", {
+          label: t("Thinking"),
+          summary: truncate(summary, 96),
+        });
+      }
+
+      function buildReasoningItem(content, { eventId = "", streaming = false } = {}) {
+        if (!content) {
+          const item = document.createElement("article");
+          item.className = `timeline-item reasoning${streaming ? " streaming" : ""}`;
+          if (eventId) item.dataset.eventId = eventId;
+          if (streaming) item.dataset.messageKey = "reasoning-streaming";
+          const label = document.createElement("div");
+          label.className = "timeline-label";
+          label.textContent = reasoningSummary(content, streaming);
+          item.append(label);
+          return item;
+        }
+
+        const item = document.createElement("details");
+        item.className = `timeline-item reasoning${streaming ? " streaming" : ""}`;
+        if (eventId) item.dataset.eventId = eventId;
+        if (streaming) item.dataset.messageKey = "reasoning-streaming";
+        item.open = streaming;
+        const summary = document.createElement("summary");
+        summary.className = "timeline-label";
+        summary.textContent = reasoningSummary(content, streaming);
+        const body = document.createElement("div");
+        body.className = "timeline-content";
+        renderMarkdown(body, content);
+        item.append(summary, body);
+        return item;
+      }
+
+      function buildReasoningDraftItem(content) {
+        const item = buildReasoningItem(content, { streaming: true });
+        messageRenderSnapshots.set(item, content);
+        return item;
+      }
+
       function buildAssistantDraftItem(content) {
         const item = document.createElement("article");
         item.className = "timeline-item assistant streaming";
@@ -1559,34 +1608,116 @@
         const nearBottom =
           timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 48;
         const assistantDraft = getAssistantDraft();
-        let item = timeline.querySelector(".timeline-item.assistant.streaming");
-        if (!assistantDraft) {
-          item?.remove();
-          if (!timeline.children.length) {
-            timeline.append(buildEmptyState());
+        const reasoningDraft = getReasoningDraft?.() ?? null;
+        if (reasoningDraft !== null && pendingReasoningSummaryFocus) {
+          pendingReasoningSummaryFocus = null;
+        }
+        let reasoningItem = timeline.querySelector(
+          ".timeline-item.reasoning.streaming",
+        );
+        if (reasoningDraft === null) {
+          rememberReasoningSummaryFocus(reasoningItem, timeline);
+          reasoningItem?.remove();
+        } else {
+          timeline.querySelector(".empty")?.remove();
+          const expectedTag = reasoningDraft ? "DETAILS" : "ARTICLE";
+          if (!reasoningItem || reasoningItem.tagName !== expectedTag) {
+            const replacement = buildReasoningDraftItem(reasoningDraft);
+            if (reasoningItem) reasoningItem.replaceWith(replacement);
+            else {
+              const nextItem = timeline.querySelector(
+                ".assistant.streaming, .queued-follow-up, .confirm-card",
+              );
+              timeline.insertBefore(replacement, nextItem);
+            }
+            reasoningItem = replacement;
+            if (renderedTimelineSessionId === getState().activeSessionId) {
+              markMessageArrival(reasoningItem);
+            }
+          } else if (reasoningDraft) {
+            reasoningItem.querySelector("summary").textContent =
+              reasoningSummary(reasoningDraft, true);
+            renderMarkdown(
+              reasoningItem.querySelector(".timeline-content"),
+              reasoningDraft,
+            );
+            messageRenderSnapshots.set(reasoningItem, reasoningDraft);
           }
-          renderedAssistantDraft = "";
-          return;
         }
 
-        timeline.querySelector(".empty")?.remove();
-        if (!item) {
-          item = buildAssistantDraftItem(assistantDraft);
-          if (renderedTimelineSessionId === getState().activeSessionId) markMessageArrival(item);
-          const nextLocalItem = timeline.querySelector(
-            ".queued-follow-up, .confirm-card",
-          );
-          timeline.insertBefore(item, nextLocalItem);
+        let assistantItem = timeline.querySelector(
+          ".timeline-item.assistant.streaming",
+        );
+        if (!assistantDraft) {
+          assistantItem?.remove();
         } else {
-          renderMarkdown(item.querySelector(".timeline-content"), assistantDraft);
-          messageRenderSnapshots.set(item, assistantDraft);
+          timeline.querySelector(".empty")?.remove();
+          if (!assistantItem) {
+            assistantItem = buildAssistantDraftItem(assistantDraft);
+            if (renderedTimelineSessionId === getState().activeSessionId) {
+              markMessageArrival(assistantItem);
+            }
+            const nextLocalItem = timeline.querySelector(
+              ".queued-follow-up, .confirm-card",
+            );
+            timeline.insertBefore(assistantItem, nextLocalItem);
+          } else {
+            renderMarkdown(
+              assistantItem.querySelector(".timeline-content"),
+              assistantDraft,
+            );
+            messageRenderSnapshots.set(assistantItem, assistantDraft);
+          }
+        }
+        if (
+          reasoningDraft === null &&
+          !assistantDraft &&
+          !timeline.children.length
+        ) {
+          timeline.append(buildEmptyState());
         }
         const confirmation = timeline.querySelector(".confirm-card");
         if (confirmation) setConfirmationModalActive(true, confirmation);
         if (pendingTimelinePosition) schedulePendingTimelinePosition();
         else if (nearBottom) timeline.scrollTop = timeline.scrollHeight;
         renderedAssistantDraft = assistantDraft;
+        renderedReasoningDraft = reasoningDraft;
         renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
+      }
+
+      function rememberReasoningSummaryFocus(reasoningItem, timeline) {
+        const summary = reasoningItem?.querySelector?.(":scope > summary");
+        if (!summary || document.activeElement !== summary) return;
+        pendingReasoningSummaryFocus = {
+          sessionId: getState().activeSessionId,
+          content: messageRenderSnapshots.get(reasoningItem) || "",
+          eventIds: new Set(
+            [...timeline.querySelectorAll("[data-event-id]")]
+              .map((item) => item.dataset.eventId)
+              .filter(Boolean),
+          ),
+        };
+      }
+
+      function reasoningSummaryFocusTarget(timeline, events) {
+        const pending = pendingReasoningSummaryFocus;
+        if (!pending || pending.sessionId !== getState().activeSessionId) {
+          pendingReasoningSummaryFocus = null;
+          return null;
+        }
+        const newEvents = events.filter((event) =>
+          !pending.eventIds.has(event.id)
+        );
+        const nextEvent = newEvents[0];
+        const target = nextEvent?.kind === "reasoning" &&
+            nextEvent.content === pending.content
+          ? [...timeline.querySelectorAll(
+              "details.timeline-item.reasoning[data-event-id]",
+            )].find((item) => item.dataset.eventId === nextEvent.id)
+              ?.querySelector(":scope > summary") || null
+          : null;
+        if (nextEvent && !target) pendingReasoningSummaryFocus = null;
+        return target;
       }
 
       function focusedTimelineLinkIdentity(element, timeline) {
@@ -1744,6 +1875,7 @@
         const state = getState();
         syncMessageActions();
         const assistantDraft = getAssistantDraft();
+        const reasoningDraft = getReasoningDraft?.() ?? null;
         const queuedFollowUps = getQueuedFollowUps?.() || [];
         const webSearchUpdates = getWebSearchUpdates?.() || [];
         const pendingConfirmation = getPendingConfirmation();
@@ -1758,11 +1890,20 @@
           pendingUserMessage,
         });
         if (renderKey === renderedTimelineKey) {
-          if (assistantDraft !== renderedAssistantDraft) renderAssistantDraft();
+          if (
+            assistantDraft !== renderedAssistantDraft ||
+            reasoningDraft !== renderedReasoningDraft
+          ) renderAssistantDraft();
           return;
         }
         const timeline = document.getElementById("timeline");
         const sameSession = renderedTimelineSessionId === state.activeSessionId;
+        if (pendingReasoningSummaryFocus?.sessionId !== state.activeSessionId) {
+          pendingReasoningSummaryFocus = null;
+        }
+        if (reasoningDraft !== null && pendingReasoningSummaryFocus) {
+          pendingReasoningSummaryFocus = null;
+        }
         const existingMessages = new Map(sameSession
           ? [...timeline.children]
             .filter((item) => item.dataset.messageKey)
@@ -1770,6 +1911,27 @@
           : []);
         const desiredNodes = [];
         const focusBeforeRender = document.activeElement;
+        const existingReasoningDetails = existingMessages.get("reasoning-streaming");
+        const reasoningDetailsOpen = existingReasoningDetails instanceof HTMLDetailsElement
+          ? existingReasoningDetails.open
+          : undefined;
+        const focusedReasoningSummary = Boolean(
+          sameSession &&
+          focusBeforeRender?.matches?.("summary") &&
+          focusBeforeRender.closest('[data-message-key="reasoning-streaming"]'),
+        );
+        if (focusedReasoningSummary && reasoningDraft === null) {
+          rememberReasoningSummaryFocus(existingReasoningDetails, timeline);
+        } else if (
+          pendingReasoningSummaryFocus &&
+          focusBeforeRender?.isConnected &&
+          focusBeforeRender !== document.body &&
+          focusBeforeRender !== document.documentElement &&
+          focusBeforeRender !== timeline &&
+          !focusedReasoningSummary
+        ) {
+          pendingReasoningSummaryFocus = null;
+        }
         const focusedLinkIdentity = focusedTimelineLinkIdentity(
           focusBeforeRender,
           timeline,
@@ -1819,6 +1981,7 @@
         if (
           !events.length &&
           !webSearchUpdates.length &&
+          reasoningDraft === null &&
           !assistantDraft &&
           !queuedFollowUps.length &&
           !pendingConfirmation &&
@@ -1912,6 +2075,23 @@
           desiredNodes.push(item);
         }
 
+        if (reasoningDraft !== null) {
+          const reasoningItem = messageItemForRender(
+            existingMessages,
+            "reasoning-streaming",
+            reasoningDraft,
+            () => buildReasoningDraftItem(reasoningDraft),
+            sameSession,
+          );
+          if (
+            reasoningItem instanceof HTMLDetailsElement &&
+            reasoningDetailsOpen !== undefined
+          ) {
+            reasoningItem.open = reasoningDetailsOpen;
+          }
+          desiredNodes.push(reasoningItem);
+        }
+
         if (assistantDraft) {
           desiredNodes.push(messageItemForRender(
             existingMessages,
@@ -1936,6 +2116,10 @@
         if (confirmation) desiredNodes.push(confirmation);
         reconcileChildNodes(timeline, desiredNodes);
         syncMessageActions();
+        const durableReasoningFocus = reasoningSummaryFocusTarget(
+          timeline,
+          events,
+        );
         if (pendingConfirmation) {
           setConfirmationModalActive(true, confirmation);
           if (isConfirmationLocked?.()) setConfirmationState(true);
@@ -1957,6 +2141,17 @@
             returnFocus.focus({ preventScroll: true });
           } else if (hadConfirmation) {
             document.getElementById("sendButton")?.focus({ preventScroll: true });
+          } else if (focusedReasoningSummary) {
+            const reasoningFocus = timeline.querySelector(
+              '[data-message-key="reasoning-streaming"] > summary',
+            ) ?? durableReasoningFocus;
+            if (reasoningFocus) {
+              pendingReasoningSummaryFocus = null;
+              reasoningFocus.focus({ preventScroll: true });
+            }
+          } else if (durableReasoningFocus) {
+            pendingReasoningSummaryFocus = null;
+            durableReasoningFocus.focus({ preventScroll: true });
           } else if (restoreTimelineLinkFocus(timeline, focusedLinkIdentity)) {
             // Keep keyboard users on the same correlated result after an SSE refresh.
           } else if (focusedSummaryEventId) {
@@ -2007,6 +2202,7 @@
         renderedTimelineKey = renderKey;
         renderedTimelineSessionId = state.activeSessionId;
         renderedAssistantDraft = assistantDraft;
+        renderedReasoningDraft = reasoningDraft;
         renderedAssistantDraftLocale = window.LiveSmithI18n.locale;
       }
 
@@ -2385,6 +2581,9 @@
 
       function buildTimelineItem(event) {
         const eventContent = event.content || "";
+        if (event.kind === "reasoning") {
+          return buildReasoningItem(eventContent, { eventId: event.id });
+        }
         if (event.kind === "web_search") {
           return buildWebSearchItem({
             eventId: event.id,
@@ -2718,6 +2917,7 @@
       function eventLabel(event) {
         if (event.kind === "user") return t("You");
         if (event.kind === "assistant") return "Live Smith";
+        if (event.kind === "reasoning") return t("Thinking");
         if (event.kind === "compaction") return t("Context compacted");
         if (event.kind === "error") return t("Error");
         return event.kind;

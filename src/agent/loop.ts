@@ -26,6 +26,7 @@ import {
   type ModelConversationMessage,
   type ModelToolInputPart,
   type ModelHostedWebSearch,
+  type ModelReasoning,
   type ModelToolCall,
   type ModelTurn,
 } from "../model/contracts.js";
@@ -35,9 +36,14 @@ import {
 import { normalizeModelCitations } from "../model/citations.js";
 import { HOSTED_WEB_SEARCH_MAX_EVENTS_PER_SEND } from "../model/tools.js";
 import { throwIfAborted } from "../runtime/host.js";
+import {
+  mergeModelReasoning,
+  requireModelReasoning,
+} from "../model/reasoning.js";
 
 export type AgentLoopTraceEvent =
   | { kind: "assistant"; content: string; citations?: ModelCitation[] }
+  | { kind: "reasoning"; content: string }
   | {
       kind: "web_search";
       content: string;
@@ -328,6 +334,7 @@ export async function runAgentLoop(
   let planningProgressDeadline = maxIterations;
   let consecutiveModelContinuations = 0;
   let pendingContinuationContent = "";
+  let pendingContinuationReasoning: ModelReasoning | undefined;
   let pendingContinuationCitations: ModelCitation[] = [];
   let pendingContinuationMessageStart: number | undefined;
   const observedProgress = new Set<string>();
@@ -360,6 +367,7 @@ export async function runAgentLoop(
       lastArgumentFailure = "";
       consecutiveModelContinuations = 0;
       pendingContinuationContent = "";
+      pendingContinuationReasoning = undefined;
       pendingContinuationCitations = [];
     }
     if (iteration > planningProgressDeadline) {
@@ -393,6 +401,7 @@ export async function runAgentLoop(
       lastArgumentFailure = "";
       consecutiveModelContinuations = 0;
       pendingContinuationContent = "";
+      pendingContinuationReasoning = undefined;
       pendingContinuationCitations = [];
       continue;
     }
@@ -404,9 +413,12 @@ export async function runAgentLoop(
       lastArgumentFailure = "";
       consecutiveModelContinuations = 0;
       pendingContinuationContent = "";
+      pendingContinuationReasoning = undefined;
       pendingContinuationCitations = [];
       continue;
     }
+
+    const turnReasoning = requireModelReasoning(turn.reasoning);
 
     const assistantMessageIndex = messages.length;
     messages.push({
@@ -453,12 +465,22 @@ export async function runAgentLoop(
       pendingContinuationMessageStart ??= assistantMessageIndex;
       consecutiveModelContinuations += 1;
       pendingContinuationContent += turn.content ?? "";
+      pendingContinuationReasoning = mergeModelReasoning([
+        pendingContinuationReasoning,
+        turnReasoning,
+      ]);
       pendingContinuationCitations = mergeCitations(
         pendingContinuationCitations,
         turn.citations ?? [],
       );
       if (consecutiveModelContinuations > maxModelContinuations) {
         const partialText = pendingContinuationContent.trim();
+        if (pendingContinuationReasoning) {
+          await emitTraceEvent(options, {
+            kind: "reasoning",
+            content: pendingContinuationReasoning.content,
+          });
+        }
         if (partialText) {
           await emitTraceEvent(options, {
             kind: "assistant",
@@ -508,14 +530,26 @@ export async function runAgentLoop(
     await options.onModelTurnAccepted?.(acceptedContextUsage);
 
     const completedTurnContent = pendingContinuationContent + (turn.content ?? "");
+    const completedTurnReasoning = mergeModelReasoning([
+      pendingContinuationReasoning,
+      turnReasoning,
+    ]);
     const completedTurnCitations = mergeCitations(
       pendingContinuationCitations,
       turn.citations ?? [],
     );
     consecutiveModelContinuations = 0;
     pendingContinuationContent = "";
+    pendingContinuationReasoning = undefined;
     pendingContinuationCitations = [];
     pendingContinuationMessageStart = undefined;
+
+    if (completedTurnReasoning) {
+      await emitTraceEvent(options, {
+        kind: "reasoning",
+        content: completedTurnReasoning.content,
+      });
+    }
 
     if (turn.termination) {
       const partialText = completedTurnContent.trim();

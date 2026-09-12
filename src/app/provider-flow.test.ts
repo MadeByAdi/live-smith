@@ -520,6 +520,7 @@ test("handleAgentRequest automatically continues an output-limited model turn", 
   });
   const modelInputs: ModelConversationMessage[][] = [];
   const progress: string[] = [];
+  const reasoningUpdates: unknown[] = [];
 
   const result = await handleAgentRequest(
     { environment: { storageDirectory: directory } } as never,
@@ -537,14 +538,18 @@ test("handleAgentRequest automatically continues an output-limited model turn", 
     {
       signal: new AbortController().signal,
       onDelta: () => {},
+      onReasoningUpdate: (update) => { reasoningUpdates.push(update); },
       onProgress: (message) => { progress.push(message); },
       onSessionEvent: () => {},
       confirmActions: async () => true,
     },
     async (request) => {
       modelInputs.push(request.agentMessages);
+      await request.onReasoning?.({ type: "start" });
       if (modelInputs.length === 1) {
+        await request.onReasoning?.({ type: "delta", delta: "First stage" });
         return {
+          reasoning: { content: "First stage" },
           content: "Partial answer. ",
           toolCalls: [],
           continuation: { reason: "output_limit" },
@@ -560,11 +565,27 @@ test("handleAgentRequest automatically continues an output-limited model turn", 
           },
         };
       }
-      return { content: "Complete answer.", toolCalls: [] };
+      await request.onReasoning?.({ type: "delta", delta: "Second alias" });
+      await request.onReasoning?.({
+        type: "replace",
+        content: "Second canonical",
+      });
+      return {
+        reasoning: { content: "Second canonical" },
+        content: "Complete answer.",
+        toolCalls: [],
+      };
     },
   );
 
   assert.equal(result, "Partial answer. Complete answer.");
+  assert.deepEqual(reasoningUpdates, [
+    { type: "start" },
+    { type: "delta", delta: "First stage" },
+    { type: "start" },
+    { type: "delta", delta: "Second alias" },
+    { type: "replace", content: "Second canonical" },
+  ]);
   assert.equal(modelInputs.length, 2);
   const replayed = modelInputs[1]?.[0];
   assert.equal(replayed?.role, "assistant");
@@ -586,6 +607,10 @@ test("handleAgentRequest automatically continues an output-limited model turn", 
   assert.equal(
     events.find((event) => event.kind === "assistant")?.content,
     "Partial answer. Complete answer.",
+  );
+  assert.equal(
+    events.find((event) => event.kind === "reasoning")?.content,
+    "First stage\n\nSecond canonical",
   );
   assert.equal(events.some((event) => event.kind === "error"), false);
 });

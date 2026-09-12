@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Buffer as NodeBuffer } from "node:buffer";
 import test from "node:test";
+import { TextDecoder } from "node:util";
 import type { AgentActionPreview } from "../agent/action-preview.js";
 
 import { ModelConnectionError } from "../model/connection-error.js";
@@ -36,9 +37,13 @@ test("chat bridge reconnect snapshots transient model state before replaying its
     renderHtml: () => "<html></html>",
     handleCommand: async () => state,
     handleSend: async (_input, stream) => {
+      await stream.reasoningUpdate({ type: "start" });
+      await stream.reasoningUpdate({ type: "delta", delta: "discarded thought" });
       await stream.assistantDelta("discarded");
       await stream.webSearchUpdate(searchUpdate("old-search"));
       await stream.assistantReset();
+      await stream.reasoningUpdate({ type: "start" });
+      await stream.reasoningUpdate({ type: "delta", delta: "replacement thought" });
       await stream.assistantDelta("replacement draft");
       await stream.webSearchUpdate(searchUpdate("current-search"));
       await stream.progress("Inspecting sources");
@@ -101,6 +106,7 @@ test("chat bridge reconnect snapshots transient model state before replaying its
       "assistantDraft",
       "modelTurnEpoch",
       "progress",
+      "reasoningDraft",
       "resolvedConfirmationGeneration",
       "sendId",
       "sessionId",
@@ -113,6 +119,7 @@ test("chat bridge reconnect snapshots transient model state before replaying its
       sessionId: "s1",
       modelTurnEpoch: 1,
       assistantDraft: "replacement draft",
+      reasoningDraft: "replacement thought",
       webSearchUpdates: [searchUpdate("current-search")],
       progress: "Waiting for confirmation",
       resolvedConfirmationGeneration: 0,
@@ -132,6 +139,222 @@ test("chat bridge reconnect snapshots transient model state before replaying its
     assert.equal(response.status, 200);
     assert.equal((await send).status, 200);
   } finally {
+    await bridge.close();
+  }
+});
+
+test("chat bridge streams and reconnects a bounded reasoning draft", async () => {
+  const published = deferred();
+  const release = deferred();
+  const exactDraft = "é".repeat(MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES / 2);
+  let overflowError: unknown;
+  const bridge = await createChatBridge({
+    buildState: async () => state,
+    renderHtml: () => "<html></html>",
+    handleCommand: async () => state,
+    handleSend: async (_input, stream) => {
+      await stream.reasoningUpdate({ type: "start" });
+      await stream.reasoningUpdate({ type: "delta", delta: "discarded" });
+      await stream.reasoningUpdate({ type: "replace", content: exactDraft });
+      try {
+        await stream.reasoningUpdate({
+          type: "replace",
+          content: `${exactDraft}a`,
+        });
+      } catch (error) {
+        overflowError = error;
+      }
+      published.resolve();
+      await release.promise;
+    },
+  });
+  const url = new URL(bridge.url);
+  const endpoint = (route: string) =>
+    `${url.origin}${route}?token=${url.searchParams.get("token")}`;
+  const events = await fetch(endpoint("/events"));
+  const send = fetch(endpoint("/send"), {
+    method: "POST",
+    headers: sendHeaders("reasoning-draft-send"),
+    body: JSON.stringify({ prompt: "test", sessionId: "s1" }),
+  });
+
+  try {
+    const updates = await readSsePayloads(events, 3);
+    assert.deepEqual(updates.map((payload) => {
+      const update = payload.update as Record<string, unknown>;
+      return {
+        ...payload,
+        update: update.type === "replace"
+          ? {
+              type: "replace",
+              contentBytes: NodeBuffer.byteLength(
+                String(update.content),
+                "utf8",
+              ),
+            }
+          : update,
+      };
+    }), [{
+      type: "reasoning_update",
+      sendId: "reasoning-draft-send",
+      sessionId: "s1",
+      modelTurnEpoch: 0,
+      update: { type: "start" },
+    }, {
+      type: "reasoning_update",
+      sendId: "reasoning-draft-send",
+      sessionId: "s1",
+      modelTurnEpoch: 0,
+      update: { type: "delta", delta: "discarded" },
+    }, {
+      type: "reasoning_update",
+      sendId: "reasoning-draft-send",
+      sessionId: "s1",
+      modelTurnEpoch: 0,
+      update: {
+        type: "replace",
+        contentBytes: MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES,
+      },
+    }]);
+    const replacement = updates[2]?.update as { content?: unknown };
+    assert.equal(
+      NodeBuffer.from(String(replacement.content)).equals(
+        NodeBuffer.from(exactDraft),
+      ),
+      true,
+    );
+    await published.promise;
+    assert.ok(overflowError instanceof Error);
+    assert.match(overflowError.message, /1048576/u);
+    const reconnect = await fetch(endpoint("/events"));
+    const [snapshot] = await readSsePayloads(reconnect, 1);
+    assert.equal(snapshot?.type, "model_turn_state");
+    assert.equal(snapshot?.reasoningDraft, exactDraft);
+  } finally {
+    release.resolve();
+    await send;
+    await bridge.close();
+  }
+});
+
+test("chat bridge scopes reasoning replacement to the current continuation segment", async () => {
+  const published = deferred();
+  const release = deferred();
+  const bridge = await createChatBridge({
+    buildState: async () => state,
+    renderHtml: () => "<html></html>",
+    handleCommand: async () => state,
+    handleSend: async (_input, stream) => {
+      await stream.reasoningUpdate({ type: "start" });
+      await stream.reasoningUpdate({ type: "delta", delta: "First stage" });
+      await stream.reasoningUpdate({ type: "start" });
+      await stream.reasoningUpdate({ type: "delta", delta: "Second alias" });
+      await stream.reasoningUpdate({
+        type: "replace",
+        content: "Second canonical",
+      });
+      published.resolve();
+      await release.promise;
+    },
+  });
+  const url = new URL(bridge.url);
+  const endpoint = (route: string) =>
+    `${url.origin}${route}?token=${url.searchParams.get("token")}`;
+  const events = await fetch(endpoint("/events"));
+  const send = fetch(endpoint("/send"), {
+    method: "POST",
+    headers: sendHeaders("reasoning-continuation-send"),
+    body: JSON.stringify({ prompt: "test", sessionId: "s1" }),
+  });
+
+  try {
+    const updates = await readSsePayloads(events, 5);
+    assert.deepEqual(
+      updates.map((payload) => payload.update),
+      [
+        { type: "start" },
+        { type: "delta", delta: "First stage" },
+        { type: "start" },
+        { type: "delta", delta: "\n\nSecond alias" },
+        {
+          type: "replace",
+          content: "First stage\n\nSecond canonical",
+        },
+      ],
+    );
+    await published.promise;
+    const reconnect = await fetch(endpoint("/events"));
+    const [snapshot] = await readSsePayloads(reconnect, 1);
+    assert.equal(
+      snapshot?.reasoningDraft,
+      "First stage\n\nSecond canonical",
+    );
+  } finally {
+    release.resolve();
+    await send;
+    await bridge.close();
+  }
+});
+
+test("chat bridge reconnect keeps prefixes completed before an output-limit retry", async () => {
+  const rolledBack = deferred();
+  const release = deferred();
+  const bridge = await createChatBridge({
+    buildState: async () => state,
+    renderHtml: () => "<html></html>",
+    handleCommand: async () => state,
+    handleSend: async (_input, stream) => {
+      await stream.reasoningUpdate({ type: "delta", delta: "First thought" });
+      await stream.assistantDelta("First ");
+      await stream.webSearchUpdate(searchUpdate("continuation-search"));
+      const requestStream = stream as typeof stream & {
+        modelRequestStarted?(): Promise<void>;
+        modelRequestRetry?(): Promise<void>;
+      };
+      await requestStream.modelRequestStarted?.();
+      await stream.reasoningUpdate({ type: "delta", delta: "Discarded thought" });
+      await stream.assistantDelta("discarded");
+      await stream.sessionEvent(sessionEvent(
+        "completed-continuation-search",
+        "web_search",
+        searchUpdate("continuation-search", "completed"),
+      ));
+      if (requestStream.modelRequestRetry) {
+        await requestStream.modelRequestRetry();
+      } else {
+        await stream.assistantReset();
+      }
+      rolledBack.resolve();
+      await release.promise;
+    },
+  });
+  const url = new URL(bridge.url);
+  const endpoint = (route: string) =>
+    `${url.origin}${route}?token=${url.searchParams.get("token")}`;
+  const events = await fetch(endpoint("/events"));
+  const send = fetch(endpoint("/send"), {
+    method: "POST",
+    headers: sendHeaders("continuation-retry-send"),
+    body: JSON.stringify({ prompt: "test", sessionId: "s1" }),
+  });
+
+  try {
+    await rolledBack.promise;
+    const liveRollback = (
+      await readSsePayloadsThrough(events, "model_turn_state")
+    ).at(-1);
+    assert.equal(liveRollback?.assistantDraft, "First ");
+    assert.equal(liveRollback?.reasoningDraft, "First thought");
+    assert.deepEqual(liveRollback?.webSearchUpdates, []);
+    const reconnect = await fetch(endpoint("/events"));
+    const [snapshot] = await readSsePayloads(reconnect, 1);
+    assert.equal(snapshot?.type, "model_turn_state");
+    assert.equal(snapshot?.assistantDraft, "First ");
+    assert.equal(snapshot?.reasoningDraft, "First thought");
+    assert.deepEqual(snapshot?.webSearchUpdates, []);
+  } finally {
+    release.resolve();
+    await send;
     await bridge.close();
   }
 });
@@ -266,6 +489,7 @@ test("chat bridge silently advances accepted turns and converges durable transie
       sessionId: "s1",
       modelTurnEpoch: 1,
       assistantDraft: "",
+      reasoningDraft: null,
       contextUsage: { usedTokens: 321, contextWindowTokens: 4_096 },
       webSearchUpdates: [],
       progress: "Continuing",
@@ -379,6 +603,7 @@ test("chat bridge reconnect omits stopped sends while retaining another Session'
       sessionId: "s2",
       modelTurnEpoch: 0,
       assistantDraft: "s2 draft",
+      reasoningDraft: null,
       webSearchUpdates: [],
       progress: "Starting agent loop",
       resolvedConfirmationGeneration: 0,
@@ -475,7 +700,7 @@ function searchUpdate(
 
 function sessionEvent(
   id: string,
-  kind: "assistant" | "web_search",
+  kind: "assistant" | "reasoning" | "web_search",
   webSearch?: ReturnType<typeof searchUpdate>,
 ) {
   return {
@@ -493,13 +718,14 @@ async function readSsePayloads(
 ): Promise<Record<string, unknown>[]> {
   assert.ok(response.body);
   const reader = response.body.getReader();
+  const decoder = new TextDecoder();
   const payloads: Record<string, unknown>[] = [];
   let received = "";
   try {
     while (payloads.length < count) {
       const chunk = await reader.read();
       if (chunk.done) throw new Error("Event stream ended before enough payloads arrived.");
-      received += NodeBuffer.from(chunk.value).toString("utf8");
+      received += decoder.decode(chunk.value, { stream: true });
       for (;;) {
         const boundary = received.indexOf("\n\n");
         if (boundary < 0) break;
@@ -523,13 +749,14 @@ async function readSsePayloadsThrough(
 ): Promise<Record<string, unknown>[]> {
   assert.ok(response.body);
   const reader = response.body.getReader();
+  const decoder = new TextDecoder();
   const payloads: Record<string, unknown>[] = [];
   let received = "";
   try {
     for (;;) {
       const chunk = await reader.read();
       if (chunk.done) throw new Error(`Event stream ended before ${terminalType}.`);
-      received += NodeBuffer.from(chunk.value).toString("utf8");
+      received += decoder.decode(chunk.value, { stream: true });
       for (;;) {
         const boundary = received.indexOf("\n\n");
         if (boundary < 0) break;

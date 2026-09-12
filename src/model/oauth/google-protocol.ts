@@ -19,6 +19,10 @@ import {
 } from "../contracts.js";
 import { normalizeModelCitations } from "../citations.js";
 import { cloneJsonValue } from "../json-clone.js";
+import {
+  createModelReasoningStreamReporter,
+  modelReasoningFromContent,
+} from "../reasoning.js";
 import type {
   TransportFactoryOptions,
   TransportRequest,
@@ -440,6 +444,11 @@ async function readGoogleTurn(
   request: TransportRequest,
 ): Promise<ModelTurn> {
   const text: string[] = [];
+  const reasoningText: string[] = [];
+  let reasoningStageObserved = false;
+  const reportReasoning = createModelReasoningStreamReporter(
+    request.onReasoning,
+  );
   const toolCalls: ModelToolCall[] = [];
   const replayParts: GooglePart[] = [];
   const citationCandidates: Array<{ url: string; title?: string }> = [];
@@ -509,6 +518,14 @@ async function readGoogleTurn(
       if (part.thought !== undefined && typeof part.thought !== "boolean") {
         throw new Error("Google Antigravity returned invalid thought metadata.");
       }
+      if (part.thought === true) {
+        reasoningStageObserved = true;
+        await reportReasoning({ type: "start" });
+        if (typeof part.text === "string") {
+          reasoningText.push(part.text);
+          await reportReasoning({ type: "delta", delta: part.text });
+        }
+      }
       if (typeof part.text === "string" && part.thought !== true) {
         text.push(part.text);
         await request.onDelta?.(part.text);
@@ -559,6 +576,10 @@ async function readGoogleTurn(
     );
   }
   const content = text.join("");
+  const reasoning = modelReasoningFromContent(
+    reasoningText.join(""),
+    reasoningStageObserved,
+  );
   const citations = normalizeModelCitations(citationCandidates);
   const outputLimited = finishReason === "MAX_TOKENS";
   if (!content && toolCalls.length === 0 && !(outputLimited && replayParts.length)) {
@@ -568,6 +589,7 @@ async function readGoogleTurn(
   return {
     content: content || null,
     toolCalls: outputLimited ? [] : toolCalls,
+    ...(reasoning ? { reasoning } : {}),
     ...(citations.length ? { citations } : {}),
     ...(totalTokens !== undefined && contextWindow !== undefined
       ? { contextUsage: requireModelContextUsage(totalTokens, contextWindow) }

@@ -19,6 +19,7 @@ import { isStorageCommitOutcomeUnknownError } from "../storage/persistence.js";
 import type {
   ModelContextUsage,
   ModelHostedWebSearch,
+  ModelReasoningStreamUpdate,
 } from "../model/contracts.js";
 import type { OAuthAuthState } from "../model/provider.js";
 import {
@@ -285,6 +286,11 @@ export interface ChatBridgeConfirmationRequest {
 
 export interface ChatBridgeStream {
   assistantDelta(delta: string): Promise<void>;
+  reasoningUpdate(update: ModelReasoningStreamUpdate): Promise<void>;
+  /** Captures the transient projection before one logical provider request. */
+  modelRequestStarted(): Promise<void>;
+  /** Rolls back only output produced after the latest request checkpoint. */
+  modelRequestRetry(): Promise<void>;
   assistantReset(): Promise<void>;
   modelTurnAccepted(usage?: ModelContextUsage): Promise<void>;
   webSearchUpdate(update: ModelHostedWebSearch): Promise<void>;
@@ -411,7 +417,17 @@ interface ActiveSend {
   modelTurnEpoch: number;
   assistantDraft: string;
   assistantDraftBytes: number;
+  modelRequestAssistantStart: number;
+  modelRequestAssistantStartBytes: number;
+  reasoningDraft: string | null;
+  reasoningDraftBytes: number;
+  modelRequestReasoningStart: number | null;
+  modelRequestReasoningStartBytes: number;
+  reasoningSegmentStart: number;
+  reasoningSegmentStartBytes: number;
+  reasoningSegmentNeedsSeparator: boolean;
   searchMap: Map<string, ModelHostedWebSearch>;
+  modelRequestSearchMap: Map<string, ModelHostedWebSearch>;
   contextUsage?: ModelContextUsage | null;
 }
 
@@ -554,6 +570,13 @@ type SsePayload =
       delta: string;
     }
   | {
+      type: "reasoning_update";
+      sendId: string;
+      sessionId: string;
+      modelTurnEpoch: number;
+      update: ModelReasoningStreamUpdate;
+    }
+  | {
       type: "assistant_reset";
       sendId: string;
       sessionId: string;
@@ -579,6 +602,7 @@ type SsePayload =
       sessionId: string;
       modelTurnEpoch: number;
       assistantDraft: string;
+      reasoningDraft: string | null;
       webSearchUpdates: ModelHostedWebSearch[];
       contextUsage?: ModelContextUsage | null;
       progress: string;
@@ -1128,6 +1152,30 @@ export async function createChatBridge(
             : {}),
         };
 
+  const modelTurnStatePayload = (
+    activeSend: ActiveSend,
+  ): Extract<SsePayload, { type: "model_turn_state" }> => {
+    const pendingConfirmation = [...pendingConfirmations.values()].find(
+      (pending) => pending.sendId === activeSend.sendId,
+    );
+    return {
+      type: "model_turn_state",
+      sendId: activeSend.sendId,
+      sessionId: activeSend.sessionId,
+      modelTurnEpoch: activeSend.modelTurnEpoch,
+      assistantDraft: activeSend.assistantDraft,
+      reasoningDraft: activeSend.reasoningDraft,
+      webSearchUpdates: [...activeSend.searchMap.values()],
+      ...(activeSend.contextUsage === undefined
+        ? {}
+        : { contextUsage: activeSend.contextUsage }),
+      progress: sessionActivities.get(activeSend.sessionId)?.message ?? "",
+      resolvedConfirmationGeneration: pendingConfirmation
+        ? pendingConfirmation.confirmationGeneration - 1
+        : activeSend.nextConfirmationGeneration - 1,
+    };
+  };
+
   const createStream = (
     activeSend: ActiveSend,
     onSessionEvent: (event: SessionEvent) => void,
@@ -1141,7 +1189,17 @@ export async function createChatBridge(
       activeSend.modelTurnEpoch += 1;
       activeSend.assistantDraft = "";
       activeSend.assistantDraftBytes = 0;
+      activeSend.modelRequestAssistantStart = 0;
+      activeSend.modelRequestAssistantStartBytes = 0;
+      activeSend.reasoningDraft = null;
+      activeSend.reasoningDraftBytes = 0;
+      activeSend.modelRequestReasoningStart = null;
+      activeSend.modelRequestReasoningStartBytes = 0;
+      activeSend.reasoningSegmentStart = 0;
+      activeSend.reasoningSegmentStartBytes = 0;
+      activeSend.reasoningSegmentNeedsSeparator = false;
       activeSend.searchMap.clear();
+      activeSend.modelRequestSearchMap.clear();
     };
     return {
       assistantDelta: async (delta) => {
@@ -1164,6 +1222,126 @@ export async function createChatBridge(
           modelTurnEpoch: activeSend.modelTurnEpoch,
           delta,
         });
+      },
+      reasoningUpdate: async (update) => {
+        if (!acceptsTransientUpdates()) return;
+        let publishedUpdate = update;
+        if (update.type === "start") {
+          activeSend.reasoningDraft ??= "";
+          activeSend.reasoningSegmentStart = activeSend.reasoningDraft.length;
+          activeSend.reasoningSegmentStartBytes =
+            activeSend.reasoningDraftBytes;
+          activeSend.reasoningSegmentNeedsSeparator =
+            activeSend.reasoningDraft.length > 0;
+        } else if (update.type === "delta") {
+          const separator = activeSend.reasoningSegmentNeedsSeparator &&
+              update.delta
+            ? "\n\n"
+            : "";
+          const publishedDelta = separator + update.delta;
+          const deltaBytes = Buffer.byteLength(publishedDelta, "utf8");
+          if (
+            deltaBytes >
+              MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES -
+                activeSend.reasoningDraftBytes
+          ) {
+            throw new Error(
+              `Transient reasoning draft exceeded the ${MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES}-byte reconnect limit.`,
+            );
+          }
+          activeSend.reasoningDraft ??= "";
+          activeSend.reasoningDraft += publishedDelta;
+          activeSend.reasoningDraftBytes += deltaBytes;
+          if (separator) {
+            activeSend.reasoningSegmentStart += separator.length;
+            activeSend.reasoningSegmentStartBytes += Buffer.byteLength(
+              separator,
+              "utf8",
+            );
+            activeSend.reasoningSegmentNeedsSeparator = false;
+            publishedUpdate = { type: "delta", delta: publishedDelta };
+          }
+        } else {
+          activeSend.reasoningDraft ??= "";
+          const separator = activeSend.reasoningSegmentNeedsSeparator &&
+              update.content
+            ? "\n\n"
+            : "";
+          const prefix = activeSend.reasoningDraft.slice(
+            0,
+            activeSend.reasoningSegmentStart,
+          ) + separator;
+          const prefixBytes = activeSend.reasoningSegmentStartBytes +
+            Buffer.byteLength(separator, "utf8");
+          const contentBytes = Buffer.byteLength(update.content, "utf8");
+          if (
+            contentBytes >
+              MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES - prefixBytes
+          ) {
+            throw new Error(
+              `Transient reasoning draft exceeded the ${MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES}-byte reconnect limit.`,
+            );
+          }
+          activeSend.reasoningDraft = prefix + update.content;
+          activeSend.reasoningDraftBytes = prefixBytes + contentBytes;
+          if (separator) {
+            activeSend.reasoningSegmentStart = prefix.length;
+            activeSend.reasoningSegmentStartBytes = prefixBytes;
+            activeSend.reasoningSegmentNeedsSeparator = false;
+          }
+          publishedUpdate = {
+            type: "replace",
+            content: activeSend.reasoningDraft,
+          };
+        }
+        broadcast({
+          type: "reasoning_update",
+          sendId,
+          sessionId,
+          modelTurnEpoch: activeSend.modelTurnEpoch,
+          update: publishedUpdate,
+        });
+      },
+      modelRequestStarted: async () => {
+        if (!acceptsTransientUpdates()) return;
+        activeSend.modelRequestAssistantStart = activeSend.assistantDraft.length;
+        activeSend.modelRequestAssistantStartBytes =
+          activeSend.assistantDraftBytes;
+        activeSend.modelRequestReasoningStart = activeSend.reasoningDraft === null
+          ? null
+          : activeSend.reasoningDraft.length;
+        activeSend.modelRequestReasoningStartBytes =
+          activeSend.reasoningDraftBytes;
+        activeSend.modelRequestSearchMap = new Map(activeSend.searchMap);
+      },
+      modelRequestRetry: async () => {
+        if (!acceptsTransientUpdates()) return;
+        activeSend.modelTurnEpoch += 1;
+        activeSend.assistantDraft = activeSend.assistantDraft.slice(
+          0,
+          activeSend.modelRequestAssistantStart,
+        );
+        activeSend.assistantDraftBytes =
+          activeSend.modelRequestAssistantStartBytes;
+        if (activeSend.modelRequestReasoningStart === null) {
+          activeSend.reasoningDraft = null;
+          activeSend.reasoningDraftBytes = 0;
+          activeSend.reasoningSegmentStart = 0;
+          activeSend.reasoningSegmentStartBytes = 0;
+        } else {
+          activeSend.reasoningDraft = (activeSend.reasoningDraft ?? "").slice(
+            0,
+            activeSend.modelRequestReasoningStart,
+          );
+          activeSend.reasoningDraftBytes =
+            activeSend.modelRequestReasoningStartBytes;
+          activeSend.reasoningSegmentStart = activeSend.reasoningDraft.length;
+          activeSend.reasoningSegmentStartBytes =
+            activeSend.reasoningDraftBytes;
+        }
+        activeSend.reasoningSegmentNeedsSeparator = false;
+        activeSend.searchMap = new Map(activeSend.modelRequestSearchMap);
+        broadcast(modelTurnStatePayload(activeSend));
       },
       assistantReset: async () => {
         if (!acceptsTransientUpdates()) return;
@@ -1206,12 +1384,19 @@ export async function createChatBridge(
         if (event.kind === "assistant") {
           activeSend.assistantDraft = "";
           activeSend.assistantDraftBytes = 0;
+        } else if (event.kind === "reasoning") {
+          activeSend.reasoningDraft = null;
+          activeSend.reasoningDraftBytes = 0;
+          activeSend.reasoningSegmentStart = 0;
+          activeSend.reasoningSegmentStartBytes = 0;
+          activeSend.reasoningSegmentNeedsSeparator = false;
         } else if (
           event.kind === "web_search" &&
           event.webSearch &&
           event.webSearch.status !== "searching"
         ) {
           activeSend.searchMap.delete(event.webSearch.id);
+          activeSend.modelRequestSearchMap.delete(event.webSearch.id);
         }
         const activity = projectedEvent.steeringAck
           ? stateChangeActivity(activeSend.stopRequested
@@ -1503,24 +1688,7 @@ export async function createChatBridge(
         }
         for (const activeSend of activeSendsById.values()) {
           if (activeSend.stopRequested) continue;
-          const pendingConfirmation = [...pendingConfirmations.values()].find(
-            (pending) => pending.sendId === activeSend.sendId,
-          );
-          replay({
-            type: "model_turn_state",
-            sendId: activeSend.sendId,
-            sessionId: activeSend.sessionId,
-            modelTurnEpoch: activeSend.modelTurnEpoch,
-            assistantDraft: activeSend.assistantDraft,
-            webSearchUpdates: [...activeSend.searchMap.values()],
-            ...(activeSend.contextUsage === undefined
-              ? {}
-              : { contextUsage: activeSend.contextUsage }),
-            progress: sessionActivities.get(activeSend.sessionId)?.message ?? "",
-            resolvedConfirmationGeneration: pendingConfirmation
-              ? pendingConfirmation.confirmationGeneration - 1
-              : activeSend.nextConfirmationGeneration - 1,
-          });
+          replay(modelTurnStatePayload(activeSend));
         }
         for (const [id, pending] of pendingConfirmations) {
           const activity = sessionActivities.get(pending.sessionId);
@@ -1930,7 +2098,17 @@ export async function createChatBridge(
           modelTurnEpoch: 0,
           assistantDraft: "",
           assistantDraftBytes: 0,
+          modelRequestAssistantStart: 0,
+          modelRequestAssistantStartBytes: 0,
+          reasoningDraft: null,
+          reasoningDraftBytes: 0,
+          modelRequestReasoningStart: null,
+          modelRequestReasoningStartBytes: 0,
+          reasoningSegmentStart: 0,
+          reasoningSegmentStartBytes: 0,
+          reasoningSegmentNeedsSeparator: false,
           searchMap: new Map(),
+          modelRequestSearchMap: new Map(),
         };
         pendingSendAdmissions.delete(sendId);
         sendAdmission = undefined;

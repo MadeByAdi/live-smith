@@ -88,6 +88,10 @@ The retry does not restart `/send`, append the prompt twice, replay an accepted
 client tool, or repeat a Live mutation. Authentication, quota/account limits,
 policy or validation failures, malformed protocol data, and local
 request-construction failures remain fatal.
+Before each logical model request, the bridge checkpoints its transient
+assistant, visible-reasoning, and in-flight search projection. A physical retry
+rolls back only output from that failed request attempt, so an earlier
+output-limit continuation prefix remains visible and reconnectable.
 Non-success provider JSON is read through one size- and time-bounded diagnostic
 path. Validated safe identifiers can refine the error; a missing, malformed, or
 stalled body falls back to the HTTP status without blocking cancellation or
@@ -409,12 +413,36 @@ model request.
 
 ## API behavior
 
+### Visible reasoning output
+
+Reasoning visibility is an output-protocol fact, not a model-name inference and
+not a guarantee implied by the configured reasoning effort. Live Smith does not
+enable a summary or change thinking display settings for the sake of the UI. It
+normalizes only reasoning stages and text already returned by the selected
+backend: OpenAI Responses reasoning summary or reasoning-text events and items,
+OpenAI-compatible Chat Completions plaintext or structured reasoning fields,
+Anthropic thinking blocks and deltas, and Google parts explicitly marked
+`thought: true`.
+
+An explicit stage with no visible text appears as a stage-only Thinking item.
+Visible text streams into that item and the accepted result is stored as a
+separate collapsed Session event before the assistant answer. A backend that
+returns neither a stage nor visible text produces no Thinking item. Anthropic
+signatures and redacted payloads, OpenAI encrypted reasoning, Google thought
+signatures, and unknown provider fields remain opaque replay state and are
+never projected into Session text or the WebView. Provider SDKs expose wrappers
+around these same wire fields; Live Smith decodes them in its existing bounded
+HTTP/SSE transports so Fetch, cancellation, proxy, retry, and redaction remain
+under the Extension Host compatibility boundary.
+
 ### OpenAI Responses
 
 Responses requests use local conversation state and `store: false`. Tool calls,
 tool results, encrypted reasoning replay, output-limit continuation, citations,
 and hosted Web Search state remain provider protocol data until normalized into
-`ModelTurn`. Direct API Extra Body cannot override protected request ownership
+`ModelTurn`. Documented reasoning summary and reasoning-text events are also
+normalized into its distinct visible reasoning field without exposing encrypted
+content. Direct API Extra Body cannot override protected request ownership
 such as model, input, tools, store, instructions, or replay state.
 An incomplete `max_output_tokens` turn validates every known output item, then
 replays it with a fixed non-execution output for each returned function call or
@@ -433,7 +461,19 @@ supports OpenAI-compatible services, including compatible Gemini endpoints,
 when the service implements the wire contract. This Direct API mode is separate
 from Google account OAuth and Antigravity. Streaming requests ask for the final
 usage chunk and read through the terminal `[DONE]`, so authoritative token usage
-is not lost after the first `finish_reason` chunk. A `length` response preserves
+is not lost after the first `finish_reason` chunk. Visible reasoning is decoded
+by response shape rather than endpoint or model name. Structured
+`reasoning_details` summary/text entries take precedence, followed by a string
+`reasoning`, then its `reasoning_content` alias. Only one representation is
+shown when an endpoint returns duplicates; a higher-priority representation
+that begins later in a stream replaces the lower-priority draft atomically.
+Across an output-limit continuation, that replacement is scoped to the current
+request segment so the earlier reasoning prefix remains intact, including when
+the later segment needs a physical retry.
+Encrypted and unknown detail types remain opaque, while a detail-only response
+still supplies a stage signal. The complete raw assistant message remains the
+authoritative replay state. A
+`length` response preserves
 its raw assistant message but exposes no executable tool calls. Its continuation
 replays that assistant message followed by a fixed user continuation marker, or
 by a fixed non-execution result for every complete or partial function call.
@@ -446,7 +486,13 @@ as an assistant before any text, function call, or opaque state can be replayed.
 Messages requests preserve signed thinking blocks, tool-use IDs, pause-turn
 continuations, and exact tool-result ordering. OAuth and Direct API connections
 share this protocol implementation but supply different request authentication
-and identity headers. Canonical refusal and truncation stop reasons preserve the
+and identity headers. A thinking-block start creates the visible stage; text
+from streaming `thinking_delta` events or non-streaming `thinking` blocks
+enters its content. Multiple visible thinking blocks in one assistant turn use
+content-block index order and the same blank-line boundaries in streaming and
+terminal projections. `signature_delta` and `redacted_thinking` payloads remain
+replay-only. Canonical refusal and
+truncation stop reasons preserve the
 returned content, citations, and usage. Successful JSON responses and streaming
 `message_start` envelopes require
 `type: "message"` and `role: "assistant"`. A 200 `type: "error"` envelope is

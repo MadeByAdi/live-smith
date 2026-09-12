@@ -103,6 +103,7 @@
 
       let eventSource = null;
       const assistantDraftsBySession = new Map();
+      const reasoningDraftsBySession = new Map();
       const contextUsageBySession = new Map();
       const compactionBoundaryBySession = new Map();
       const contextUsageBoundaryBySession = new Map();
@@ -245,6 +246,21 @@
 
       function isModelTurnEpoch(value) {
         return Number.isSafeInteger(value) && value >= 0;
+      }
+
+      function isWireReasoningUpdate(value) {
+        if (!isWireRecord(value) || typeof value.type !== "string") return false;
+        if (value.type === "start") {
+          return hasOnlyWireKeys(value, ["type"]);
+        }
+        if (value.type === "delta") {
+          return hasOnlyWireKeys(value, ["type", "delta"]) &&
+            typeof value.delta === "string";
+        }
+        return value.type === "replace" &&
+          hasOnlyWireKeys(value, ["type", "content"]) &&
+          typeof value.content === "string" &&
+          wireUtf8ByteLength(value.content) <= maximumTransientAssistantDraftBytes;
       }
 
       function transientModelTurnAttempt(payload) {
@@ -1940,6 +1956,7 @@
           ![
             "user",
             "assistant",
+            "reasoning",
             "web_search",
             "tool_call",
             "tool_result",
@@ -3892,6 +3909,13 @@
         return assistantDraftsBySession.get(activeSessionId()) || "";
       }
 
+      function activeReasoningDraft() {
+        const sessionId = activeSessionId();
+        return reasoningDraftsBySession.has(sessionId)
+          ? reasoningDraftsBySession.get(sessionId)
+          : null;
+      }
+
       function activeWebSearchUpdates() {
         return [...(webSearchUpdatesBySession.get(activeSessionId())?.values() || [])];
       }
@@ -3935,6 +3959,7 @@
       function clearTransientResponseForSession(sessionId) {
         cancelAssistantDraftRender(sessionId);
         assistantDraftsBySession.set(sessionId, "");
+        reasoningDraftsBySession.delete(sessionId);
         webSearchUpdatesBySession.delete(sessionId);
       }
 
@@ -5338,6 +5363,7 @@
         const payload = { prompt, sessionId };
         const visible = activeSessionId() === sessionId;
         assistantDraftsBySession.set(sessionId, "");
+        reasoningDraftsBySession.delete(sessionId);
         webSearchUpdatesBySession.set(sessionId, new Map());
         webSearchEventIdsAtSendStartBySession.set(
           sessionId,
@@ -8115,6 +8141,13 @@
             assistantDraftsBySession.set(sessionId, "");
           }
         }
+        if (event.kind === "reasoning" && reconcileTransient) {
+          const draft = reasoningDraftsBySession.get(sessionId);
+          if (draft !== undefined && draft.trim() === event.content.trim()) {
+            cancelAssistantDraftRender(sessionId);
+            reasoningDraftsBySession.delete(sessionId);
+          }
+        }
         if (
           event.kind === "web_search" &&
           event.webSearch?.id &&
@@ -8815,6 +8848,7 @@
                 "sessionId",
                 "modelTurnEpoch",
                 "assistantDraft",
+                "reasoningDraft",
                 "webSearchUpdates",
                 "contextUsage",
                 "progress",
@@ -8826,6 +8860,10 @@
               typeof payload.assistantDraft !== "string" ||
               wireUtf8ByteLength(payload.assistantDraft) >
                 maximumTransientAssistantDraftBytes ||
+              payload.reasoningDraft !== null &&
+                (typeof payload.reasoningDraft !== "string" ||
+                  wireUtf8ByteLength(payload.reasoningDraft) >
+                    maximumTransientAssistantDraftBytes) ||
               !Array.isArray(payload.webSearchUpdates) ||
               payload.webSearchUpdates.length > hostedWebSearchMaxEventsPerSend ||
               !payload.webSearchUpdates.every((update) =>
@@ -8859,6 +8897,14 @@
               payload.sessionId,
               payload.assistantDraft,
             );
+            if (payload.reasoningDraft === null) {
+              reasoningDraftsBySession.delete(payload.sessionId);
+            } else {
+              reasoningDraftsBySession.set(
+                payload.sessionId,
+                payload.reasoningDraft,
+              );
+            }
             const searches = new Map(
               payload.webSearchUpdates.map((update) => [update.id, update]),
             );
@@ -8927,6 +8973,44 @@
             );
             const draft = (assistantDraftsBySession.get(payload.sessionId) || "") + payload.delta;
             assistantDraftsBySession.set(payload.sessionId, draft);
+            if (activeSessionId() === payload.sessionId) {
+              if (advanced.advanced) requireView().renderTimeline();
+              else scheduleAssistantDraftRender(payload.sessionId);
+            }
+            return;
+          }
+          if (payload.type === "reasoning_update") {
+            if (
+              !hasOnlyWireKeys(payload, [
+                "type",
+                "sendId",
+                "sessionId",
+                "modelTurnEpoch",
+                "update",
+              ]) ||
+              !isWireReasoningUpdate(payload.update)
+            ) return;
+            const attempt = transientModelTurnAttempt(payload);
+            if (!attempt) return;
+            const advanced = advanceModelTurnEpoch(
+              attempt,
+              payload.modelTurnEpoch,
+            );
+            if (payload.update.type === "start") {
+              if (!reasoningDraftsBySession.has(payload.sessionId)) {
+                reasoningDraftsBySession.set(payload.sessionId, "");
+              }
+            } else if (payload.update.type === "delta") {
+              const draft =
+                (reasoningDraftsBySession.get(payload.sessionId) || "") +
+                payload.update.delta;
+              reasoningDraftsBySession.set(payload.sessionId, draft);
+            } else {
+              reasoningDraftsBySession.set(
+                payload.sessionId,
+                payload.update.content,
+              );
+            }
             if (activeSessionId() === payload.sessionId) {
               if (advanced.advanced) requireView().renderTimeline();
               else scheduleAssistantDraftRender(payload.sessionId);
@@ -9424,6 +9508,7 @@
         deleteSkill,
         editMessageDraft,
         getAssistantDraft: activeAssistantDraft,
+        getReasoningDraft: activeReasoningDraft,
         getContextUsage: () => {
           const usage = contextUsageBySession.get(activeSessionId());
           return usage ? { ...usage } : null;

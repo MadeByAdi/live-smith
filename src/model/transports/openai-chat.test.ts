@@ -205,6 +205,7 @@ test("OpenAI Chat maps standard parameters and preserves raw assistant state", a
   assert.equal(body.temperature, 0.4);
   assert.equal(Array.isArray(body.tools), true);
   assert.equal(turn.toolCalls[0]?.id, "call-1");
+  assert.deepEqual(turn.reasoning, { content: "opaque reasoning" });
   assert.equal(
     (turn.providerState as { message: { reasoning_content: string } }).message.reasoning_content,
     "opaque reasoning",
@@ -1778,6 +1779,382 @@ test("OpenAI Chat streaming emits text and assembles fragmented tool calls", asy
   );
 });
 
+test("OpenAI-compatible Chat surfaces reasoning_content without changing replay state", async () => {
+  const chunks = [
+    {
+      choices: [{ index: 0, finish_reason: null, delta: {
+        role: "assistant",
+        reasoning_content: "Inspect the selected clip. ",
+      } }],
+    },
+    {
+      choices: [{ index: 0, finish_reason: null, delta: {
+        reasoning_content: "No tool is needed.",
+      } }],
+    },
+    {
+      choices: [{ index: 0, finish_reason: "stop", delta: {
+        reasoning_content: null,
+        content: "The clip is ready.",
+      } }],
+    },
+  ];
+  const transport = createOpenAIChatTransport({
+    fetchImpl: async () => new Response(
+      `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ),
+  });
+  const updates: unknown[] = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "Inspect the selected clip. " },
+    { type: "delta", delta: "No tool is needed." },
+  ]);
+  assert.deepEqual(turn.reasoning, {
+    content: "Inspect the selected clip. No tool is needed.",
+  });
+  assert.equal(turn.content, "The clip is ready.");
+  assert.equal(
+    (turn.providerState as { message: { reasoning_content: string } })
+      .message.reasoning_content,
+    turn.reasoning.content,
+  );
+});
+
+test("OpenAI-compatible Chat normalizes plaintext and structured reasoning by wire shape", async (t) => {
+  await t.test("canonical reasoning string", async () => {
+    const transport = createOpenAIChatTransport({
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: "Done",
+            reasoning: "Canonical visible reasoning.",
+          },
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    });
+
+    const turn = await transport.createToolTurn(request(profile()));
+
+    assert.deepEqual(turn.reasoning, {
+      content: "Canonical visible reasoning.",
+    });
+  });
+
+  await t.test("structured visible details take precedence over plaintext aliases", async () => {
+    const reasoningDetails = [{
+      index: 2,
+      type: "reasoning.text",
+      text: "Visible text.",
+      signature: "private-signature",
+    }, {
+      index: 1,
+      type: "reasoning.encrypted",
+      data: "private-ciphertext",
+    }, {
+      index: 3,
+      type: "reasoning.future",
+      text: "Unknown detail must stay opaque.",
+    }, {
+      index: 0,
+      type: "reasoning.summary",
+      summary: "Summary. ",
+    }];
+    const transport = createOpenAIChatTransport({
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: "Done",
+            reasoning: "Duplicate canonical reasoning.",
+            reasoning_content: "Duplicate alias reasoning.",
+            reasoning_details: reasoningDetails,
+          },
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    });
+
+    const turn = await transport.createToolTurn(request(profile()));
+
+    assert.deepEqual(turn.reasoning, { content: "Summary. Visible text." });
+    assert.equal(JSON.stringify(turn.reasoning).includes("private"), false);
+    assert.equal(JSON.stringify(turn.reasoning).includes("Unknown detail"), false);
+    assert.deepEqual(
+      (turn.providerState as { message: { reasoning_details: unknown } })
+        .message.reasoning_details,
+      reasoningDetails,
+    );
+  });
+
+  await t.test("opaque structured details retain a stage without visible data", async () => {
+    const transport = createOpenAIChatTransport({
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            role: "assistant",
+            content: "Done",
+            reasoning_details: [{
+              type: "reasoning.encrypted",
+              data: "private-ciphertext",
+            }],
+          },
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    });
+
+    const turn = await transport.createToolTurn(request(profile()));
+
+    assert.deepEqual(turn.reasoning, { content: "" });
+    assert.equal(JSON.stringify(turn.reasoning).includes("private-ciphertext"), false);
+  });
+});
+
+test("OpenAI-compatible Chat streams structured reasoning once and preserves opaque replay state", async () => {
+  const chunks = [{
+    choices: [{ index: 0, finish_reason: null, delta: {
+      role: "assistant",
+      reasoning: "Duplicate plaintext.",
+      reasoning_content: "Duplicate alias.",
+      reasoning_details: [{
+        index: 1,
+        type: "reasoning.encrypted",
+        data: "cipher-",
+      }, {
+        index: 0,
+        type: "reasoning.summary",
+        summary: "Inspect ",
+      }],
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: null, delta: {
+      reasoning: " More duplicate plaintext.",
+      reasoning_content: " More duplicate alias.",
+      reasoning_details: [{ index: 0, summary: "the clip." }, {
+        index: 1,
+        data: "tail",
+      }],
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: "stop", delta: {
+      reasoning: null,
+      reasoning_content: null,
+      reasoning_details: null,
+      content: "Done",
+    } }],
+  }];
+  const transport = createOpenAIChatTransport({
+    fetchImpl: async () => new Response(
+      `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ),
+  });
+  const updates: unknown[] = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "Inspect " },
+    { type: "delta", delta: "the clip." },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "Inspect the clip." });
+  const rawMessage = (turn.providerState as {
+    message: Record<string, unknown>;
+  }).message;
+  assert.deepEqual(rawMessage.reasoning_details, [{
+    index: 0,
+    type: "reasoning.summary",
+    summary: "Inspect the clip.",
+  }, {
+    index: 1,
+    type: "reasoning.encrypted",
+    data: "cipher-tail",
+  }]);
+  assert.equal(rawMessage.reasoning, "Duplicate plaintext. More duplicate plaintext.");
+  assert.equal(rawMessage.reasoning_content, "Duplicate alias. More duplicate alias.");
+});
+
+test("OpenAI-compatible Chat keeps interleaved indexed reasoning_details canonical while streaming", async () => {
+  const chunks = [{
+    choices: [{ index: 0, finish_reason: null, delta: {
+      role: "assistant",
+      reasoning_details: [{
+        index: 0,
+        type: "reasoning.summary",
+        summary: "A",
+      }, {
+        index: 1,
+        type: "reasoning.text",
+        text: "X",
+      }],
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: "stop", delta: {
+      content: "Done",
+      reasoning_details: [{ index: 0, summary: "B" }, {
+        index: 1,
+        text: "Y",
+      }],
+    } }],
+  }];
+  const transport = createOpenAIChatTransport({
+    fetchImpl: async () => new Response(
+      `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ),
+  });
+  const updates: Array<
+    { type: "start" } | { type: "delta"; delta: string } |
+      { type: "replace"; content: string }
+  > = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "AX" },
+    { type: "replace", content: "ABXY" },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "ABXY" });
+  let streamed = "";
+  for (const update of updates) {
+    if (update.type === "delta") streamed += update.delta;
+    if (update.type === "replace") streamed = update.content;
+  }
+  assert.equal(streamed, turn.reasoning.content);
+});
+
+test("OpenAI-compatible Chat keeps undocumented structured fields out of visible reasoning", async () => {
+  const sentinel = "provider-private-summary-text";
+  const reasoningDetails = [{
+    index: 0,
+    type: "reasoning.summary",
+    text: sentinel,
+  }, {
+    index: 1,
+    type: "reasoning.encrypted",
+    data: "private-ciphertext",
+  }];
+  const transport = createOpenAIChatTransport({
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: "Done",
+          reasoning_details: reasoningDetails,
+        },
+      }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  });
+
+  const turn = await transport.createToolTurn(request(profile()));
+
+  assert.deepEqual(turn.reasoning, { content: "" });
+  assert.doesNotMatch(JSON.stringify(turn.reasoning), new RegExp(sentinel, "u"));
+  assert.deepEqual(
+    (turn.providerState as { message: { reasoning_details: unknown } })
+      .message.reasoning_details,
+    reasoningDetails,
+  );
+});
+
+test("OpenAI-compatible Chat upgrades staggered reasoning representations without mixing them", async () => {
+  const chunks = [{
+    choices: [{ index: 0, finish_reason: null, delta: {
+      role: "assistant",
+      reasoning_content: "Alias trace.",
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: null, delta: {
+      reasoning: "Canonical trace.",
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: null, delta: {
+      reasoning_details: [{
+        index: 0,
+        type: "reasoning.summary",
+        summary: "Structured ",
+      }],
+    } }],
+  }, {
+    choices: [{ index: 0, finish_reason: "stop", delta: {
+      reasoning_details: [{ index: 0, summary: "summary." }],
+      content: "Done",
+    } }],
+  }];
+  const transport = createOpenAIChatTransport({
+    fetchImpl: async () => new Response(
+      `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    ),
+  });
+  const updates: unknown[] = [];
+  const req = request(profile());
+  req.onDelta = () => {};
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await transport.createToolTurn(req);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "Alias trace." },
+    { type: "replace", content: "Canonical trace." },
+    { type: "replace", content: "Structured " },
+    { type: "delta", delta: "summary." },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "Structured summary." });
+});
+
+test("OpenAI-compatible Chat rejects malformed known reasoning shapes without reflecting them", async () => {
+  const sentinel = "credential-bearing-reasoning";
+  const messages = [{
+    role: "assistant",
+    content: "Done",
+    reasoning: { text: sentinel },
+  }, {
+    role: "assistant",
+    content: "Done",
+    reasoning_details: [{
+      type: "reasoning.text",
+      text: { private: sentinel },
+    }],
+  }];
+
+  for (const message of messages) {
+    const transport = createOpenAIChatTransport({
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    });
+    await assert.rejects(
+      transport.createToolTurn(request(profile())),
+      (error: unknown) => {
+        assert.match(String(error), /malformed.*reasoning/iu);
+        assert.doesNotMatch(String(error), new RegExp(sentinel, "u"));
+        return true;
+      },
+    );
+  }
+});
+
 test("OpenAI Chat rejects malformed authoritative streaming usage", async () => {
   const sse = [
     `data: ${JSON.stringify({
@@ -1949,7 +2326,7 @@ test("OpenAI Chat accumulates indexed reasoning_details and replays them unchang
         content: "Done",
         reasoning_details: [
           { index: 1, type: "reasoning.encrypted", data: "cipher-" },
-          { index: 0, type: "reasoning.summary", text: "First " },
+          { index: 0, type: "reasoning.summary", summary: "First " },
         ],
         annotations: [{ label: "first" }],
       } }],
@@ -1957,7 +2334,7 @@ test("OpenAI Chat accumulates indexed reasoning_details and replays them unchang
     {
       choices: [{ index: 0, finish_reason: "stop", delta: {
         reasoning_details: [
-          { index: 0, text: "part" },
+          { index: 0, summary: "part" },
           { index: 1, data: "tail" },
           { type: "reasoning.trace", text: "standalone" },
         ],
@@ -1992,15 +2369,23 @@ test("OpenAI Chat accumulates indexed reasoning_details and replays them unchang
 
   const streamingRequest = request(profile());
   streamingRequest.onDelta = () => {};
+  const reasoningUpdates: unknown[] = [];
+  streamingRequest.onReasoning = (update) => { reasoningUpdates.push(update); };
   const firstTurn = await transport.createToolTurn(streamingRequest);
   const rawMessage = (firstTurn.providerState as {
     message: Record<string, unknown>;
   }).message;
   const expectedReasoningDetails = [
-    { index: 0, type: "reasoning.summary", text: "First part" },
+    { index: 0, type: "reasoning.summary", summary: "First part" },
     { index: 1, type: "reasoning.encrypted", data: "cipher-tail" },
     { type: "reasoning.trace", text: "standalone" },
   ];
+  assert.deepEqual(reasoningUpdates, [
+    { type: "start" },
+    { type: "delta", delta: "First " },
+    { type: "delta", delta: "part" },
+  ]);
+  assert.deepEqual(firstTurn.reasoning, { content: "First part" });
   assert.deepEqual(rawMessage.reasoning_details, expectedReasoningDetails);
   assert.deepEqual(rawMessage.annotations, [{ label: "replacement" }]);
 

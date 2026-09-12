@@ -1149,3 +1149,42 @@ test("ChatGPT OAuth preserves top-level and nested unterminated error envelopes"
     );
   }
 });
+
+test("ChatGPT OAuth surfaces reasoning summary events and keeps encrypted state private", async () => {
+  const reasoning = {
+    id: "reasoning-codex",
+    type: "reasoning",
+    summary: [{ type: "summary_text", text: "Reading the Live context." }],
+    encrypted_content: "private-codex-state",
+  };
+  const message = {
+    id: "message-codex",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content: [{ type: "output_text", text: "Done", annotations: [] }],
+  };
+  const protocol = createOpenAICodexProtocol({
+    fetchImpl: async () => streamResponse([
+      { type: "response.output_item.added", output_index: 0, item: { ...reasoning, summary: [] } },
+      { type: "response.reasoning_summary_text.delta", output_index: 0, summary_index: 0, delta: "Reading " },
+      { type: "response.reasoning_summary_text.delta", output_index: 0, summary_index: 0, delta: "the Live context." },
+      { type: "response.output_item.done", output_index: 0, item: reasoning },
+      { type: "response.output_item.done", output_index: 1, item: message },
+      { type: "response.completed", response: { status: "completed", output: [] } },
+    ]),
+  });
+  const updates: unknown[] = [];
+  const req = request();
+  req.onReasoning = (update) => { updates.push(update); };
+
+  const turn = await protocol.createToolTurn(req, credential);
+
+  assert.deepEqual(updates, [
+    { type: "start" },
+    { type: "delta", delta: "Reading " },
+    { type: "delta", delta: "the Live context." },
+  ]);
+  assert.deepEqual(turn.reasoning, { content: "Reading the Live context." });
+  assert.equal(JSON.stringify(turn.reasoning).includes("private-codex-state"), false);
+});

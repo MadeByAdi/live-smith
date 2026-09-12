@@ -36,6 +36,8 @@ export const timelineMessages: Record<string, string> = {
   "Use as draft": "用作草稿",
   "What would you like to work on in Live?": "你想在 Live 中做些什么？",
   "Live Smith / streaming": "Live Smith / 正在生成",
+  "Thinking": "思考过程",
+  "Thinking…": "正在思考…",
   "You / Paused": "你 / 已暂停",
   "You / Up next": "你 / 接下来",
   "You": "你",

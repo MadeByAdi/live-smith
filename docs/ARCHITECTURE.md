@@ -143,7 +143,8 @@ src/
 
   model/
     contracts.ts
-      Normalized conversation, tool-call, and model-turn contracts.
+      Normalized conversation, visible reasoning, tool-call, and model-turn
+      contracts.
     profile.ts
       Named connection Profile, per-model configuration, and structural
       validation contracts.
@@ -330,10 +331,14 @@ everywhere else.
    backends obtain a refreshed credential and map the same normalized request
    directly to ChatGPT Codex Responses, Anthropic Messages, or Google
    Antigravity. They expose no provider CLI workspace or tool runtime.
-8. Either backend returns the same normalized text and client tool-call
-   boundary. Direct API transports can additionally return bounded citations
-   and opaque replay state. Provider replay state remains transport-owned and
-   hosted provider tools never enter the client tool executor.
+8. Either backend returns the same normalized visible-reasoning, text, and
+   client tool-call boundary. A reasoning stage exists only when the wire
+   protocol reports one; its content contains only provider-returned visible
+   text and may be empty for a stage-only signal. Direct API transports can
+   additionally return bounded citations and opaque replay state. Signatures,
+   encrypted reasoning, and other provider replay state remain transport-owned,
+   never enter the visible reasoning contract, and hosted provider tools never
+   enter the client tool executor.
 9. Before confirmation, `agent-request.ts` performs a fresh action-specific Live
    preflight observation and captures an opaque guard from actual SDK handle
    identities plus every current value the action can overwrite, including
@@ -1844,8 +1849,11 @@ Copy writes the original message text through the browser clipboard API, with
 a temporary document-selection fallback for embedded webviews. It does not copy
 speaker labels, UI controls, or private attachment paths. Unchanged message DOM
 nodes remain mounted across timeline updates so selection, keyboard focus, and
-copy feedback survive. Entry motion is limited to new messages in the visible
-Session, not history navigation, persistence reconciliation, or each stream delta.
+copy feedback survive. Focus on a transient reasoning disclosure transfers only
+to its next matching durable event; an intervening durable event or new
+reasoning draft expires that handoff before a later Send can claim it. Entry
+motion is limited to new messages in the visible Session, not history navigation,
+persistence reconciliation, or each stream delta.
 Assistant replies and activity use the full conversation content width; only
 user bubbles retain a narrower maximum. Initial latest-message positioning waits
 for a non-zero timeline layout and the next animation frame. That one-time
@@ -1864,11 +1872,16 @@ command.
 ### Transient model turns and context usage
 
 Transient model output uses a separate per-send `modelTurnEpoch`, not the
-bridge publication revision. A connection-loss reset or accepted complete turn
-advances the epoch and clears the prior assistant draft and in-flight search
-projection. Every new `/events` connection receives one exact
-`model_turn_state` snapshot for each active, non-stopped send before any open
-confirmation is replayed. That snapshot carries the current draft, bounded
+bridge publication revision. A physical provider retry advances the epoch and
+atomically restores the assistant, visible-reasoning, and in-flight search
+projection checkpoint captured before that logical request; this preserves any
+earlier output-limit continuation prefix while discarding only the failed
+attempt. A terminal hosted-search event removes its ID from both the active
+projection and that checkpoint because durable progress cannot be rolled back.
+Replanning or accepting a complete turn advances the epoch and clears the prior
+transient projection. Every new `/events` connection receives one
+exact `model_turn_state` snapshot for each active, non-stopped send before any
+open confirmation is replayed. That snapshot carries the current draft, bounded
 search map, progress text, and highest resolved confirmation generation. Its
 context-usage field is tri-state: absent before this send accepts a model turn,
 an exact pair after an accepted turn with authoritative usage, and `null` after

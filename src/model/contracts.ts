@@ -63,6 +63,19 @@ export interface ModelContextUsage {
   contextWindowTokens: number;
 }
 
+/** Provider-returned reasoning that is explicitly safe to display. */
+export interface ModelReasoning {
+  /** Empty when the provider exposed only a reasoning-stage signal. */
+  content: string;
+}
+
+export type ModelReasoningStreamUpdate =
+  /** Begins one provider request's visible-reasoning segment. */
+  | { type: "start" }
+  | { type: "delta"; delta: string }
+  /** Replaces only the content produced since the most recent start. */
+  | { type: "replace"; content: string };
+
 export function requireModelContextUsage(
   usedTokens: unknown,
   contextWindowTokens: unknown,
@@ -84,6 +97,8 @@ export function requireModelContextUsage(
 export interface ModelTurn {
   content: string | null;
   toolCalls: ModelToolCall[];
+  /** Visible provider reasoning only; opaque continuation state stays provider-owned. */
+  reasoning?: ModelReasoning;
   /** Exact provider usage for this turn when an authoritative context window is known. */
   contextUsage?: ModelContextUsage;
   /** The provider returned replayable state but needs another model turn to finish. */

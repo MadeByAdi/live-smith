@@ -34,10 +34,12 @@ import type {
 import {
   assertOpenAIResponsesTerminalWithoutPriorError,
   buildOpenAIResponsesBody,
+  createOpenAIResponsesReasoningStreamDecoder,
   decodeOpenAIResponsesFailedResponse,
   decodeOpenAIResponsesTerminalTurn,
   openAIResponsesVisibleTextDelta,
 } from "../transports/openai-responses.js";
+import { createModelReasoningStreamReporter } from "../reasoning.js";
 import {
   openAIErrorDiagnostic,
   openAIProviderFailure,
@@ -222,6 +224,12 @@ async function readCodexTurn(
   const completedOutputItems = new Map<number, Record<string, unknown>>();
   let pendingError: OpenAIErrorDiagnostic | undefined;
   let malformedPendingError = false;
+  const reportReasoning = createModelReasoningStreamReporter(
+    request.onReasoning,
+  );
+  const decodeReasoningUpdate = createOpenAIResponsesReasoningStreamDecoder(
+    "ChatGPT Codex",
+  );
   let turnState = rememberCodexTurnState(
     reconnectState,
     priorTurnState ?? boundedTurnState(
@@ -259,6 +267,8 @@ async function readCodexTurn(
       }
       continue;
     }
+    const reasoningUpdate = decodeReasoningUpdate(event);
+    if (reasoningUpdate) await reportReasoning(reasoningUpdate);
     const metadataTurnState = codexTurnStateFromMetadata(event);
     if (!turnState && metadataTurnState) {
       turnState = rememberCodexTurnState(reconnectState, metadataTurnState);
@@ -277,6 +287,7 @@ async function readCodexTurn(
       completedOutputItems.set(outputIndex, event.item);
       continue;
     }
+    if (reasoningUpdate) continue;
     const visibleDelta = openAIResponsesVisibleTextDelta(
       event,
       "ChatGPT Codex",

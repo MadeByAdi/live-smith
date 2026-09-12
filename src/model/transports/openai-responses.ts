@@ -3,6 +3,7 @@ import {
   type ModelHostedWebSearch,
   type ModelHostedWebSearchAction,
   type ModelInputPart,
+  type ModelReasoningStreamUpdate,
   type ModelToolCall,
   type ModelTurn,
 } from "../contracts.js";
@@ -17,6 +18,10 @@ import {
   safeModelWebSearchId,
 } from "../web-search.js";
 import { cloneJsonValue } from "../json-clone.js";
+import {
+  createModelReasoningStreamReporter,
+  modelReasoningFromContent,
+} from "../reasoning.js";
 import type {
   ModelTransport,
   TransportFactoryOptions,
@@ -397,6 +402,12 @@ async function streamResponsesTurn(
   fetchImpl: typeof fetch,
 ): Promise<ModelTurn> {
   let pendingError: Record<string, unknown> | undefined;
+  const reportReasoning = createModelReasoningStreamReporter(
+    request.onReasoning,
+  );
+  const decodeReasoningUpdate = createOpenAIResponsesReasoningStreamDecoder(
+    "OpenAI Responses",
+  );
   const reportedWebSearches = new Map<string, string>();
   const reportWebSearch = async (update: ModelHostedWebSearch | undefined) => {
     if (!update) return;
@@ -421,6 +432,11 @@ async function streamResponsesTurn(
     throwIfAborted(request.signal);
     if (event.type === "error") {
       pendingError = event;
+      continue;
+    }
+    const reasoningUpdate = decodeReasoningUpdate(event);
+    if (reasoningUpdate) {
+      await reportReasoning(reasoningUpdate);
       continue;
     }
     await reportWebSearch(webSearchUpdateFromOpenAIEvent(event));
@@ -517,6 +533,7 @@ function turnFromResponse(
 ): ModelTurn {
   const { response: value, output, status } = terminal;
   const outputContent = textFromOutput(output);
+  const reasoning = reasoningFromResponsesOutput(output, label);
   if (value.output_text !== undefined && value.output_text !== null &&
     typeof value.output_text !== "string") {
     throw new Error(`${label} returned invalid output_text.`);
@@ -546,6 +563,7 @@ function turnFromResponse(
     return {
       content: content || null,
       toolCalls: [],
+      ...(reasoning ? { reasoning } : {}),
       continuation: { reason: "output_limit" },
       ...(citations.length ? { citations } : {}),
       ...(contextUsage ? { contextUsage } : {}),
@@ -579,6 +597,7 @@ function turnFromResponse(
   return {
     content: content || null,
     toolCalls,
+    ...(reasoning ? { reasoning } : {}),
     ...(citations.length ? { citations } : {}),
     ...(contextUsage ? { contextUsage } : {}),
     ...(terminalWebSearches.length ? { hostedWebSearches: terminalWebSearches } : {}),
@@ -735,6 +754,9 @@ function requireKnownResponsesOutputItems(
 ): void {
   const incompleteCallIds = new Set<string>();
   for (const item of output) {
+    if (item.type === "reasoning") {
+      requireResponsesReasoningItem(item, label);
+    }
     if (item.type === "message") {
       requireResponsesMessageContent(item, label);
     }
@@ -753,6 +775,208 @@ function requireKnownResponsesOutputItems(
       requireResponsesWebSearchCall(item, terminalStatus, label);
     }
   }
+}
+
+function requireResponsesReasoningItem(
+  item: Record<string, unknown>,
+  label: string,
+): void {
+  for (const [field, partType, textField] of [
+    ["summary", "summary_text", "text"],
+    ["content", "reasoning_text", "text"],
+  ] as const) {
+    const value = item[field];
+    if (value === undefined || value === null) continue;
+    if (!Array.isArray(value) || !value.every(isRecord)) {
+      throw new Error(`${label} returned invalid reasoning ${field}.`);
+    }
+    for (const part of value) {
+      if (part.type === partType && typeof part[textField] !== "string") {
+        throw new Error(`${label} returned invalid ${partType} content.`);
+      }
+    }
+  }
+}
+
+function reasoningFromResponsesOutput(
+  output: Array<Record<string, unknown>>,
+  label: string,
+): ModelTurn["reasoning"] {
+  const parts: string[] = [];
+  let stageObserved = false;
+  for (const item of output) {
+    if (item.type !== "reasoning") continue;
+    stageObserved = true;
+    requireResponsesReasoningItem(item, label);
+    for (const part of Array.isArray(item.summary) ? item.summary : []) {
+      if (part.type === "summary_text") parts.push(part.text as string);
+    }
+    for (const part of Array.isArray(item.content) ? item.content : []) {
+      if (part.type === "reasoning_text") parts.push(part.text as string);
+    }
+  }
+  return modelReasoningFromContent(
+    joinResponsesReasoningParts(parts),
+    stageObserved,
+  );
+}
+
+interface ResponsesReasoningStreamParts {
+  summary: Map<number, string>;
+  content: Map<number, string>;
+}
+
+interface ResponsesReasoningStreamState {
+  outputs: Map<number, ResponsesReasoningStreamParts>;
+  content: string;
+}
+
+export function createOpenAIResponsesReasoningStreamDecoder(
+  label: string,
+): (event: Record<string, unknown>) =>
+  ModelReasoningStreamUpdate | undefined {
+  const state: ResponsesReasoningStreamState = {
+    outputs: new Map(),
+    content: "",
+  };
+  return (event) => {
+    if (
+      (event.type === "response.output_item.added" ||
+        event.type === "response.output_item.done") &&
+      isRecord(event.item) &&
+      event.item.type === "reasoning"
+    ) {
+      const outputIndex = responsesReasoningEventIndex(
+        event.output_index,
+        "output_index",
+        label,
+      );
+      if (event.type === "response.output_item.done") {
+        replaceResponsesReasoningOutput(
+          state,
+          outputIndex,
+          event.item,
+          label,
+        );
+        return responsesReasoningStreamUpdate(state);
+      }
+      return { type: "start" };
+    }
+    if (event.type === "response.reasoning_summary_part.added") {
+      if (!isRecord(event.part) || event.part.type !== "summary_text" ||
+        typeof event.part.text !== "string") {
+        throw new Error(`${label} returned an invalid reasoning summary part.`);
+      }
+      responsesReasoningEventIndex(event.output_index, "output_index", label);
+      responsesReasoningEventIndex(event.summary_index, "summary_index", label);
+      return { type: "start" };
+    }
+    if (
+      event.type !== "response.reasoning_summary_text.delta" &&
+      event.type !== "response.reasoning_text.delta"
+    ) return undefined;
+    if (typeof event.delta !== "string") {
+      throw new Error(`${label} returned an invalid reasoning text delta.`);
+    }
+    const outputIndex = responsesReasoningEventIndex(
+      event.output_index,
+      "output_index",
+      label,
+    );
+    const kind = event.type === "response.reasoning_summary_text.delta"
+      ? "summary"
+      : "content";
+    const partIndex = responsesReasoningEventIndex(
+      event[kind === "summary" ? "summary_index" : "content_index"],
+      kind === "summary" ? "summary_index" : "content_index",
+      label,
+    );
+    const output = responsesReasoningStreamOutput(state, outputIndex);
+    output[kind].set(
+      partIndex,
+      (output[kind].get(partIndex) ?? "") + event.delta,
+    );
+    return responsesReasoningStreamUpdate(state);
+  };
+}
+
+function replaceResponsesReasoningOutput(
+  state: ResponsesReasoningStreamState,
+  outputIndex: number,
+  item: Record<string, unknown>,
+  label: string,
+): void {
+  requireResponsesReasoningItem(item, label);
+  const output: ResponsesReasoningStreamParts = {
+    summary: new Map(),
+    content: new Map(),
+  };
+  for (const [index, part] of (Array.isArray(item.summary)
+    ? item.summary
+    : []).entries()) {
+    if (part.type === "summary_text") {
+      output.summary.set(index, part.text as string);
+    }
+  }
+  for (const [index, part] of (Array.isArray(item.content)
+    ? item.content
+    : []).entries()) {
+    if (part.type === "reasoning_text") {
+      output.content.set(index, part.text as string);
+    }
+  }
+  state.outputs.set(outputIndex, output);
+}
+
+function responsesReasoningStreamOutput(
+  state: ResponsesReasoningStreamState,
+  outputIndex: number,
+): ResponsesReasoningStreamParts {
+  const existing = state.outputs.get(outputIndex);
+  if (existing) return existing;
+  const output: ResponsesReasoningStreamParts = {
+    summary: new Map(),
+    content: new Map(),
+  };
+  state.outputs.set(outputIndex, output);
+  return output;
+}
+
+function responsesReasoningStreamUpdate(
+  state: ResponsesReasoningStreamState,
+): ModelReasoningStreamUpdate {
+  const parts: string[] = [];
+  for (const [, output] of [...state.outputs.entries()].sort(
+    ([left], [right]) => left - right,
+  )) {
+    for (const kind of ["summary", "content"] as const) {
+      parts.push(...[...output[kind].entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, content]) => content));
+    }
+  }
+  const previous = state.content;
+  const content = joinResponsesReasoningParts(parts);
+  state.content = content;
+  if (content === previous) return { type: "start" };
+  return content.startsWith(previous)
+    ? { type: "delta", delta: content.slice(previous.length) }
+    : { type: "replace", content };
+}
+
+function joinResponsesReasoningParts(parts: readonly string[]): string {
+  return parts.filter((content) => content.length > 0).join("\n\n");
+}
+
+function responsesReasoningEventIndex(
+  value: unknown,
+  field: "output_index" | "summary_index" | "content_index",
+  label: string,
+): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new Error(`${label} returned an invalid reasoning ${field}.`);
+  }
+  return value as number;
 }
 
 function requireResponsesMessageContent(

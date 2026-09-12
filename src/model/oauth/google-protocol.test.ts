@@ -1391,7 +1391,8 @@ test("Google answers every truncated function call before continuing", async () 
   };
   const replayParts = [
     { text: "Partial answer. " },
-    { thought: true, text: "hidden" },
+    { thought: true, text: "hidden " },
+    { thought: true, text: "reasoning" },
     partialCallPart,
     completeCallPart,
   ];
@@ -1432,8 +1433,18 @@ test("Google answers every truncated function call before continuing", async () 
     },
   });
 
-  const first = await protocol.createToolTurn(request(), credential);
+  const reasoningUpdates: unknown[] = [];
+  const firstRequest = request();
+  firstRequest.onReasoning = (update) => { reasoningUpdates.push(update); };
+  const first = await protocol.createToolTurn(firstRequest, credential);
   assert.equal(first.content, "Partial answer. ");
+  assert.deepEqual(first.reasoning, { content: "hidden reasoning" });
+  assert.deepEqual(reasoningUpdates, [
+    { type: "start" },
+    { type: "delta", delta: "hidden " },
+    { type: "delta", delta: "reasoning" },
+  ]);
+  assert.equal(JSON.stringify(first.reasoning).includes("partial-signature"), false);
   assert.deepEqual(first.toolCalls, []);
   assert.deepEqual(first.continuation, { reason: "output_limit" });
   assert.deepEqual(first.contextUsage, {

@@ -47,6 +47,7 @@ import {
 export type SessionEventKind =
   | "user"
   | "assistant"
+  | "reasoning"
   | "web_search"
   | "tool_call"
   | "tool_result"
@@ -612,6 +613,7 @@ function isSessionEventKind(value: unknown): value is SessionEventKind {
   return (
     value === "user" ||
     value === "assistant" ||
+    value === "reasoning" ||
     value === "web_search" ||
     value === "tool_call" ||
     value === "tool_result" ||
