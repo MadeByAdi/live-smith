@@ -9,7 +9,7 @@ import { providerFetchForStorage } from "./provider-fetch.js";
 import { invalidateGlobalState } from "./session-state-events.js";
 import { createHostAbortController } from "../runtime/host.js";
 import { SunoModelCatalog } from "./suno-model-catalog.js";
-import { catalog, connection, files, flow, models, post, session, state, storageFixture, token } from "./suno-model-catalog-test-helpers.js";
+import { catalog, clientCookie, connection, files, flow, models, post, session, state, storageFixture, token } from "./suno-model-catalog-test-helpers.js";
 
 const load = { kind: "load_suno_models", serviceId: connection.id };
 
@@ -137,7 +137,7 @@ for (const enabled of [true, false]) {
     const storage = await storageFixture(t, enabled);
     const other = { ...connection, id: "suno-two", name: "Other Suno" };
     await saveGlobalSettings(storage, { audioServices: { action: "upsert", expectedRevision: "1", connection: other } });
-    await new SunoSessions(storage).save(other.id, { clientToken: token({ client: "other" }), accountId: "user_other" });
+    await new SunoSessions(storage).save(other.id, { clientToken: clientCookie({ client: "other" }), accountId: "user_other" });
     let calls = 0;
     await flow(storage, async (url) => {
       assert.equal((await state(url)).sunoModelCatalog, undefined);
@@ -156,7 +156,7 @@ for (const enabled of [true, false]) {
       assert.equal((await second.json()).sunoModelCatalog.accountId, "user_other");
       assert.equal((await state(url)).sunoModelCatalog!.serviceId, other.id);
     }, async (owner, request, signal, fetchImpl) => {
-      assert.deepEqual(owner, calls++ === 0 ? session : { clientToken: token({ client: "other" }), accountId: "user_other" });
+      assert.deepEqual(owner, calls++ === 0 ? session : { clientToken: clientCookie({ client: "other" }), accountId: "user_other" });
       assert.deepEqual(request, { query: "catalog" });
       assert.equal(signal.aborted, false); assert.equal(fetchImpl, providerFetchForStorage(storage));
       return catalog();
@@ -182,13 +182,11 @@ for (const owner of ["missing service", "missing credential", "wrong provider"] 
 }
 
 for (const when of ["during load", "after load"] as const) {
-  for (const change of ["credential", "account", "remove", "provider", "disconnect", "reimport notification"] as const) {
+  for (const change of ["account", "remove", "provider", "disconnect", "reimport notification"] as const) {
     test(`catalog omits stale ownership after ${change} ${when}`, async (t) => {
       const storage = await storageFixture(t);
       const changeOwner = async () => {
-        if (change === "credential" || change === "account") await new SunoSessions(storage).save(connection.id, {
-          ...session, ...(change === "credential" ? { clientToken: token({ client: "rotated" }) } : { accountId: "user_other" }),
-        });
+        if (change === "account") await new SunoSessions(storage).save(connection.id, { ...session, accountId: "user_other" });
         else if (change === "disconnect") await new SunoSessions(storage).clear(connection.id);
         else if (change === "reimport notification") invalidateGlobalState(storage, {
           source: Symbol("peer import"), sunoAuthServiceId: connection.id,
@@ -208,6 +206,24 @@ for (const when of ["during load", "after load"] as const) {
       });
     });
   }
+}
+
+for (const when of ["during load", "after load"] as const) {
+  test(`catalog retains same-account automatic Cookie rotation ${when}`, async (t) => {
+    const storage = await storageFixture(t);
+    const rotate = () => new SunoSessions(storage).save(connection.id, {
+      ...session, clientToken: clientCookie({ client: "rotated" }),
+    });
+    await flow(storage, async (url) => {
+      const response = await post(url, load);
+      assert.equal(response.status, 200, await response.text());
+      if (when === "after load") await rotate();
+      assert.equal((await state(url)).sunoModelCatalog?.accountId, session.accountId);
+    }, async () => {
+      if (when === "during load") await rotate();
+      return catalog();
+    });
+  });
 }
 
 for (const peer of [false, true]) {
@@ -264,7 +280,7 @@ test("catalog protocol read projects only bounded model display fields through t
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input); requests.push(url);
     if (url.startsWith("https://auth.suno.com/v1/client?")) {
-      assert.equal(new Headers(init?.headers).get("Cookie"), `__client=${session.clientToken}`);
+      assert.equal(new Headers(init?.headers).get("Cookie"), session.clientToken);
       return Response.json({ response: { object: "client", last_active_session_id: "sess_fixture", sessions: [{
         object: "session", id: "sess_fixture", status: "active", expire_at: Date.now() + 60_000,
         user: { object: "user", id: session.accountId },

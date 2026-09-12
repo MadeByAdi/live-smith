@@ -26,6 +26,8 @@ test("schema-v7 settings migrate without changing the existing direct route", ()
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   });
 });
 
@@ -43,6 +45,8 @@ test("current network proxy settings are strict and normalize proxy origins", ()
     ...current,
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
     networkProxy: {
       mode: "manual",
       url: "https://proxy.example",

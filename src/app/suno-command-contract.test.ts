@@ -24,26 +24,12 @@ test("explicit Suno download selects exactly one existing job output, never a UR
   }
 });
 
-test("Suno retrieval accepts only bounded canonical IDs and an explicit expected account", () => {
-  const clipIds = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
-  const input = { kind: "retrieve_music", sessionId: "session-one", serviceId: "suno-one", expectedAccountId: "user_fixture", clipIds };
-  assert.deepEqual(parseCommandInput(input), input);
-  assert.deepEqual(parseCommandInput({ ...input, clipIds: [clipIds[0]] }), { ...input, clipIds: [clipIds[0]] });
-  for (const patch of [
-    { clipIds: [] }, { clipIds: [...clipIds, clipIds[0]] }, { clipIds: [clipIds[0], clipIds[0]] },
-    { clipIds: ["https://suno.com/song/" + clipIds[0]] }, { clipIds: ["not-a-clip"] },
-    { clipIds: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"] }, { clipIds: ["AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"] },
-    { clipIds: clipIds[0] }, { expectedAccountId: "" }, { expectedAccountId: "user/other" },
-    { expectedAccountId: "a".repeat(129) }, { expectedAccountId: undefined },
-    { sessionId: "../session" }, { serviceId: "../service" }, { sessionValue: "fixture-secret" },
-    { url: "https://example.test" }, { prompt: "generate more" }, { apiKey: "fixture-secret" },
-  ]) assert.throws(() => parseCommandInput({ ...input, ...patch }));
-});
-
 test("opening the Suno website accepts no destination, connection or credential", () => {
-  assert.deepEqual(parseCommandInput({ kind: "open_suno_website" }), { kind: "open_suno_website" });
-  for (const extra of [{ serviceId: "suno-one" }, { url: "https://example.test" }, { cookie: "fixture-secret" }]) {
-    assert.throws(() => parseCommandInput({ kind: "open_suno_website", ...extra }));
+  for (const kind of ["open_suno_website", "open_suno_platform"] as const) {
+    assert.deepEqual(parseCommandInput({ kind }), { kind });
+    for (const extra of [{ serviceId: "suno-one" }, { url: "https://example.test" }, { cookie: "fixture-secret" }]) {
+      assert.throws(() => parseCommandInput({ kind, ...extra }));
+    }
   }
   assert.throws(() => parseCommandInput({ kind: "open_suno_login", serviceId: "suno-one" }));
 });
@@ -51,7 +37,9 @@ test("opening the Suno website accepts no destination, connection or credential"
 test("Suno Cookie import has a separate bounded credential command", () => {
   const input = { kind: "import_suno_session", serviceId: "suno-one", sessionValue: "header.payload.signature" };
   assert.deepEqual(parseCommandInput(input), input);
-  for (const extra of [{ serviceId: "../outside" }, { sessionValue: "" }, { sessionValue: "x".repeat(8193) },
+  const cookieHeader = { ...input, sessionValue: "Cookie: __session=header.payload.signature; __client_uat=123" };
+  assert.deepEqual(parseCommandInput(cookieHeader), cookieHeader);
+  for (const extra of [{ serviceId: "../outside" }, { sessionValue: "" }, { sessionValue: "x".repeat(16_385) },
     { sessionValue: "line\r\nheader" }, { sessionValue: 42 }, { password: "fixture-secret" }, { url: "https://example.test" }]) {
     assert.throws(() => parseCommandInput({ ...input, ...extra }), (error: unknown) => {
       assert.ok(error instanceof Error);

@@ -69,7 +69,7 @@ for (const retire of ["logout", "remove", "replace", "close"] as const) {
       } },
     } as never, interaction, { renderHtml: () => "<html></html>", openSunoWebsite: async () => { opens++; },
       verifySunoSession: async (received) => {
-        assert.equal(received, sessionValue); verifications++;
+        assert.equal(received, `__client=${sessionValue}`); verifications++;
         return { accountId: "user_fixture", accountName: "Fixture musician" };
       } });
     assert.equal(opens, 1);

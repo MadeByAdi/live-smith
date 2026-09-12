@@ -25,6 +25,7 @@ import {
   isUiLanguage,
   isProfileId,
   isReasoningEffort,
+  normalizeCustomInstructions,
   normalizeNetworkProxySettings,
   ProfileValidationError,
   type ApprovalMode,
@@ -144,6 +145,7 @@ export type ChatBridgeCommandInput =
       audioServices?: never;
       showContextUsage?: never;
       networkProxy?: never;
+      customInstructions?: never;
     }
   | {
       kind: "save_global_settings";
@@ -152,6 +154,7 @@ export type ChatBridgeCommandInput =
       showContextUsage: boolean;
       audioServices?: never;
       networkProxy?: never;
+      customInstructions?: never;
     }
   | {
       kind: "save_global_settings";
@@ -160,6 +163,7 @@ export type ChatBridgeCommandInput =
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
       audioServices?: never;
+      customInstructions?: never;
     }
   | {
       kind: "save_global_settings";
@@ -168,6 +172,7 @@ export type ChatBridgeCommandInput =
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy?: never;
+      customInstructions?: never;
     }
   | {
       kind: "save_global_settings";
@@ -176,12 +181,22 @@ export type ChatBridgeCommandInput =
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
       networkProxy?: never;
+      customInstructions?: never;
+    }
+  | {
+      kind: "save_global_settings";
+      customInstructions: string;
+      uiLanguage?: never;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
+      audioServices?: never;
     }
   | { kind: "resume_audio_job"; sessionId: string; jobId: string }
   | { kind: "download_audio_output"; sessionId: string; jobId: string; outputKey: string }
   | { kind: "open_audio_download"; sessionId: string; assetId: string }
-  | { kind: "retrieve_music"; sessionId: string; serviceId: string; clipIds: string[]; expectedAccountId: string }
   | { kind: "open_suno_website" }
+  | { kind: "open_suno_platform" }
   | { kind: "import_suno_session"; serviceId: string; sessionValue: string }
   | { kind: "refresh_suno_login"; serviceId: string }
   | { kind: "logout_suno"; serviceId: string }
@@ -896,7 +911,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   if (kind === "save_global_settings") {
     assertOnlyInputKeys(
       input,
-      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage", "audioServices"],
+      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage", "audioServices", "customInstructions"],
       `${kind} command`,
     );
     const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
@@ -909,6 +924,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     );
     const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
     const hasAudioService = Object.prototype.hasOwnProperty.call(input, "audioServices");
+    const hasCustomInstructions = Object.prototype.hasOwnProperty.call(input, "customInstructions");
     const hasNetworkProxy = Object.prototype.hasOwnProperty.call(
       input,
       "networkProxy",
@@ -917,7 +933,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       Number(hasFollowUpBehavior) +
         Number(hasContextUsage) +
         Number(hasNetworkProxy) +
-        Number(hasUiLanguage) + Number(hasAudioService) !== 1
+        Number(hasUiLanguage) + Number(hasAudioService) + Number(hasCustomInstructions) !== 1
     ) {
       throw new ChatBridgeRequestValidationError(
         "save_global_settings must contain exactly one setting.",
@@ -951,6 +967,10 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       return { kind, showContextUsage: input.showContextUsage as boolean };
     }
     try {
+      if (hasCustomInstructions) return {
+        kind,
+        customInstructions: normalizeCustomInstructions(input.customInstructions),
+      };
       if (hasAudioService) return { kind, audioServices: normalizeAudioServicesSettingsPatch(input.audioServices) };
       return {
         kind,
@@ -965,16 +985,16 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       throw error;
     }
   }
-  if (kind === "open_suno_website") {
-    assertOnlyInputKeys(input, ["kind"], "open_suno_website command");
+  if (kind === "open_suno_website" || kind === "open_suno_platform") {
+    assertOnlyInputKeys(input, ["kind"], `${kind} command`);
     return { kind };
   }
   if (kind === "import_suno_session") {
     assertOnlyInputKeys(input, ["kind", "serviceId", "sessionValue"], "import_suno_session command");
     if (!isSafeStorageId(input.serviceId)) throw new ChatBridgeRequestValidationError("Suno connection ID must be a safe storage ID.");
-    if (typeof input.sessionValue !== "string" || !input.sessionValue.trim() || input.sessionValue.length > 8192 ||
+    if (typeof input.sessionValue !== "string" || !input.sessionValue.trim() || input.sessionValue.length > 16_384 ||
       /[\u0000-\u001f\u007f]/u.test(input.sessionValue)) {
-      throw new ChatBridgeRequestValidationError("Enter only the Suno __client Cookie value (up to 8192 characters).");
+      throw new ChatBridgeRequestValidationError("Enter a Suno session Cookie value or Cookie header (up to 16384 characters).");
     }
     return { kind, serviceId: input.serviceId, sessionValue: input.sessionValue };
   }
@@ -982,17 +1002,6 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     assertOnlyInputKeys(input, ["kind", "serviceId"], `${kind} command`);
     if (!isSafeStorageId(input.serviceId)) throw new ChatBridgeRequestValidationError("Suno connection ID must be a safe storage ID.");
     return { kind, serviceId: input.serviceId };
-  }
-  if (kind === "retrieve_music") {
-    assertOnlyInputKeys(input, ["kind", "sessionId", "serviceId", "clipIds", "expectedAccountId"], "retrieve_music command");
-    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.serviceId) ||
-      typeof input.expectedAccountId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(input.expectedAccountId) ||
-      !Array.isArray(input.clipIds) || input.clipIds.length < 1 || input.clipIds.length > 2 ||
-      input.clipIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(id)) ||
-      new Set(input.clipIds).size !== input.clipIds.length) {
-      throw new ChatBridgeRequestValidationError("Choose a saved Suno account and one or two unique song IDs.");
-    }
-    return { kind, sessionId: input.sessionId, serviceId: input.serviceId, clipIds: [...input.clipIds], expectedAccountId: input.expectedAccountId };
   }
   if (kind === "download_audio_output") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "jobId", "outputKey"], "download_audio_output command");

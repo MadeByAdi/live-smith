@@ -3,7 +3,7 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { freshEmptyAgentSettings, cloneAgentSettings } from "../model/profile.js";
+import { freshEmptyAgentSettings, cloneAgentSettings, isAudioServiceCallbackUrl, normalizeAudioServiceConnection } from "../model/profile.js";
 import { parseCommandInput, parseSendInput } from "../app/chat-bridge-http.js";
 import { LEGACY_AUDIO_SERVICE_ID, MAX_AUDIO_SERVICES, type AudioServiceConnection,
   type AudioServicesSettingsPatch } from "../audio-services/contracts.js";
@@ -82,17 +82,25 @@ test("music model IDs use the consumed 128-character configuration boundary", ()
   }) }));
 });
 
-test("callback validation rejects unsafe URLs without reflecting input, and fields require their provider consumer", () => {
-  for (const callbackUrl of ["", "http://hooks.example.com/cb", "https://localhost/cb", "https://a.localhost./cb",
-    "https://local/cb", "https://host.local/cb", "https://home.arpa/cb", "https://127.1/cb", "https://0x7f000001/cb",
-    "https://2130706433/cb", "https://10.1.2.3/cb", "https://172.16.0.1/cb", "https://192.168.1.1/cb",
-    "https://169.254.169.254/cb", "https://100.64.0.1/cb", "https://0.0.0.0/cb", "https://224.0.0.1/cb",
-    "https://8.8.8.8/cb", "https://[2606:4700:4700::1111]/cb", "https://hooks.example.com:8443/cb",
-    "https://hooks.example.com./cb", "https://192.0.2.1/cb", "https://[::]/cb", "https://[::1]/cb", "https://[fc00::1]/cb",
-    "https://[fe80::1]/cb", "https://[::ffff:127.0.0.1]/cb", "https://[2001:db8::1]/cb",
+test("official Suno Platform is a separate API-key connection without website Cookie or model fields", async () => {
+  const { save } = await fixture();
+  const platform = { id: "suno-platform", name: "Official Suno", provider: "suno-platform" as const, enabled: false };
+  const disabled = await save({ action: "upsert", expectedRevision: "0", connection: platform });
+  assert.deepEqual(disabled.audioServices?.connections[0], { ...platform, apiKey: "" });
+  await assert.rejects(save({ action: "upsert", expectedRevision: "1", connection: { ...platform, enabled: true } }), /API key/);
+  const enabled = await save({ action: "upsert", expectedRevision: "1", connection: {
+    ...platform, enabled: true, apiKey: "fixture-platform-key",
+  } });
+  assert.equal(enabled.audioServices?.connections[0]?.provider, "suno-platform");
+  assert.throws(() => normalizeAudioServiceConnection({ ...platform, apiKey: "", modelId: "v6" }), /not configurable/u);
+  assert.throws(() => normalizeAudioServiceConnection({ ...platform, apiKey: "", callbackUrl: "https://example.test/hook" }), /callback/u);
+});
+
+test("callback validation rejects malformed or credential-bearing URLs without reflecting input, and fields require their provider consumer", () => {
+  for (const callbackUrl of ["", "ftp://hooks.example.com/cb",
     "https://fixture-secret@hooks.example.com/cb", "https://%66ixture-secret@hooks.example.com/cb",
-    "https://@hooks.example.com/cb", "https://hooks.example.com/cb?", "https://hooks.example.com/cb#",
-    "https://hooks.example.com/cb?key=fixture-secret", "https://hooks.example.com/cb#fixture-secret",
+    "https://@hooks.example.com/cb", "https://hooks.example.com/cb#",
+    "https://hooks.example.com/cb#fixture-secret",
     "https://hooks.example.com\\@localhost/cb", "https://hooks.example.com/c b", " https://hooks.example.com/cb",
     "https://hooks.example.com/\ncb", "https://hooks.example.com/%", "https://hooks.example.com/%GG",
     "https://hooks.example.com/%C0%AF", "https://hooks.example.com/" + "a".repeat(2048), null]) {
@@ -105,8 +113,11 @@ test("callback validation rejects unsafe URLs without reflecting input, and fiel
       return true;
     });
   }
+  for (const callbackUrl of ["http://localhost:8787/cb?token=fixture", "https://127.0.0.1:9443/cb?stage=done",
+    "https://hooks.example.com./cb?"]) assert.equal(isAudioServiceCallbackUrl(callbackUrl), true, callbackUrl);
   for (const fields of [{ provider: "lalal", callbackUrl: "https://hooks.example.com/cb" },
     { provider: "elevenlabs", callbackUrl: "https://hooks.example.com/cb" },
+    { provider: "suno-platform", callbackUrl: "https://hooks.example.com/cb" },
     { provider: "suno", callbackUrl: "https://hooks.example.com/cb" }, { provider: "lalal", modelId: "unused" }]) {
     assert.throws(() => parseCommandInput({ kind: "save_global_settings", audioServices:
       { action: "upsert", expectedRevision: "0", connection: { ...connection(), ...fields, enabled: false } } }));

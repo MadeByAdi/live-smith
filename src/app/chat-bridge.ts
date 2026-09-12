@@ -24,6 +24,7 @@ import type { OAuthAuthState } from "../model/provider.js";
 import {
   compareContextUsageVisibilityRevisions,
   compareDefaultFollowUpBehaviorRevisions,
+  compareCustomInstructionsRevisions,
   compareNetworkProxyRevisions,
   compareUiLanguageRevisions,
   isUiLanguage,
@@ -33,6 +34,7 @@ import {
   isContextUsageVisibilityRevision,
   isDefaultFollowUpBehavior,
   isDefaultFollowUpBehaviorRevision,
+  isCustomInstructionsRevision,
   isNetworkProxyRevision,
   isNetworkProxySettings,
   ProfileValidationError,
@@ -40,6 +42,7 @@ import {
   type ContextUsageVisibilityRevision,
   type DefaultFollowUpBehavior,
   type DefaultFollowUpBehaviorRevision,
+  type CustomInstructionsRevision,
   type NetworkProxyRevision,
   type NetworkProxySettings,
   type OAuthSubscriptionProvider,
@@ -486,6 +489,8 @@ type StateChangeSsePayloadBase =
       defaultFollowUpBehaviorRevision: DefaultFollowUpBehaviorRevision;
       showContextUsage: boolean;
       contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
+      customInstructions: string;
+      customInstructionsRevision: CustomInstructionsRevision;
       networkProxy: NetworkProxySettings;
       networkProxyRevision: NetworkProxyRevision;
       uiLanguage: UiLanguage;
@@ -868,6 +873,8 @@ export async function createChatBridge(
       !isContextUsageVisibilityRevision(
         settings.contextUsageVisibilityRevision,
       ) ||
+      typeof settings.customInstructions !== "string" ||
+      !isCustomInstructionsRevision(settings.customInstructionsRevision) ||
       !isNetworkProxySettings(settings.networkProxy) ||
       !isNetworkProxyRevision(settings.networkProxyRevision) ||
       !isUiLanguage(settings.uiLanguage) ||
@@ -882,6 +889,8 @@ export async function createChatBridge(
         showContextUsage: settings.showContextUsage,
         contextUsageVisibilityRevision:
           settings.contextUsageVisibilityRevision,
+        customInstructions: settings.customInstructions,
+        customInstructionsRevision: settings.customInstructionsRevision,
         networkProxy: settings.networkProxy,
         networkProxyRevision: settings.networkProxyRevision,
         uiLanguage: settings.uiLanguage,
@@ -900,6 +909,10 @@ export async function createChatBridge(
       settings.contextUsageVisibilityRevision,
       latestGlobalSettingsChange.contextUsageVisibilityRevision,
     ) > 0;
+    const customInstructionsFromState = compareCustomInstructionsRevisions(
+      settings.customInstructionsRevision,
+      latestGlobalSettingsChange.customInstructionsRevision,
+    ) > 0;
     const uiLanguageFromState = compareUiLanguageRevisions(
       settings.uiLanguageRevision,
       latestGlobalSettingsChange.uiLanguageRevision,
@@ -914,6 +927,7 @@ export async function createChatBridge(
     if (
       behaviorFromState ||
       contextVisibilityFromState ||
+      customInstructionsFromState ||
       networkProxyFromState ||
       uiLanguageFromState || audioFromState
     ) {
@@ -933,6 +947,12 @@ export async function createChatBridge(
               contextUsageVisibilityRevision:
                 settings.contextUsageVisibilityRevision,
           }
+          : {}),
+        ...(customInstructionsFromState
+          ? {
+              customInstructions: settings.customInstructions,
+              customInstructionsRevision: settings.customInstructionsRevision,
+            }
           : {}),
         ...(uiLanguageFromState ? {
           uiLanguage: settings.uiLanguage,
@@ -961,6 +981,9 @@ export async function createChatBridge(
         showContextUsage: latestGlobalSettingsChange.showContextUsage,
         contextUsageVisibilityRevision:
           latestGlobalSettingsChange.contextUsageVisibilityRevision,
+        customInstructions: latestGlobalSettingsChange.customInstructions,
+        customInstructionsRevision:
+          latestGlobalSettingsChange.customInstructionsRevision,
         uiLanguage: latestGlobalSettingsChange.uiLanguage,
         uiLanguageRevision: latestGlobalSettingsChange.uiLanguageRevision,
         networkProxy: latestGlobalSettingsChange.networkProxy,
@@ -2495,6 +2518,10 @@ export async function createChatBridge(
           change.contextUsageVisibilityRevision,
           latestGlobalSettingsChange.contextUsageVisibilityRevision,
         );
+        const customInstructionsOrder = compareCustomInstructionsRevisions(
+          change.customInstructionsRevision,
+          latestGlobalSettingsChange.customInstructionsRevision,
+        );
         const uiLanguageOrder = compareUiLanguageRevisions(
           change.uiLanguageRevision,
           latestGlobalSettingsChange.uiLanguageRevision,
@@ -2522,6 +2549,11 @@ export async function createChatBridge(
               latestGlobalSettingsChange.showContextUsage
           ) ||
           (
+            customInstructionsOrder === 0 &&
+            change.customInstructions !==
+              latestGlobalSettingsChange.customInstructions
+          ) ||
+          (
             networkProxyOrder === 0 &&
             (
               change.networkProxy.mode !==
@@ -2533,6 +2565,7 @@ export async function createChatBridge(
           (
             behaviorOrder <= 0 &&
             contextVisibilityOrder <= 0 &&
+            customInstructionsOrder <= 0 &&
             networkProxyOrder <= 0 &&
             audioOrder <= 0 &&
             uiLanguageOrder <= 0 &&
@@ -2540,6 +2573,7 @@ export async function createChatBridge(
               latestGlobalSettingsFromState &&
               behaviorOrder === 0 &&
               contextVisibilityOrder === 0 &&
+              customInstructionsOrder === 0 &&
               networkProxyOrder === 0 &&
               audioOrder === 0 &&
               uiLanguageOrder === 0
@@ -2561,6 +2595,12 @@ export async function createChatBridge(
           contextUsageVisibilityRevision: contextVisibilityOrder > 0
             ? change.contextUsageVisibilityRevision
             : latestGlobalSettingsChange.contextUsageVisibilityRevision,
+          customInstructions: customInstructionsOrder > 0
+            ? change.customInstructions
+            : latestGlobalSettingsChange.customInstructions,
+          customInstructionsRevision: customInstructionsOrder > 0
+            ? change.customInstructionsRevision
+            : latestGlobalSettingsChange.customInstructionsRevision,
           uiLanguage: uiLanguageOrder > 0
             ? change.uiLanguage
             : latestGlobalSettingsChange.uiLanguage,

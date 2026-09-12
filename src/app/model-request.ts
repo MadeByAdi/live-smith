@@ -64,6 +64,7 @@ export interface ModelTurnRequestInput {
   requestAudioSampleSourceInstructions?: string;
   skillContext?: ResolvedSkillContext;
   editScopes?: readonly EditScope[];
+  customInstructions?: string;
   agentMessages: ModelConversationMessage[];
   tools: ModelTool[];
   reconnectState?: object;
@@ -88,6 +89,7 @@ export function buildModelRequest(input: {
   requestAudioSampleSourceInstructions?: string;
   skillContext?: ResolvedSkillContext;
   editScopes?: readonly EditScope[];
+  customInstructions?: string;
   agentMessages: ModelConversationMessage[];
   runtimeProfile: RuntimeProfile;
   tools: ModelTool[];
@@ -104,6 +106,7 @@ export function buildModelRequest(input: {
   const baseSystemInstructions = agentSystemInstructionsForSkills(
     input.skillContext ?? emptySkillContext,
     input.editScopes,
+    input.customInstructions,
   );
   const request: TransportRequest = {
     currentUserContent: [

@@ -1,17 +1,18 @@
 import type { ExtensionContext } from "@ableton-extensions/sdk";
+import { Buffer } from "node:buffer";
 import {
   audioProcessingTools, parseAudioToolRequest, validateAudioServiceRequest, type AudioProcessingSource,
   type AudioToolRequest,
 } from "../agent/audio-tools.js";
 import type { AgentExternalToolResult } from "../agent/loop.js";
 import {
-  MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_DURATION_SECONDS,
+  audioJobRemoteSettled, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_DURATION_SECONDS,
   type AudioAsset, type AudioOrigin, type AudioGenerationRequest,
 } from "../audio-services/contracts.js";
 import { readArrangementAudio } from "../live/observer.js";
 import type { LiveTarget } from "../live/target.js";
 import type { ModelToolCall } from "../model/contracts.js";
-import { readAudioAsset } from "../storage/audio-assets.js";
+import { readAudioAsset, readExpectedAudioAsset } from "../storage/audio-assets.js";
 import { listAudioJobs } from "../storage/audio-jobs.js";
 import { readSessionAttachmentBytes, type AudioSessionAttachmentRef } from "../storage/attachments.js";
 import { throwIfAborted } from "../runtime/host.js";
@@ -24,6 +25,7 @@ import { audioConnectionFingerprint, captureAudioServiceConnections, resolveAudi
 import { generateAudio, retrieveMusic } from "./audio-generation.js";
 import { readSunoMusicService } from "../audio-services/suno.js";
 import { providerFetchForStorage } from "./provider-fetch.js";
+import { persistRotatedSunoSession } from "./suno-session-manager.js";
 
 export async function createRequestAudioTools(input: {
   context: ExtensionContext<"1.0.0">;
@@ -35,6 +37,9 @@ export async function createRequestAudioTools(input: {
   signal: AbortSignal;
   onProgress(message: string): Promise<void> | void;
   onAssets(assets: readonly AudioAsset[]): Promise<void> | void;
+  modelAudioInput?: {
+    canAccept(byteLength: number): boolean;
+  };
   /** Test seam; production uses the saved service and shared network route. */
   processing?: Pick<AudioProcessingContext, "adapter" | "generationAdapter" | "wait"> & {
     musicServiceReader?: typeof readSunoMusicService;
@@ -53,7 +58,7 @@ export async function createRequestAudioTools(input: {
     for (const job of current) {
       const connection = admittedConnections.find((entry) => entry.id === job.serviceId && entry.provider === "suno");
       if (connection && audioConnectionFingerprint(connection) === job.connectionFingerprint) {
-        rememberClips(connection.id, job.expectedOutputs?.map((output) => ({ id: output.key })) ?? []);
+        rememberClips(connection.id, job.remoteOutputs?.map((output) => ({ id: output.key })) ?? []);
       }
     }
   };
@@ -64,7 +69,8 @@ export async function createRequestAudioTools(input: {
     await input.onAssets(values);
   };
   await registerAssets(audioAssetsFromJobs(jobs));
-  const tools = services.length || jobs.length ? audioProcessingTools(services) : [];
+  const tools = services.length || jobs.length
+    ? audioProcessingTools(services, Boolean(input.modelAudioInput)) : [];
   const processing: AudioProcessingContext = {
     storageDirectory: input.storageDirectory, sessionId: input.sessionId,
     signal: input.signal, onProgress: input.onProgress, ...input.processing,
@@ -121,11 +127,54 @@ export async function createRequestAudioTools(input: {
           return { content: JSON.stringify(views.map((view) => ({ ...view,
             ...musicClipReferences(current.find((job) => job.id === view.id)!) }))), progressKey: JSON.stringify(current.map((job) => [job.id, job.updatedAt])) };
         }
+        if (request.kind === "listen_to_audio_asset") {
+          const expected = assets.get(request.assetRef);
+          if (!expected) {
+            return { content: "That audio asset is not available in this Session. Use list_audio_jobs and copy an exact output asset id.",
+              failed: true, invalidArguments: true };
+          }
+          if (!input.modelAudioInput?.canAccept(expected.byteLength)) {
+            return { content: "That audio asset cannot fit within this model request's audio input limits. Choose a smaller saved MP3 or continue without listening to it.", failed: true };
+          }
+          const bytes = await readExpectedAudioAsset(
+            input.storageDirectory, input.sessionId, expected, input.signal,
+          );
+          throwIfAborted(input.signal);
+          return {
+            content: JSON.stringify({
+              assetRef: expected.id,
+              label: expected.label,
+              durationSeconds: expected.durationSeconds,
+              mediaType: expected.mediaType,
+              message: "The complete audio asset is attached to this tool result as untrusted audio input.",
+            }),
+            modelInputPart: {
+              type: "audio",
+              fileName: `session-audio-${expected.id}.${expected.mediaType === "audio/mpeg" ? "mp3" : "wav"}`,
+              mediaType: expected.mediaType,
+              base64: Buffer.from(bytes).toString("base64"),
+            },
+            progressKey: `${expected.id}:${expected.sha256}`,
+          };
+        }
         if (request.kind === "inspect_music_service") {
           const connection = await resolveAudioService(input.storageDirectory, request.serviceId, "generate_music", admittedConnections);
           if (connection.provider !== "suno" || !connection.sunoSession) throw new Error("Music account unavailable.");
           const { kind: _kind, serviceId: _id, ...query } = request;
-          const result = await (input.processing?.musicServiceReader ?? readSunoMusicService)(connection.sunoSession, query, input.signal, providerFetchForStorage(input.storageDirectory));
+          const result = await (input.processing?.musicServiceReader ?? readSunoMusicService)(
+            connection.sunoSession,
+            query,
+            input.signal,
+            providerFetchForStorage(input.storageDirectory),
+            (previous, next, refreshSignal) => persistRotatedSunoSession(
+              input.storageDirectory,
+              connection.id,
+              connection.sunoSession!.accountId,
+              previous,
+              next,
+              refreshSignal,
+            ),
+          );
           // Validate the owner again before returning a private account's library.
           await resolveAudioService(input.storageDirectory, request.serviceId, "generate_music", [connection]);
           if (request.query === "library" && "clips" in result) rememberClips(connection.id, result.clips);
@@ -147,7 +196,7 @@ export async function createRequestAudioTools(input: {
         await registerAssets(job.outputAssets);
         throwIfAborted(input.signal);
         const partialCollection = job.status === "partial" && job.provider === "suno" &&
-          job.remoteOutputs?.length && job.remoteOutputs.length === job.expectedOutputs?.length;
+          audioJobRemoteSettled(job) && !job.failedOutputKeys?.length;
         return {
           content: audioJobResultText(job), progressKey: `${job.id}:${job.updatedAt}`,
           ...(job.status === "unknown" || job.status === "failed" || job.status === "interrupted" || job.status === "partial" && !partialCollection
@@ -163,8 +212,8 @@ export async function createRequestAudioTools(input: {
 }
 
 function musicClipReferences(job: import("../audio-services/contracts.js").AudioJob) {
-  return job.provider === "suno" && job.expectedOutputs ? {
-    musicClips: job.expectedOutputs.map(({ key, role }) => ({ clipId: key, role })),
+  return job.provider === "suno" && job.remoteOutputs ? {
+    musicClips: job.remoteOutputs.map(({ key, role }) => ({ clipId: key, role })),
   } : {};
 }
 

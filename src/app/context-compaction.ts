@@ -30,6 +30,7 @@ export interface ConversationCheckpointInput {
   attachmentParts?: ModelInputPart[];
   skillContext?: ResolvedSkillContext;
   editScopes?: readonly EditScope[];
+  customInstructions?: string;
   agentMessages: ModelConversationMessage[];
   instructions?: string;
   signal: AbortSignal;
@@ -64,6 +65,9 @@ export async function createConversationCheckpoint(
       ? {}
       : { skillContext: input.skillContext }),
     ...(input.editScopes === undefined ? {} : { editScopes: input.editScopes }),
+    ...(input.customInstructions === undefined
+      ? {}
+      : { customInstructions: input.customInstructions }),
     agentMessages: [
       ...input.agentMessages,
       {

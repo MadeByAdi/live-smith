@@ -127,6 +127,8 @@ test("loadAgentSettings starts empty and rejects every legacy or invalid setting
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   });
 
   const legacyShapes = [
@@ -289,6 +291,8 @@ test("the migration decoder accepts only canonical current per-field revisions",
           networkProxyRevision: "0",
           uiLanguage: "system",
           uiLanguageRevision: "0",
+          customInstructions: "",
+          customInstructionsRevision: "0",
         } as const;
         assert.deepEqual(decodeAgentSettings(current), current);
       }
@@ -308,6 +312,8 @@ test("the migration decoder accepts only canonical current per-field revisions",
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   } as const;
   for (const invalid of [undefined, "later", false]) {
     assert.throws(
@@ -490,6 +496,8 @@ test("schema-v3 discrimination uses follow-up field presence for empty Profile a
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   });
 
   assert.deepEqual(decodeAgentSettings({
@@ -510,6 +518,8 @@ test("schema-v3 discrimination uses follow-up field presence for empty Profile a
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   });
 });
 
@@ -715,6 +725,8 @@ test("schema-v5 strictly validates model collections before migrating to current
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   });
   assert.throws(
     () => decodeAgentSettings({ ...current, showContextUsage: false }),
@@ -939,6 +951,8 @@ test("saveSavedProfile normalizes, persists, and activates the complete profile"
     "activeProfileId",
     "approvalMode",
     "contextUsageVisibilityRevision",
+    "customInstructions",
+    "customInstructionsRevision",
     "defaultFollowUpBehavior",
     "defaultFollowUpBehaviorRevision",
     "networkProxy",

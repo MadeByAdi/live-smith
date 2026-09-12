@@ -137,8 +137,13 @@ test("a genuinely failed remote sibling still reports partial processing failure
   const job = await retrieveMusic(h.context, connection.id, clipIds);
   await downloadAudioOutput(h.context, job.id, clipIds[0]!);
   const tools = await toolsFor(h, []);
+  const inspections = h.calls.inspect;
   const result = await tools.execute("resume_audio_job", { jobId: job.id });
   assert.equal(result.failed, true);
   assert.equal(result.stop, true);
-  assert.deepEqual(JSON.parse(result.content).remoteOutputs, [manifest[0]]);
+  const content = JSON.parse(result.content);
+  assert.deepEqual(content.remoteOutputs, [manifest[0]]);
+  assert.deepEqual(content.musicClips, [{ clipId: manifest[0]!.key, role: manifest[0]!.role }]);
+  assert.equal(h.calls.inspect, inspections);
+  assert.equal((await tools.retrieve(connection.id, [clipIds[1]!])).invalidArguments, true);
 });

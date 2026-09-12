@@ -38,6 +38,36 @@ test("the action contract does not guess Session View for ambiguous Clip creatio
   );
 });
 
+test("the built-in production contract distinguishes editable Live projects from rendered external audio", () => {
+  assert.match(agentSystemInstructions, /current request.*Custom Instructions.*deliverable/is);
+  assert.match(agentSystemInstructions, /do not substitute a built-in creative preference/i);
+  assert.match(agentSystemInstructions, /otherwise ask one concise question/i);
+  assert.doesNotMatch(agentSystemInstructions, /default to an editable Live project/i);
+  assert.match(agentSystemInstructions, /external audio generation/i);
+  assert.match(agentSystemInstructions, /form.*musical roles.*MIDI/is);
+  assert.match(agentSystemInstructions, /materially complete/i);
+});
+
+test("Custom Instructions are standing user choices below immutable boundaries and above workflow defaults", () => {
+  const custom = "Prefer Suno sketches first, then turn the chosen idea into MIDI.";
+  const instructions = agentSystemInstructionsForSkills(
+    { activeSkillIds: [], instructionBlock: "" },
+    ["midi"],
+    custom,
+  );
+  const scopeIndex = instructions.indexOf("saved Session Edit Scope");
+  const customBoundaryIndex = instructions.indexOf("The following Custom Instructions");
+  const customIndex = instructions.indexOf(JSON.stringify(custom));
+  const actionIndex = instructions.indexOf(actionSystemPrompt());
+  assert.ok(scopeIndex >= 0);
+  assert.ok(customBoundaryIndex > scopeIndex);
+  assert.ok(customIndex > customBoundaryIndex);
+  assert.ok(actionIndex > customIndex);
+  assert.match(instructions, /current request takes precedence/i);
+  assert.match(instructions, /cannot expand.*Edit Scope|Edit Scope.*cannot expand/is);
+  assert.equal(instructions.split(JSON.stringify(custom)).length - 1, 1);
+});
+
 test("active Skill guidance stays below built-in safety and above the action contract", () => {
   const instructionBlock = [
     '<skill id="arrangement-review">',

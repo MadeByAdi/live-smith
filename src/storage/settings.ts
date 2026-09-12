@@ -8,6 +8,7 @@ import {
   cloneAgentSettings,
   freshEmptyAgentSettings,
   incrementContextUsageVisibilityRevision,
+  incrementCustomInstructionsRevision,
   incrementDefaultFollowUpBehaviorRevision,
   incrementNetworkProxyRevision,
   incrementUiLanguageRevision,
@@ -17,6 +18,7 @@ import {
   normalizeNetworkProxySettings,
   normalizeAudioServicesSettings,
   normalizeAudioServiceConnection,
+  normalizeCustomInstructions,
   isProfileId,
   isNetworkProxyRevision,
   ProfileValidationError,
@@ -75,6 +77,7 @@ export type GlobalSettingsPatch =
       showContextUsage?: never;
       networkProxy?: never;
       audioServices?: never;
+      customInstructions?: never;
     }
   | {
       uiLanguage?: never;
@@ -82,6 +85,7 @@ export type GlobalSettingsPatch =
       showContextUsage: boolean;
       networkProxy?: never;
       audioServices?: never;
+      customInstructions?: never;
     }
   | {
       uiLanguage?: never;
@@ -89,6 +93,7 @@ export type GlobalSettingsPatch =
       showContextUsage?: never;
       networkProxy: NetworkProxySettings;
       audioServices?: never;
+      customInstructions?: never;
     }
   | {
       uiLanguage: UiLanguage;
@@ -96,6 +101,7 @@ export type GlobalSettingsPatch =
       showContextUsage?: never;
       networkProxy?: never;
       audioServices?: never;
+      customInstructions?: never;
     }
   | {
       uiLanguage?: never;
@@ -103,6 +109,15 @@ export type GlobalSettingsPatch =
       showContextUsage?: never;
       networkProxy?: never;
       audioServices: AudioServicesSettingsPatch;
+      customInstructions?: never;
+    }
+  | {
+      uiLanguage?: never;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
+      audioServices?: never;
+      customInstructions: string;
     };
 
 export type { AudioServicesSettingsPatch } from "../audio-services/contracts.js";
@@ -284,10 +299,15 @@ export async function saveGlobalSettings(
     input,
     "networkProxy",
   );
+  const hasCustomInstructions = Object.prototype.hasOwnProperty.call(
+    input,
+    "customInstructions",
+  );
   if (
     Number(hasFollowUpBehavior) +
       Number(hasContextUsage) +
-      Number(hasNetworkProxy) + Number(hasUiLanguage) + Number(hasAudioService) !== 1 ||
+      Number(hasNetworkProxy) + Number(hasUiLanguage) + Number(hasAudioService) +
+      Number(hasCustomInstructions) !== 1 ||
     Object.keys(input).length !== 1
   ) {
     throw new Error("Global settings update must contain exactly one setting.");
@@ -306,6 +326,9 @@ export async function saveGlobalSettings(
   }
   const networkProxy = hasNetworkProxy
     ? normalizeNetworkProxySettings(input.networkProxy)
+    : undefined;
+  const customInstructions = hasCustomInstructions
+    ? normalizeCustomInstructions(input.customInstructions)
     : undefined;
   const audioPatch = hasAudioService ? normalizeAudioServicesSettingsPatch(input.audioServices) : undefined;
   if (audioPatch && !storageDirectory) {
@@ -372,6 +395,13 @@ export async function saveGlobalSettings(
         ? {
             uiLanguage: input.uiLanguage!,
             uiLanguageRevision: incrementUiLanguageRevision(settings.uiLanguageRevision),
+          }
+        : hasCustomInstructions
+        ? {
+            customInstructions: customInstructions!,
+            customInstructionsRevision: incrementCustomInstructionsRevision(
+              settings.customInstructionsRevision,
+            ),
           }
         : {
             networkProxy: networkProxy!,

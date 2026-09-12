@@ -87,6 +87,14 @@ test("progress labels identify object-aware inspections", () => {
   );
   assert.equal(
     progressLabelForToolCall({
+      id: "listen-audio",
+      name: "listen_to_audio_asset",
+      arguments: '{"assetRef":"asset-one"}',
+    }),
+    "Listening to saved Session audio",
+  );
+  assert.equal(
+    progressLabelForToolCall({
       id: "resolve-recovery",
       name: "resolve_live_recovery",
       arguments: "{}",

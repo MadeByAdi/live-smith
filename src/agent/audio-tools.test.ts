@@ -5,6 +5,11 @@ import { AgentExternalToolReportingError, runAgentLoop } from "./loop.js";
 
 test("audio tools project supported combinations and strictly parse bounded source locators", () => {
   assert.deepEqual(audioProcessingTools([]).map((tool) => tool.function.name), ["resume_audio_job", "list_audio_jobs"]);
+  assert.deepEqual(audioProcessingTools([], true).map((tool) => tool.function.name),
+    ["listen_to_audio_asset", "resume_audio_job", "list_audio_jobs"]);
+  assert.deepEqual(parseAudioToolRequest("listen_to_audio_asset", JSON.stringify({ assetRef: "asset_known" })),
+    { kind: "listen_to_audio_asset", assetRef: "asset_known" });
+  assert.throws(() => parseAudioToolRequest("listen_to_audio_asset", JSON.stringify({ assetRef: "../private" })));
   assert.equal(audioProcessingTools([{ id: "splitter", name: "Stems", provider: "lalal" }]).length, 3);
   const request = { serviceId: "splitter", source: { kind: "audio_asset", assetRef: "asset_known" }, stems: ["vocals", "drums"] };
   assert.deepEqual(parseAudioToolRequest("separate_stems", JSON.stringify(request)), { kind: "separate_stems", ...request });
@@ -65,22 +70,92 @@ test("third-party Suno music declares its prompt limit and does not silently dis
   assert.throws(() => validateAudioServiceRequest({ kind: "generate_music", serviceId: services[0]!.id, prompt: "a".repeat(3001), instrumental: false }, services));
 });
 
+test("official Suno Platform exposes only its supported custom fields", () => {
+  const services = [{ id: "official-suno", name: "Official Suno", provider: "suno-platform" as const }];
+  const tool = audioProcessingTools(services).find((entry) => entry.function.name === "generate_music")!;
+  const schema = JSON.stringify(tool.function.parameters);
+  for (const field of ["title", "styles", "personaId"]) assert.match(schema, new RegExp(field));
+  for (const field of ["negativeStyles", "weirdness", "styleInfluence", "durationSeconds"]) {
+    assert.doesNotMatch(schema, new RegExp(field));
+  }
+  const variants = tool.function.parameters?.oneOf as Array<{ properties: { serviceId: { const: string }; options?: { required?: string[] } } }>;
+  assert.deepEqual(variants.find((entry) => entry.properties.serviceId.const === services[0]!.id && entry.properties.options)?.properties.options?.required,
+    ["mode", "styles"]);
+  const request = parseAudioToolRequest("generate_music", JSON.stringify({ serviceId: services[0]!.id,
+    prompt: "lyrics", instrumental: false, options: { mode: "custom", styles: "dream pop" } }));
+  assert.equal(request.kind, "generate_music");
+  if (request.kind !== "generate_music") assert.fail("expected music generation");
+  validateAudioServiceRequest(request, services);
+  assert.throws(() => validateAudioServiceRequest({ ...request, options: { mode: "custom" } }, services));
+  assert.throws(() => validateAudioServiceRequest({ ...request, options: {
+    mode: "custom", styles: "dream pop", weirdness: 50,
+  } }, services));
+});
+
+test("Suno.com exposes its bounded duration and vocal controls only on that connection", () => {
+  const website = { id: "website", name: "Suno subscription", provider: "suno" as const };
+  const tool = audioProcessingTools([website]).find((entry) => entry.function.name === "generate_music")!;
+  const variants = tool.function.parameters?.oneOf as Array<{
+    properties: { serviceId: { const: string }; durationSeconds?: { minimum: number; maximum: number }; options?: { properties?: object } };
+  }>;
+  const custom = variants.find((entry) => entry.properties.serviceId.const === website.id && entry.properties.options)!;
+  assert.deepEqual(custom.properties.durationSeconds, { type: "number", minimum: 10, maximum: 480 });
+  assert.ok(Object.hasOwn(custom.properties.options!.properties!, "vocalGender"));
+  const request = parseAudioToolRequest("generate_music", JSON.stringify({
+    serviceId: website.id, prompt: "[Verse]\nHello", durationSeconds: 10, instrumental: false,
+    options: { mode: "custom", styles: "dream pop", vocalGender: "female" },
+  }));
+  assert.equal(request.kind, "generate_music");
+  if (request.kind !== "generate_music") assert.fail("expected music generation");
+  validateAudioServiceRequest(request, [website]);
+  validateAudioServiceRequest({ ...request, durationSeconds: 480 }, [website]);
+  assert.throws(() => validateAudioServiceRequest({ ...request, durationSeconds: 9 }, [website]));
+  assert.throws(() => validateAudioServiceRequest({ ...request, durationSeconds: 481 }, [website]));
+  assert.throws(() => validateAudioServiceRequest(request, [{ ...website, provider: "elevenlabs" }]));
+});
+
+test("external music generation follows the user-selected rendered-audio deliverable", () => {
+  const tool = audioProcessingTools([
+    { id: "website", name: "Suno subscription", provider: "suno" },
+  ]).find((entry) => entry.function.name === "generate_music")!;
+  assert.match(tool.function.description, /rendered audio/i);
+  assert.match(tool.function.description, /requested deliverable/i);
+});
+
 test("external audio result returns to the next model turn without a Live observation or mutation", async () => {
   let turns = 0;
   let executions = 0;
+  let accepted = 0;
+  const audio = { type: "audio" as const, fileName: "session-audio.wav", mediaType: "audio/wav" as const, base64: "AAAA" };
   const result = await runAgentLoop({
     maxConsecutiveFailures: 2,
-    externalTools: { names: ["separate_stems"], execute: async () => { executions++; return { content: "asset_result", progressKey: "job" }; } },
+    externalTools: { names: ["separate_stems"], execute: async () => { executions++; return { content: "asset_result", progressKey: "job", modelInputPart: audio }; } },
     askModel: async ({ messages }) => {
       if (++turns === 1) return { content: null, toolCalls: [{ id: "call", name: "separate_stems", arguments: "{}" }] };
-      assert.deepEqual(messages.at(-1), { role: "tool", toolCallId: "call", content: "asset_result" });
+      assert.deepEqual(messages.at(-1), { role: "tool", toolCallId: "call", content: "asset_result", modelInputPart: audio });
       return { content: "Separated.", toolCalls: [] };
     },
+    onModelInputPartAccepted: () => { accepted++; },
     observe: async () => { throw new Error("must not observe Live"); },
     confirmActions: async () => { throw new Error("must not confirm Live"); },
     executeActions: async () => { throw new Error("must not mutate Live"); },
   });
-  assert.equal(result.message, "Separated."); assert.equal(executions, 1);
+  assert.equal(result.message, "Separated."); assert.equal(executions, 1); assert.equal(accepted, 1);
+});
+
+test("external audio is not admitted when its tool-result trace cannot be recorded", async () => {
+  const audio = { type: "audio" as const, fileName: "session-audio.wav", mediaType: "audio/wav" as const, base64: "AAAA" };
+  let accepted = 0;
+  await assert.rejects(runAgentLoop({
+    maxConsecutiveFailures: 2,
+    externalTools: { names: ["listen_to_audio_asset"], execute: async () => ({ content: "audio ready", modelInputPart: audio }) },
+    askModel: async () => ({ content: null, toolCalls: [{ id: "listen", name: "listen_to_audio_asset", arguments: "{}" }] }),
+    observe: async () => "", confirmActions: async () => false,
+    executeActions: async () => ({ results: [], mutationCount: 0 }),
+    onEvent: async (event) => { if (event.kind === "tool_result") throw new Error("storage unavailable"); },
+    onModelInputPartAccepted: () => { accepted++; },
+  }), (error: unknown) => error instanceof AgentExternalToolReportingError && error.outcome?.modelInputPart === undefined);
+  assert.equal(accepted, 0);
 });
 
 test("unknown external operation outcomes stop the send without a repair resubmission", async () => {

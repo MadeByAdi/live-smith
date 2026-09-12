@@ -18,6 +18,7 @@ export type AudioToolRequest =
   | { kind: "separate_stems"; serviceId: string; source: AudioProcessingSource; stems: SeparationStem[] }
   | { kind: "generate_music"; serviceId: string; prompt: string; durationSeconds?: number; instrumental: boolean; options?: MusicGenerationOptions }
   | { kind: "generate_sound_effect"; serviceId: string; prompt: string; durationSeconds: number; loop: boolean }
+  | { kind: "listen_to_audio_asset"; assetRef: string }
   | { kind: "list_audio_jobs" }
   | { kind: "resume_audio_job"; jobId: string };
 
@@ -45,14 +46,17 @@ const sourceSchema = {
   ],
 };
 
-export function audioProcessingTools(services: readonly AudioServiceChoice[]): ModelFunctionTool[] {
+export function audioProcessingTools(
+  services: readonly AudioServiceChoice[],
+  includeModelAudioInput = false,
+): ModelFunctionTool[] {
   const separation = services.filter((entry) => audioServiceSupports(entry.provider, "separate_stems"));
   return [
     ...(separation.length ? [{
       type: "function" as const,
       function: {
         name: "separate_stems",
-        description: "Separate an exact audio source into selected instrument stems plus the residual mix. This uploads chosen audio and consumes processing minutes for each requested stem. Use only for the user's audio separation request. It saves local results without changing Live. Inspect Arrangement Clip state first; range must lie within one isolated Clip. Current attachment and saved asset locators come from host context. Long processing waits inside the tool; do not submit duplicates. " + describeServices(separation),
+        description: "Separate an exact audio source into selected instrument stems plus the residual mix when separation is part of the user's requested workflow. This uploads chosen audio and consumes processing minutes for each requested stem. It saves local results without changing Live. Inspect Arrangement Clip state first; range must lie within one isolated Clip. Current attachment and saved asset locators come from host context. Long processing waits inside the tool; do not submit duplicates. " + describeServices(separation),
         parameters: {
           type: "object", additionalProperties: false,
           properties: { serviceId: serviceSchema(separation), source: sourceSchema, stems: { type: "array", minItems: 1, maxItems: SEPARATION_STEMS.length, uniqueItems: true, items: { type: "string", enum: [...SEPARATION_STEMS] } } },
@@ -62,6 +66,17 @@ export function audioProcessingTools(services: readonly AudioServiceChoice[]): M
     }] : []),
     ...generationTools(services),
     ...musicServiceTools(services),
+    ...(includeModelAudioInput ? [{
+      type: "function" as const,
+      function: {
+        name: "listen_to_audio_asset",
+        description: "Listen to one locally saved audio result from this Session using the active model's verified audio-input capability. Use only when the user asks to hear, analyze, compare, transcribe, or reason about that audio. First use list_audio_jobs and copy an exact output asset id as assetRef. This reads local audio only; it does not download remote audio, spend provider allowance, or change Live.",
+        parameters: {
+          type: "object", additionalProperties: false,
+          properties: { assetRef: stringField }, required: ["assetRef"],
+        },
+      },
+    }] : []),
     {
       type: "function" as const,
       function: {
@@ -74,7 +89,7 @@ export function audioProcessingTools(services: readonly AudioServiceChoice[]): M
       type: "function",
       function: {
         name: "list_audio_jobs",
-        description: "List this Session's saved audio processing jobs and verified result asset references, including previous requests. Results include snapshot origins, not permission to change Live. Use an output's id as assetRef in an audio_asset SampleSource or subsequent audio processing call. This only reads local state.",
+        description: "List this Session's saved audio processing jobs and verified result asset references, including previous requests. Results include snapshot origins, not permission to change Live. Use an output's id as assetRef in an audio_asset SampleSource, a subsequent audio processing call, or listen_to_audio_asset when that tool is available. This only reads local state.",
         parameters: { type: "object", properties: {}, additionalProperties: false },
       },
     },
@@ -96,16 +111,19 @@ function generationTools(services: readonly AudioServiceChoice[]): ModelFunction
     const music = operation === "generate_music";
     return [{ type: "function" as const, function: {
       name: operation,
-      description: (music ? "Generate original music from a description." : "Generate a sound effect from a description.") +
-        (music ? " On customMusic connections, options.mode=custom makes prompt literal lyrics (empty for instrumentals); styles, negativeStyles, title, existing personaId and 0–100 weirdness/styleInfluence are available. Without options, prompt is a description, at most 3000 characters on Suno. Do not claim unsupported vocal gender, duration, Sounds, Cover or voice enrollment." : "") +
-        " Uses the selected service's paid generation allowance. Only use for the user's requested generation; do not generate speculative variants. Saves audio results without changing Live. Do not repeat a call after an unknown outcome or retry on another account. " + describeServices(eligible),
+      description: (music
+        ? "Create rendered audio through an external music service when rendered audio is part of the user's requested deliverable. This does not create or edit Live tracks, MIDI, devices, Scenes, or the Arrangement."
+        : "Generate a sound effect from a description.") +
+        (music ? " On connections whose schema offers options, options.mode=custom makes prompt literal lyrics (empty for instrumentals); use only the option fields advertised for the selected connection. Without options, prompt is a description, at most 3000 characters on Suno. Do not claim unsupported Sounds, Cover, Mashup or voice enrollment." : "") +
+        " Uses the selected service's paid generation allowance. Generate the result or variants the user requested; do not add unrequested paid calls. Saves audio results without changing Live. Do not repeat a call after an unknown outcome or retry on another account. " + describeServices(eligible),
       parameters: {
         type: "object", additionalProperties: false,
         properties: {
           serviceId: serviceSchema(eligible), prompt: { type: "string", minLength: music && eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic) ? 0 : 1, maxLength: music ? 5000 : 4100 },
-          ...(music && eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic) ? { options: musicOptionsSchema } : {}),
+          ...(music && eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic)
+            ? { options: musicOptionsSchemaForServices(eligible) } : {}),
           ...(!music || eligible.some((service) => AUDIO_SERVICE_CAPABILITIES[service.provider].musicDuration)
-            ? { durationSeconds: { type: "number", minimum: music ? 3 : 0.5, maximum: music ? 600 : 30 } } : {}),
+            ? { durationSeconds: music ? combinedMusicDurationSchema(eligible) : soundEffectDurationSchema } : {}),
           ...(music ? { instrumental: { type: "boolean" } } : { loop: { type: "boolean" } }),
         },
         required: music ? ["serviceId", "prompt", "instrumental"] : ["serviceId", "prompt", "durationSeconds", "loop"],
@@ -114,9 +132,9 @@ function generationTools(services: readonly AudioServiceChoice[]): ModelFunction
           properties: {
             serviceId: { const: service.id }, prompt: { type: "string", minLength: custom ? 0 : 1,
               maxLength: music ? AUDIO_SERVICE_CAPABILITIES[service.provider].customMusic && !custom ? 3000 : AUDIO_SERVICE_CAPABILITIES[service.provider].musicPromptCharacters : 4100 },
-            ...(custom ? { options: musicOptionsSchema } : {}),
+            ...(custom ? { options: musicOptionsSchemaFor(service.provider) } : {}),
             ...(!music || AUDIO_SERVICE_CAPABILITIES[service.provider].musicDuration
-              ? { durationSeconds: { type: "number", minimum: music ? 3 : 0.5, maximum: music ? 600 : 30 } } : {}),
+              ? { durationSeconds: music ? musicDurationSchema(service.provider) : soundEffectDurationSchema } : {}),
             ...(music ? { instrumental: { type: "boolean" } } : { loop: { type: "boolean" } }),
           },
           required: music ? ["serviceId", "prompt", "instrumental", ...(custom ? ["options"] : [])] : ["serviceId", "prompt", "durationSeconds", "loop"],
@@ -127,7 +145,8 @@ function generationTools(services: readonly AudioServiceChoice[]): ModelFunction
 }
 
 export function validateAudioServiceRequest(request: AudioToolRequest, services: readonly AudioServiceChoice[]): void {
-  if (request.kind === "list_audio_jobs" || request.kind === "resume_audio_job") return;
+  if (request.kind === "list_audio_jobs" || request.kind === "resume_audio_job" ||
+    request.kind === "listen_to_audio_asset") return;
   const service = services.find((entry) => entry.id === request.serviceId);
   if (request.kind === "inspect_music_service") {
     if (!service || !AUDIO_SERVICE_CAPABILITIES[service.provider].musicLibrary) throw new Error("Music library unavailable.");
@@ -136,16 +155,70 @@ export function validateAudioServiceRequest(request: AudioToolRequest, services:
   if (!service || !audioServiceSupports(service.provider, request.kind)) throw new Error("Unavailable audio connection or operation.");
   const capability = AUDIO_SERVICE_CAPABILITIES[service.provider];
   if (request.kind === "generate_music" && request.options && !capability.customMusic) throw new Error("Custom music parameters are unavailable.");
+  if (request.kind === "generate_music" && request.options && Object.keys(request.options).some((field) =>
+    field !== "mode" && !capability.customMusicOptions?.includes(field as Exclude<keyof typeof request.options, "mode">))) {
+    throw new Error("This connection does not support one or more custom music parameters.");
+  }
+  if (request.kind === "generate_music" && request.options && capability.requiredCustomMusicOptions?.some((field) =>
+    request.options?.[field] === undefined)) throw new Error("This connection requires another custom music parameter.");
   if (request.kind === "generate_music" && capability.customMusic && !request.options && exceedsAudioPromptLimit(request.prompt, 3000)) throw new Error("Description exceeds 3000 characters.");
   if (request.kind === "generate_music" && (exceedsAudioPromptLimit(request.prompt, capability.musicPromptCharacters) ||
     (!capability.musicDuration && request.durationSeconds !== undefined))) {
     throw new Error("This connection does not support those music generation parameters.");
   }
+  if (request.kind === "generate_music" && request.durationSeconds !== undefined && capability.musicDuration &&
+    (request.durationSeconds < capability.musicDuration.minimumSeconds ||
+      request.durationSeconds > capability.musicDuration.maximumSeconds)) {
+    throw new Error("Music generation duration is outside this connection's supported range.");
+  }
+}
+
+const soundEffectDurationSchema = { type: "number", minimum: 0.5, maximum: 30 };
+
+function musicDurationSchema(provider: AudioServiceChoice["provider"]) {
+  const range = AUDIO_SERVICE_CAPABILITIES[provider].musicDuration!;
+  return { type: "number", minimum: range.minimumSeconds, maximum: range.maximumSeconds };
+}
+
+function combinedMusicDurationSchema(services: readonly AudioServiceChoice[]) {
+  const ranges = services.flatMap((service) => {
+    const range = AUDIO_SERVICE_CAPABILITIES[service.provider].musicDuration;
+    return range ? [range] : [];
+  });
+  return {
+    type: "number",
+    minimum: Math.min(...ranges.map((range) => range.minimumSeconds)),
+    maximum: Math.max(...ranges.map((range) => range.maximumSeconds)),
+  };
+}
+
+function musicOptionsSchemaFor(provider: AudioServiceChoice["provider"]) {
+  const capability = AUDIO_SERVICE_CAPABILITIES[provider];
+  return filteredMusicOptionsSchema(capability.customMusicOptions ?? [], capability.requiredCustomMusicOptions);
+}
+
+function musicOptionsSchemaForServices(services: readonly AudioServiceChoice[]) {
+  return filteredMusicOptionsSchema(services.flatMap((service) =>
+    [...AUDIO_SERVICE_CAPABILITIES[service.provider].customMusicOptions ?? []]));
+}
+
+function filteredMusicOptionsSchema(fields: readonly string[], required: readonly string[] = []) {
+  const allowed = new Set(fields);
+  return {
+    ...musicOptionsSchema,
+    required: ["mode", ...required],
+    properties: Object.fromEntries(Object.entries(musicOptionsSchema.properties)
+      .filter(([field]) => field === "mode" || allowed.has(field))),
+  };
 }
 
 export function parseAudioToolRequest(name: string, argumentsJson: string): AudioToolRequest {
   const args: unknown = JSON.parse(argumentsJson || "{}");
   if (["inspect_music_service", "extend_music", "get_whole_song", "retrieve_music"].includes(name)) return parseMusicServiceRequest(name, args);
+  if (name === "listen_to_audio_asset") {
+    const value = record(args); only(value, ["assetRef"]);
+    return { kind: name, assetRef: id(value.assetRef) };
+  }
   if (name === "list_audio_jobs") {
     const value = record(args); only(value, []);
     return { kind: name };

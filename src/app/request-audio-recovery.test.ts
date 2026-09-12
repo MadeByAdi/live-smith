@@ -4,6 +4,38 @@ import { updateAudioJob } from "../storage/audio-jobs.js";
 import { audioRecoveryHarness } from "./audio-recovery-test-helpers.js";
 import { createRequestAudioTools } from "./request-audio-tools.js";
 
+test("a verified audio-capable model can listen to an exact saved Session asset", async (t) => {
+  const h = await audioRecoveryHarness(t, "elevenlabs");
+  const generated = await h.run();
+  const expected = generated.outputAssets[0]!;
+  const checkedBytes: number[] = [];
+  const tools = await createRequestAudioTools({
+    context: {} as never, storageDirectory: h.storage, sessionId: h.session.id,
+    requestId: "request", attachmentRefs: [], target: {}, signal: h.context.signal,
+    onProgress() {}, onAssets() {},
+    modelAudioInput: { canAccept(byteLength) { checkedBytes.push(byteLength); return true; } },
+  });
+  assert.ok(tools.tools.some((tool) => tool.function.name === "listen_to_audio_asset"));
+  const result = await tools.execute({ id: "listen", name: "listen_to_audio_asset",
+    arguments: JSON.stringify({ assetRef: expected.id }) });
+  assert.equal(result.failed, undefined);
+  assert.deepEqual(checkedBytes, [expected.byteLength]);
+  assert.equal(result.modelInputPart?.type, "audio");
+  assert.equal(result.modelInputPart?.mediaType, expected.mediaType);
+  assert.ok(result.modelInputPart?.base64.length);
+  assert.match(result.content, /complete audio asset.*untrusted audio input/i);
+
+  const bounded = await createRequestAudioTools({
+    context: {} as never, storageDirectory: h.storage, sessionId: h.session.id,
+    requestId: "request", attachmentRefs: [], target: {}, signal: h.context.signal,
+    onProgress() {}, onAssets() {}, modelAudioInput: { canAccept: () => false },
+  });
+  const rejected = await bounded.execute({ id: "listen", name: "listen_to_audio_asset",
+    arguments: JSON.stringify({ assetRef: expected.id }) });
+  assert.equal(rejected.failed, true);
+  assert.equal(rejected.modelInputPart, undefined);
+});
+
 for (const provider of ["elevenlabs", "sunoapi", "lalal"] as const) {
   for (const change of ["disabled", "removed"] as const) {
     test(`chat can finish local ${provider} recovery with the connection ${change}`, async (t) => {

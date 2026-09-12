@@ -289,11 +289,21 @@ export async function handleAgentRequest(
     signal: callbacks.signal,
   }));
   let audioSampleSourceInstructions = requestAudioSampleSourceInstructions(requestAudioSources);
+  let requestAttachmentQuota = binaryQuotaItems(
+    prepared.history,
+    prepared.attachmentParts,
+  );
   const audioTools = await createRequestAudioTools({
     context, storageDirectory, sessionId: session.id, requestId: prepared.userEvent.id,
     attachmentRefs: prepared.attachmentRefs.filter((ref): ref is AudioSessionAttachmentRef => ref.kind === "audio"),
     target: interaction.target, signal: callbacks.signal, onProgress: callbacks.onProgress,
     ...(callbacks.audioProcessing ? { processing: callbacks.audioProcessing } : {}),
+    ...(supportsArrangementAudioInput ? { modelAudioInput: {
+      canAccept: (byteLength: number) => attachmentRequestQuotaIsWithinLimits([
+        ...requestAttachmentQuota,
+        { kind: "audio", byteLength },
+      ]),
+    } } : {}),
     onAssets: async (assets) => {
       await addAudioAssetSampleSources({ context, storageDirectory, sessionId: session.id, signal: callbacks.signal }, requestAudioSources, assets);
       audioSampleSourceInstructions = [
@@ -302,10 +312,6 @@ export async function handleAgentRequest(
       ].filter(Boolean).join("\n\n");
     },
   });
-  let requestAttachmentQuota = binaryQuotaItems(
-    prepared.history,
-    prepared.attachmentParts,
-  );
   const canReadArrangementAudio = () => supportsArrangementAudioInput &&
     attachmentRequestQuotaIsWithinLimits([
       ...requestAttachmentQuota,
@@ -396,6 +402,9 @@ export async function handleAgentRequest(
         : {}),
       skillContext: prepared.skillContext,
       editScopes,
+      ...(callbacks.customInstructionsSnapshot === undefined
+        ? {}
+        : { customInstructions: callbacks.customInstructionsSnapshot }),
       agentMessages: activeAgentMessages,
       tools,
     }));
@@ -416,6 +425,9 @@ export async function handleAgentRequest(
       attachmentParts: activeAttachmentParts,
       skillContext: prepared.skillContext,
       editScopes,
+      ...(callbacks.customInstructionsSnapshot === undefined
+        ? {}
+        : { customInstructions: callbacks.customInstructionsSnapshot }),
       agentMessages: activeAgentMessages,
       signal,
       requestTurn: async (input) => (await requestModelWithReconnect({
@@ -604,6 +616,9 @@ export async function handleAgentRequest(
                   : {}),
                 skillContext: prepared.skillContext,
                 editScopes: await readEditScopes(),
+                ...(callbacks.customInstructionsSnapshot === undefined
+                  ? {}
+                  : { customInstructions: callbacks.customInstructionsSnapshot }),
                 agentMessages: input.messages.slice(compactedAgentMessageCount),
                 tools: toolsForCurrentState(),
                 reconnectState,
@@ -1132,6 +1147,8 @@ interface AgentRequestCallbacks {
   signal: AbortSignal;
   /** Configuration snapshot captured atomically with the selected Profile. */
   skillContextSnapshot?: ResolvedSkillContext;
+  /** Global user-authored preferences captured atomically for this send. */
+  customInstructionsSnapshot?: string;
   steering?: SteeringChannel;
   steeringSendId?: string;
   onDelta(delta: string): Promise<void> | void;

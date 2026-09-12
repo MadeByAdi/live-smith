@@ -189,6 +189,9 @@ export interface NetworkProxySettings {
 }
 export type NetworkProxyRevision = string;
 export type UiLanguageRevision = string;
+export type CustomInstructionsRevision = string;
+
+export const MAX_CUSTOM_INSTRUCTIONS_CODE_POINTS = 8_000;
 
 export const CURRENT_AGENT_SETTINGS_SCHEMA_VERSION = 8 as const;
 
@@ -205,6 +208,8 @@ export interface AgentSettings {
   networkProxyRevision: NetworkProxyRevision;
   uiLanguage: UiLanguage;
   uiLanguageRevision: UiLanguageRevision;
+  customInstructions: string;
+  customInstructionsRevision: CustomInstructionsRevision;
   audioServices?: AudioServicesSettings;
 }
 
@@ -221,12 +226,12 @@ export function normalizeAudioServiceConnection(value: unknown): AudioServiceCon
     throw new ProfileValidationError("audioServices", "Audio connections require a safe ID, a name, a supported provider, valid credentials, and an optional model ID.");
   }
   const provider = value.provider as AudioServiceConnection["provider"];
-  if (Object.hasOwn(value, "modelId") && !AUDIO_SERVICE_CAPABILITIES[provider].operations.includes("generate_music")) {
-    throw new ProfileValidationError("audioServices", "A music model ID is only supported by music generation providers.");
+  if (Object.hasOwn(value, "modelId") && !AUDIO_SERVICE_CAPABILITIES[provider].modelConfigurable) {
+    throw new ProfileValidationError("audioServices", "A music model ID is not configurable for this provider.");
   }
   if (Object.hasOwn(value, "callbackUrl") && (provider !== "sunoapi" || !isAudioServiceCallbackUrl(value.callbackUrl)) ||
     provider === "sunoapi" && value.enabled && !Object.hasOwn(value, "callbackUrl")) {
-    throw new ProfileValidationError("audioServices", "SunoAPI.org requires a user-owned public HTTPS callback hostname to enable: at most 2048 characters, valid encoding, and no IP literal, custom port, credentials, query, fragment, whitespace, or local hostname. Other providers do not support a callback URL.");
+    throw new ProfileValidationError("audioServices", "SunoAPI.org requires an HTTP or HTTPS callback URL to enable: at most 2048 characters, valid encoding, and no embedded credentials, fragment, or whitespace. Other providers do not support a callback URL.");
   }
   if (typeof value.callbackUrl === "string" && value.apiKey &&
     decodeURIComponent(value.callbackUrl).toLowerCase().includes(value.apiKey.toLowerCase())) {
@@ -243,22 +248,17 @@ export function normalizeAudioServiceConnection(value: unknown): AudioServiceCon
     ...(typeof value.callbackUrl === "string" ? { callbackUrl: value.callbackUrl } : {}) };
 }
 
-/** Syntactic public-address policy only; never resolve or contact the callback. */
+/** Syntax and credential boundary only; Live Smith never resolves or contacts it. */
 export function isAudioServiceCallbackUrl(value: unknown): value is string {
-  if (typeof value !== "string" || value.length > 2048 || !/^https:\/\//i.test(value) ||
-    /[\s\x00-\x1f\x7f\\?#]/u.test(value) || /%(?![\da-f]{2})/i.test(value)) return false;
+  if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value) ||
+    /[\s\x00-\x1f\x7f\\#]/u.test(value) || /%(?![\da-f]{2})/i.test(value)) return false;
   try {
     const decoded = decodeURI(value);
     if (/[\s\x00-\x1f\x7f\\]/u.test(decoded)) return false;
     const url = new URL(value);
     const authority = value.split("/")[2];
-    if (url.protocol !== "https:" || url.port || url.username || url.password || !authority || authority.includes("@")) return false;
-    const host = url.hostname.toLowerCase();
-    const labels = host.split(".");
-    return host.length <= 253 && labels.length > 1 && /^[a-z]{2,63}$/.test(labels.at(-1)!) && labels.every((label) =>
-      /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
-      !["localhost", "local", "internal", "invalid", "test", "example", "onion", "lan", "corp", "home"].includes(labels.at(-1)!) &&
-      host !== "home.arpa" && !host.endsWith(".home.arpa");
+    return ["http:", "https:"].includes(url.protocol) && Boolean(authority) && !authority!.includes("@") &&
+      !url.username && !url.password;
   } catch { return false; }
 }
 
@@ -306,7 +306,20 @@ export function freshEmptyAgentSettings(): AgentSettings {
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   };
+}
+
+export function normalizeCustomInstructions(value: unknown): string {
+  if (typeof value !== "string" || value.includes("\0") ||
+    Array.from(value).length > MAX_CUSTOM_INSTRUCTIONS_CODE_POINTS) {
+    throw new ProfileValidationError(
+      "customInstructions",
+      `Custom Instructions must be text of at most ${MAX_CUSTOM_INSTRUCTIONS_CODE_POINTS} characters without null bytes.`,
+    );
+  }
+  return value.trim();
 }
 
 export function isApprovalMode(value: unknown): value is ApprovalMode {
@@ -400,6 +413,13 @@ export function compareNetworkProxyRevisions(
   return compareCanonicalSettingsRevisions(left, right);
 }
 
+export function compareCustomInstructionsRevisions(
+  left: CustomInstructionsRevision,
+  right: CustomInstructionsRevision,
+): -1 | 0 | 1 {
+  return compareCanonicalSettingsRevisions(left, right);
+}
+
 function compareCanonicalSettingsRevisions(
   left: string,
   right: string,
@@ -425,6 +445,18 @@ export function incrementNetworkProxyRevision(
   revision: NetworkProxyRevision,
 ): NetworkProxyRevision {
   return incrementCanonicalSettingsRevision(revision);
+}
+
+export function incrementCustomInstructionsRevision(
+  revision: CustomInstructionsRevision,
+): CustomInstructionsRevision {
+  return incrementCanonicalSettingsRevision(revision);
+}
+
+export function isCustomInstructionsRevision(
+  value: unknown,
+): value is CustomInstructionsRevision {
+  return isCanonicalSettingsRevision(value);
 }
 
 function isCanonicalSettingsRevision(value: unknown): value is string {

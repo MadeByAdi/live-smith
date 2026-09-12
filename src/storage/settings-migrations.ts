@@ -5,11 +5,13 @@ import {
   isUiLanguage,
   isUiLanguageRevision,
   isContextUsageVisibilityRevision,
+  isCustomInstructionsRevision,
   isDefaultFollowUpBehavior,
   isDefaultFollowUpBehaviorRevision,
   isNetworkProxyRevision,
   normalizeNetworkProxySettings,
   normalizeAudioServicesSettings,
+  normalizeCustomInstructions,
   ProfileValidationError,
   validateDraftProfileForSave,
   type AgentSettings,
@@ -243,6 +245,8 @@ function migrateSettingsV7ToV8(value: unknown): AgentSettings {
     networkProxyRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
+    customInstructions: "",
+    customInstructionsRevision: "0",
   };
 }
 
@@ -478,6 +482,8 @@ function validateSettingsV8(value: unknown): AgentSettings {
       "uiLanguageRevision",
       "audioService",
       "audioServices",
+      "customInstructions",
+      "customInstructionsRevision",
     ],
     "settings",
   );
@@ -488,6 +494,8 @@ function validateSettingsV8(value: unknown): AgentSettings {
     uiLanguageRevision = "0",
     audioService,
     audioServices,
+    customInstructions = "",
+    customInstructionsRevision = "0",
     ...settingsV7
   } = record;
   if (!isUiLanguage(uiLanguage)) {
@@ -495,6 +503,12 @@ function validateSettingsV8(value: unknown): AgentSettings {
   }
   if (!isUiLanguageRevision(uiLanguageRevision)) {
     throw new ProfileValidationError("uiLanguageRevision", "UI language revision must be a canonical decimal string.");
+  }
+  if (!isCustomInstructionsRevision(customInstructionsRevision)) {
+    throw new ProfileValidationError(
+      "customInstructionsRevision",
+      "Custom Instructions revision must be a canonical decimal string.",
+    );
   }
   if (Object.hasOwn(record, "audioServices") && Object.hasOwn(record, "audioService")) {
     throw new ProfileValidationError("audioServices", "Saved audio settings cannot contain both current and legacy configuration.");
@@ -507,6 +521,8 @@ function validateSettingsV8(value: unknown): AgentSettings {
     networkProxyRevision: networkProxyRevision(networkProxyRevisionValue),
     uiLanguage,
     uiLanguageRevision,
+    customInstructions: normalizeCustomInstructions(customInstructions),
+    customInstructionsRevision,
     ...(audioServices === undefined && audioService === undefined ? {} : {
       audioServices: audioServices === undefined
         ? migrateLegacyAudioService(audioService)

@@ -6,7 +6,7 @@ import { SunoSessions } from "./suno-sessions.js";
 import { isStorageCommitOutcomeUnknownError } from "./persistence.js";
 
 const account = { id: "suno-one", name: "Suno", provider: "suno" as const, enabled: false, apiKey: "" };
-const cookie = { clientToken: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c3ludGhldGlj", accountId: "user_fixture" };
+const cookie = { clientToken: "__client=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.c3ludGhldGlj", accountId: "user_fixture" };
 async function fixture(t: TestContext) {
   const directory = await fs.mkdtemp("/private/tmp/live-smith-settings-suno-");
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

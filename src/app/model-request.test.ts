@@ -5,6 +5,7 @@ import type { ModelBackend, RuntimeProfile } from "../model/provider.js";
 import type { SavedProfile } from "../model/profile.js";
 import { createHostAbortController } from "../runtime/host.js";
 import {
+  buildModelRequest,
   requestModelTurn,
   runtimeProfileForSavedProfile,
 } from "./model-request.js";
@@ -69,6 +70,23 @@ test("requestModelTurn dispatches through one explicit turn executor", async () 
     turnExecutor,
   }), { content: "dispatched", toolCalls: [] });
   assert.equal(executorTurns, 1);
+});
+
+test("buildModelRequest includes one request-snapshot Custom Instructions block only in system instructions", () => {
+  const customInstructions = "Make editable MIDI unless I ask for rendered audio.";
+  const request = buildModelRequest({
+    prompt: "Build a track",
+    liveContext: "Empty Set",
+    runtimeProfile,
+    history: [],
+    agentMessages: [],
+    tools: [],
+    customInstructions,
+  });
+  assert.equal(request.systemInstructions.split(JSON.stringify(customInstructions)).length - 1, 1);
+  assert.ok(!JSON.stringify(request.currentUserContent).includes(customInstructions));
+  assert.ok(!JSON.stringify(request.history).includes(customInstructions));
+  assert.ok(!JSON.stringify(request.agentMessages).includes(customInstructions));
 });
 
 test("runtime materialization selects one configured model without mutating the Profile", () => {

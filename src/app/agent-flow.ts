@@ -2,14 +2,13 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 import { createHash } from "node:crypto";
 
 import { audioJobViews, resumeAudioJob } from "./audio-processing.js";
-import { downloadAudioOutput, retrieveMusic } from "./audio-generation.js";
-import { captureAudioServiceConnections } from "./audio-service-connections.js";
+import { downloadAudioOutput } from "./audio-generation.js";
 import { SunoSessionManager } from "./suno-session-manager.js";
 import { SunoModelCatalog } from "./suno-model-catalog.js";
 import type { readSunoMusicService } from "../audio-services/suno-catalog.js";
 import { createSunoSessionVerifier } from "../audio-services/suno-session.js";
 import type { SunoSessionVerifier } from "../audio-services/suno-session-contracts.js";
-import { openSunoWebsite } from "../runtime/suno-website.js";
+import { openSunoPlatform, openSunoWebsite } from "../runtime/suno-website.js";
 import { openAudioDownload } from "../runtime/audio-download-browser.js";
 import { audioServicesView } from "../storage/settings.js";
 import { readAudioAsset, deleteSessionAudio, listSessionAudioDirectoryIds } from "../storage/audio-assets.js";
@@ -301,10 +300,10 @@ function effectiveSessionModelSelection(
 export interface AgentFlowDependencies {
   /** Test seams; production uses the OS default browser and a Suno-only verifier. */
   openSunoWebsite?: typeof openSunoWebsite;
+  openSunoPlatform?: typeof openSunoPlatform;
   openAudioDownload?: typeof openAudioDownload;
   verifySunoSession?: SunoSessionVerifier;
   readSunoMusicService?: typeof readSunoMusicService;
-  retrieveMusic?: typeof retrieveMusic;
   downloadAudioOutput?: typeof downloadAudioOutput;
   appendSessionEvent?: typeof appendSessionEvent;
   deleteSession?: typeof deleteSession;
@@ -2172,6 +2171,12 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
+    if (commandInput.kind === "open_suno_platform") {
+      await (dependencies.openSunoPlatform ?? openSunoPlatform)(signal);
+      status = undefined;
+      return buildStateAfterCommandMutation();
+    }
+
     if (commandInput.kind === "import_suno_session" || commandInput.kind === "refresh_suno_login" || commandInput.kind === "logout_suno") {
       return globalSettingsMutationFence.run(sessionMutationFenceKey(storageDirectory, "global-settings"), signal, async () => {
         sunoModelCatalog.clear(commandInput.serviceId);
@@ -2214,6 +2219,8 @@ export async function runAgentFlow(
                 ? { uiLanguage: commandInput.uiLanguage }
                 : "audioServices" in commandInput
                 ? { audioServices: commandInput.audioServices }
+                : "customInstructions" in commandInput
+                ? { customInstructions: commandInput.customInstructions }
                 : { networkProxy: commandInput.networkProxy },
             );
             publishGlobalSettingsChange(storageDirectory, {
@@ -2224,6 +2231,8 @@ export async function runAgentFlow(
               showContextUsage: settings.showContextUsage,
               contextUsageVisibilityRevision:
                 settings.contextUsageVisibilityRevision,
+              customInstructions: settings.customInstructions,
+              customInstructionsRevision: settings.customInstructionsRevision,
               networkProxy: settings.networkProxy,
               networkProxyRevision: settings.networkProxyRevision,
               uiLanguage: settings.uiLanguage,
@@ -2249,6 +2258,8 @@ export async function runAgentFlow(
                 showContextUsage: settings.showContextUsage,
                 contextUsageVisibilityRevision:
                   settings.contextUsageVisibilityRevision,
+                customInstructions: settings.customInstructions,
+                customInstructionsRevision: settings.customInstructionsRevision,
                 networkProxy: settings.networkProxy,
                 networkProxyRevision: settings.networkProxyRevision,
                 uiLanguage: settings.uiLanguage,
@@ -2912,7 +2923,7 @@ export async function runAgentFlow(
       });
     }
 
-    if (commandInput.kind === "resume_audio_job" || commandInput.kind === "retrieve_music" || commandInput.kind === "download_audio_output") {
+    if (commandInput.kind === "resume_audio_job" || commandInput.kind === "download_audio_output") {
       return withNamedSessionMutation(commandInput.sessionId, "audio-job", signal, async () => {
         try {
           await attachmentSession(commandInput.sessionId);
@@ -2921,16 +2932,7 @@ export async function runAgentFlow(
             onProgress: (message: string) => commandContext.progress(message),
           };
           let job;
-          if (commandInput.kind === "retrieve_music") {
-            const admittedConnections = await captureAudioServiceConnections(storageDirectory);
-            const selected = admittedConnections.find((connection) => connection.id === commandInput.serviceId);
-            if (selected?.provider !== "suno" || selected.sunoSession?.accountId !== commandInput.expectedAccountId) {
-              throw new ChatBridgeConflictError("The selected Suno account changed or is unavailable. Select its saved connection again before retrieving songs.");
-            }
-            throwIfAborted(signal);
-            job = await (dependencies.retrieveMusic ?? retrieveMusic)({ ...processing, admittedConnections: [selected] },
-              commandInput.serviceId, commandInput.clipIds);
-          } else if (commandInput.kind === "download_audio_output") {
+          if (commandInput.kind === "download_audio_output") {
             job = await (dependencies.downloadAudioOutput ?? downloadAudioOutput)({ ...processing,
               withDownloadAuthorization: (authorizationSignal, authorize) => globalSettingsMutationFence.run(
                 sessionMutationFenceKey(storageDirectory, "global-settings"), authorizationSignal, authorize,
@@ -4018,6 +4020,8 @@ export async function runAgentFlow(
               ...(requestSnapshot.skillContext === undefined
                 ? {}
                 : { skillContextSnapshot: requestSnapshot.skillContext }),
+              customInstructionsSnapshot:
+                requestSnapshot.settings.customInstructions,
               steering,
               steeringSendId: sendContext.sendId,
               onDelta: (delta) => stream.assistantDelta(delta),

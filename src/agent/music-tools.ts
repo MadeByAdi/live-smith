@@ -10,11 +10,18 @@ const retrievalClipSchema = { type: "string", minLength: 36, maxLength: 36, patt
 export const musicOptionsSchema = {
   type: "object", additionalProperties: false,
   properties: {
-    mode: { const: "custom" }, title: { type: "string", maxLength: 80 },
+    mode: { const: "custom" }, title: { type: "string", maxLength: 100 },
     styles: { type: "string", maxLength: 1000 }, negativeStyles: { type: "string", maxLength: 1000 },
     weirdness: { type: "number", minimum: 0, maximum: 100 },
-    styleInfluence: { type: "number", minimum: 0, maximum: 100 }, personaId: clipSchema,
+    styleInfluence: { type: "number", minimum: 0, maximum: 100 },
+    vocalGender: { type: "string", enum: ["male", "female"] }, personaId: clipSchema,
   }, required: ["mode"],
+};
+const { personaId: _extendPersonaId, ...extendMusicOptionProperties } =
+  musicOptionsSchema.properties;
+const extendMusicOptionsSchema = {
+  ...musicOptionsSchema,
+  properties: extendMusicOptionProperties,
 };
 
 export type MusicServiceRequest =
@@ -51,11 +58,11 @@ export function musicServiceTools(services: readonly AudioServiceChoice[]): Mode
       name: operation,
       description: (extend ? "Generate an extension from a completed Suno clip at startSeconds; prompt is the new lyrics, not a description."
         : "Get Whole Song for one Suno extension clip, joining its existing lineage. Not arbitrary concatenation of files.") +
-        " Uses paid credits. Only use for the user's explicit request, with a clip ID observed from the library or an earlier result on this connection. Never retry an unknown paid outcome or switch accounts. Returns remote results for the job's Suno online player; each local file requires a separate explicit Download confirmation before Live import. " + JSON.stringify(eligible),
+        " Uses paid credits. Only use for the user's explicit request, with a clip ID observed from the library or an earlier result on this connection. Never retry an unknown paid outcome or switch accounts. Returns remote results for the job's Suno online player; each local file requires a separate explicit Save confirmation before Live import or model listening. " + JSON.stringify(eligible),
       parameters: { type: "object", additionalProperties: false,
         properties: { serviceId: serviceIds(eligible), clipId: clipSchema,
           ...(extend ? { startSeconds: { type: "number", minimum: 0, maximum: 900 },
-            prompt: { type: "string", maxLength: 5000 }, instrumental: { type: "boolean" }, options: musicOptionsSchema } : {}) },
+            prompt: { type: "string", maxLength: 5000 }, instrumental: { type: "boolean" }, options: extendMusicOptionsSchema } : {}) },
         required: extend ? ["serviceId", "clipId", "startSeconds", "prompt", "instrumental"] : ["serviceId", "clipId"],
       },
     } });
@@ -63,7 +70,7 @@ export function musicServiceTools(services: readonly AudioServiceChoice[]): Mode
   const retrieval = services.filter((service) => audioServiceSupports(service.provider, "retrieve_music"));
   if (retrieval.length) tools.push({ type: "function", function: {
     name: "retrieve_music",
-    description: "Retrieve one or two existing Suno songs into this Session for online preview, using only clip IDs observed through this connection's library or saved jobs. Requires the user's retrieval request. Never generates or submits a song, downloads or authorizes a file, purchases permission, or changes Live. Repeating the same selection reuses its saved job. Saving each selected output requires a separate explicit download confirmation before Live import. " + JSON.stringify(retrieval),
+    description: "Retrieve one or two existing Suno songs into this Session for human online playback, using only clip IDs observed through this connection's library or saved jobs. Requires the user's retrieval request. Never generates or submits a song, downloads or authorizes a file, purchases permission, changes Live, or gives remote playback bytes to the model. Repeating the same selection reuses its saved job. Saving each selected output requires a separate explicit confirmation before Live import or model listening. " + JSON.stringify(retrieval),
     parameters: { type: "object", additionalProperties: false,
       properties: { serviceId: serviceIds(retrieval), clipIds: { type: "array", minItems: 1, maxItems: 2, uniqueItems: true, items: retrievalClipSchema } },
       required: ["serviceId", "clipIds"],
@@ -76,17 +83,23 @@ function serviceIds(services: readonly AudioServiceChoice[]) { return { type: "s
 
 export function parseMusicOptions(input: unknown): MusicGenerationOptions {
   const value = record(input);
-  only(value, ["mode", "title", "styles", "negativeStyles", "weirdness", "styleInfluence", "personaId"]);
+  only(value, ["mode", "title", "styles", "negativeStyles", "weirdness", "styleInfluence", "vocalGender", "personaId"]);
   if (value.mode !== "custom") throw new Error("Unsupported music mode.");
   const result: MusicGenerationOptions = { mode: "custom" };
   for (const key of ["title", "styles", "negativeStyles"] as const) {
-    if (Object.hasOwn(value, key)) result[key] = text(value[key], key === "title" ? 80 : 1000);
+    if (Object.hasOwn(value, key)) result[key] = text(value[key], key === "title" ? 100 : 1000);
   }
   for (const key of ["weirdness", "styleInfluence"] as const) {
     if (!Object.hasOwn(value, key)) continue;
     const number = value[key];
     if (typeof number !== "number" || !Number.isFinite(number) || number < 0 || number > 100) throw new Error("Music sliders must be between 0 and 100.");
     result[key] = number;
+  }
+  if (Object.hasOwn(value, "vocalGender")) {
+    if (value.vocalGender !== "male" && value.vocalGender !== "female") {
+      throw new Error("Vocal gender must be male or female.");
+    }
+    result.vocalGender = value.vocalGender;
   }
   if (Object.hasOwn(value, "personaId")) result.personaId = clipId(value.personaId);
   return result;
@@ -123,8 +136,12 @@ export function parseMusicServiceRequest(name: string, input: unknown): MusicSer
     typeof value.instrumental !== "boolean") throw new Error("Invalid music extension parameters.");
   const prompt = text(value.prompt, 5000);
   if (!prompt.trim() && !value.instrumental) throw new Error("Vocal extensions need lyrics.");
+  const options = value.options === undefined ? undefined : parseMusicOptions(value.options);
+  if (options?.personaId !== undefined) {
+    throw new Error("Persona is not available for music extensions.");
+  }
   return { kind: name, serviceId, clipId: clipId(value.clipId), startSeconds: value.startSeconds,
-    prompt, instrumental: value.instrumental, ...(value.options === undefined ? {} : { options: parseMusicOptions(value.options) }) };
+    prompt, instrumental: value.instrumental, ...(options === undefined ? {} : { options }) };
 }
 
 /** Shared by the strict tool parser and explicit host retrieval entry point. */

@@ -267,6 +267,8 @@ export interface AgentExternalToolResult {
   content: string;
   failed?: boolean;
   invalidArguments?: boolean;
+  /** Binary input supplied to the next model turn only after the text result is recorded. */
+  modelInputPart?: ModelToolInputPart;
   /** Ends this send without retrying an operation with external side effects. */
   stop?: boolean;
   progressKey?: string;
@@ -864,10 +866,13 @@ async function executeToolCall(
           kind: "tool_result", name: toolCall.name, content: result.content,
         });
       } catch {
-        throw new AgentExternalToolReportingError(result);
+        const { modelInputPart: _privateModelInput, ...safeOutcome } = result;
+        throw new AgentExternalToolReportingError(safeOutcome);
       }
+      if (result.modelInputPart) options.onModelInputPartAccepted?.(result.modelInputPart);
       return {
         toolContent: result.content, userMessage: result.content,
+        ...(result.modelInputPart ? { modelInputPart: result.modelInputPart } : {}),
         cancelled: result.stop ?? false, failed: result.failed ?? false,
         mutationProgress: false,
         ...(result.progressKey === undefined ? {} : { progressKey: result.progressKey }),

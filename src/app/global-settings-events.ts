@@ -1,5 +1,6 @@
 import type {
   ContextUsageVisibilityRevision,
+  CustomInstructionsRevision,
   DefaultFollowUpBehavior,
   DefaultFollowUpBehaviorRevision,
   NetworkProxyRevision,
@@ -16,6 +17,8 @@ export interface GlobalSettingsChange {
   defaultFollowUpBehaviorRevision: DefaultFollowUpBehaviorRevision;
   showContextUsage: boolean;
   contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
+  customInstructions: string;
+  customInstructionsRevision: CustomInstructionsRevision;
   networkProxy: NetworkProxySettings;
   networkProxyRevision: NetworkProxyRevision;
   uiLanguage: UiLanguage;

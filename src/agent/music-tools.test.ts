@@ -8,7 +8,9 @@ const parse = (name: string, value: unknown) => parseAudioToolRequest(name, JSON
 
 test("custom music options are bounded and scoped to eligible connections", () => {
   const raw = { serviceId: service.id, prompt: "我的歌词", instrumental: false,
-    options: { mode: "custom", styles: "minimal piano", negativeStyles: "drums", title: "新歌", weirdness: 0, styleInfluence: 100, personaId: clipId } };
+    durationSeconds: 120,
+    options: { mode: "custom", styles: "minimal piano", negativeStyles: "drums", title: "新歌", weirdness: 0,
+      styleInfluence: 100, vocalGender: "female", personaId: clipId } };
   const parsed = parse("generate_music", raw);
   validateAudioServiceRequest(parsed, [service]);
   assert.deepEqual(parsed, { kind: "generate_music", ...raw });
@@ -16,8 +18,8 @@ test("custom music options are bounded and scoped to eligible connections", () =
     assert.throws(() => validateAudioServiceRequest(parsed, [{ ...service, provider }]));
   }
   for (const options of [{ ...raw.options, weirdness: -1 }, { ...raw.options, styleInfluence: 101 },
-    { ...raw.options, personaId: "../secret" }, { ...raw.options, title: "x".repeat(81) },
-    { ...raw.options, audioInfluence: 50 }, { ...raw.options, vocalGender: "female" },
+    { ...raw.options, personaId: "../secret" }, { ...raw.options, title: "x".repeat(101) },
+    { ...raw.options, audioInfluence: 50 }, { ...raw.options, vocalGender: "unspecified" },
     { ...raw.options, token: "secret" }, { ...raw.options, mode: "simple" }]) {
     assert.throws(() => parse("generate_music", { ...raw, options }));
   }
@@ -53,6 +55,10 @@ test("music browsing and editing have strict action-specific fields", () => {
   for (const patch of [{ startSeconds: -1 }, { startSeconds: 901 }, { clipId: "https://suno.com/song/abc" }, { durationSeconds: 10 }]) {
     assert.throws(() => parse("extend_music", { ...extend, ...patch }));
   }
+  assert.throws(() => parse("extend_music", {
+    ...extend,
+    options: { mode: "custom", personaId: clipId },
+  }));
   validateAudioServiceRequest(parse("get_whole_song", { serviceId: service.id, clipId }), [service]);
   assert.throws(() => parse("get_whole_song", extend));
 });
