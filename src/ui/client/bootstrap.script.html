@@ -1104,6 +1104,7 @@
           renderComposerContextUsage();
           bridgeClient.renderDefaultFollowUpBehavior();
           bridgeClient.renderNetworkProxySettings();
+          bridgeClient.renderCustomInstructions();
           bridgeClient.renderAudioTools();
           profileEditor.renderApprovalMode();
           renderEditScopes();
@@ -1407,6 +1408,7 @@
           sendInProgress,
           skillInProgress,
           networkProxyDirty,
+          customInstructionsDirty,
           uiLanguageSaving,
         }) {
           composerOperationState = {
@@ -1492,6 +1494,19 @@
             applyNetworkProxyButton.disabled !== networkProxyApplyDisabled
           ) {
             applyNetworkProxyButton.disabled = networkProxyApplyDisabled;
+          }
+          const customInstructions = document.getElementById("customInstructions");
+          if (customInstructions && customInstructions.disabled !== sessionSettingDisabled) {
+            customInstructions.disabled = sessionSettingDisabled;
+          }
+          const saveCustomInstructionsButton = document.getElementById(
+            "saveCustomInstructionsButton",
+          );
+          const customInstructionsSaveDisabled = sessionSettingDisabled ||
+            !customInstructionsDirty;
+          if (saveCustomInstructionsButton &&
+            saveCustomInstructionsButton.disabled !== customInstructionsSaveDisabled) {
+            saveCustomInstructionsButton.disabled = customInstructionsSaveDisabled;
           }
           attachments.setBusy(operationBusy);
           skillManager.setBusy(skillsBusy);
@@ -1580,6 +1595,7 @@
           handleManualModelIdKeydown: profileEditor.handleManualModelIdKeydown,
           handleNetworkProxyModeChange: bridgeClient.handleNetworkProxyModeChange,
           handleNetworkProxyUrlInput: bridgeClient.handleNetworkProxyUrlInput,
+          handleCustomInstructionsInput: bridgeClient.handleCustomInstructionsInput,
           handleInspectorTabKeydown: sessionTimeline.handleInspectorTabKeydown,
           handleProfileSelection: profileEditor.handleProfileSelection,
           handleModelConfigSelection: profileEditor.handleModelConfigSelection,
@@ -1598,6 +1614,7 @@
           saveDefaultFollowUpBehavior: bridgeClient.saveDefaultFollowUpBehavior,
           setUiLanguage: bridgeClient.setUiLanguage,
           saveNetworkProxySettings: bridgeClient.saveNetworkProxySettings,
+          saveCustomInstructions: bridgeClient.saveCustomInstructions,
           saveProfile: profileEditor.saveProfile,
           submitOAuthAuthorizationCode:
             profileEditor.submitOAuthAuthorizationCode,

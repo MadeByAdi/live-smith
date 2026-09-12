@@ -36,7 +36,8 @@ test("Suno preview mounts only after a click with a canonical embed URL and cons
   try {
     assert.equal(frame(h), null);
     assert.equal(h.document.querySelector("#audioJobs audio"), null);
-    assert.match(h.document.querySelector("#audioJobs h4")!.textContent!, /Generated · online/);
+    assert.equal(h.document.querySelector("#audioJobs h4")!.textContent, "Music generation");
+    assert.equal(h.document.querySelector("#audioJobs .activity-state")!.textContent, "Generated · online");
     assert.equal(h.document.querySelector<HTMLElement>("[data-audio-local-files]")!.hidden, true);
     assert.equal(h.document.querySelectorAll("[data-remote-audio-key]").length, 2);
     assert.equal(h.calls.some((call) => call.url.startsWith("https://suno.com")), false);
@@ -285,8 +286,8 @@ test("saved files request a default-browser download without WebView navigation 
       assert.equal(localDownload.hasAttribute("download"), false);
       assert.doesNotMatch(localDownload.outerHTML, /test-token|file:|https?:|formaction/);
       const help = h.document.getElementById(localDownload.getAttribute("aria-describedby")!)!;
-      assert.match(help.textContent!, /default browser.*saved local file.*No Suno credits or download allowance/);
-      assert.match(help.textContent!, /Keep Live Smith open until the download finishes/);
+      assert.match(help.textContent!, /audio-capable model can listen.*default browser.*without using Suno credits or download allowance/i);
+      assert.match(help.textContent!, /keep Live Smith open until that download finishes/i);
       const services = { revision: "2", connections: [musicService] };
       h.emitServerEvent(broadcast(state, services)); await h.settle();
       assert.equal(h.document.querySelector("audio"), player);

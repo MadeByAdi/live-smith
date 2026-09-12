@@ -81,8 +81,11 @@ test("the native summary button opens Context and a later refresh preserves Insp
     button.dispatchEvent(new harness.window.MouseEvent("click", { bubbles: true, detail: 0 }));
     await harness.settle();
     const panel = harness.document.querySelector<HTMLElement>("#contextPanel");
+    const skillManager = harness.document.querySelector<HTMLElement>("#skillManager");
     assert.ok(panel);
+    assert.ok(skillManager);
     assert.equal(panel.hidden, false);
+    assert.equal(panel.contains(skillManager), true);
     assert.equal(harness.document.querySelector<HTMLElement>("#inspectorPane")?.hidden, false);
     assert.equal(harness.document.querySelector("#contextTab")?.getAttribute("aria-selected"), "true");
     assert.ok(panel.textContent?.includes(state.contextSummary));
@@ -92,6 +95,7 @@ test("the native summary button opens Context and a later refresh preserves Insp
     await refreshContext(harness, refreshed);
     assert.equal(harness.document.activeElement, panel);
     assert.ok(panel.textContent?.includes(refreshed.contextSummary));
+    assert.equal(harness.document.querySelector("#skillManager"), skillManager);
     assert.deepEqual(jsonCalls(harness, "/send"), []);
     assert.deepEqual(commandCalls(harness), []);
     assert.deepEqual(harness.errors, []);

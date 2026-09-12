@@ -152,7 +152,6 @@
         "resume_audio_job",
         "download_audio_output",
         "open_audio_download",
-        "retrieve_music",
       ]);
       let confirmedAudioServices = getState().audioServices || null;
       let confirmedSunoAccounts = getState().sunoAccounts || [];
@@ -161,7 +160,7 @@
       let sunoModelLoadErrorId = null;
       let sunoAccountsRevision = getState().bridgeStateRevision;
       let sunoAccountsCoveredThroughRevision = getState().bridgeStateCoveredThroughRevision;
-      const sunoLoginCommands = new Set(["open_suno_website", "import_suno_session", "refresh_suno_login", "logout_suno", "load_suno_models"]);
+      const sunoLoginCommands = new Set(["open_suno_website", "open_suno_platform", "import_suno_session", "refresh_suno_login", "logout_suno", "load_suno_models"]);
       let sunoInputRevision = 0;
       const audioSettingsDrafts = new Map();
       let selectedAudioServiceId = confirmedAudioServices?.connections[0]?.id || null;
@@ -185,6 +184,10 @@
       )
         ? { ...getState().settings.networkProxy }
         : { mode: "none", url: "" };
+      let confirmedCustomInstructions =
+        typeof getState().settings?.customInstructions === "string"
+          ? getState().settings.customInstructions
+          : "";
       let confirmedDefaultFollowUpBehaviorRevision =
         isDecimalRevision(
           getState().settings?.defaultFollowUpBehaviorRevision,
@@ -202,6 +205,11 @@
       )
         ? getState().settings.networkProxyRevision
         : "0";
+      let confirmedCustomInstructionsRevision = isDecimalRevision(
+        getState().settings?.customInstructionsRevision,
+      )
+        ? getState().settings.customInstructionsRevision
+        : "0";
       let confirmedUiLanguage = isUiLanguage(getState().settings?.uiLanguage)
         ? getState().settings.uiLanguage : "system";
       let confirmedUiLanguageRevision = isDecimalRevision(getState().settings?.uiLanguageRevision)
@@ -210,7 +218,9 @@
       let optimisticDefaultFollowUpBehavior = null;
       let optimisticContextUsageVisibility = null;
       let optimisticNetworkProxy = null;
+      let optimisticCustomInstructions = null;
       let networkProxyDraft = null;
+      let customInstructionsDraft = null;
       let commandInProgress = null;
       let commandReconciliationBlocked = false;
       let renderedOperationState = null;
@@ -2414,6 +2424,8 @@
             "networkProxyRevision",
             "uiLanguage",
             "uiLanguageRevision",
+            "customInstructions",
+            "customInstructionsRevision",
           ]) ||
           value.schemaVersion !== 8 ||
           !Array.isArray(value.profiles) ||
@@ -2428,6 +2440,10 @@
           !isNetworkProxySettings(value.networkProxy) ||
           !isUiLanguage(value.uiLanguage) ||
           !isDecimalRevision(value.uiLanguageRevision) ||
+          typeof value.customInstructions !== "string" ||
+          value.customInstructions.includes("\0") ||
+          Array.from(value.customInstructions).length > 8000 ||
+          !isDecimalRevision(value.customInstructionsRevision) ||
           !isDecimalRevision(value.networkProxyRevision)
         ) return false;
         return value.activeProfileId === null ||
@@ -2757,21 +2773,16 @@
         return value === undefined || typeof value === "string" && /^[\x21-\x7e]{1,128}$/.test(value);
       }
 
-      // Keep the public-address policy aligned with model/profile.ts; no network probing.
+      // Keep the syntax/credential boundary aligned with model/profile.ts; no network probing.
       function isAudioServiceCallbackUrl(value) {
-        if (typeof value !== "string" || value.length > 2048 || !/^https:\/\//i.test(value) ||
-          /[\s\x00-\x1f\x7f\\?#]/u.test(value) || /%(?![\da-f]{2})/i.test(value)) return false;
+        if (typeof value !== "string" || value.length > 2048 || !/^https?:\/\//i.test(value) ||
+          /[\s\x00-\x1f\x7f\\#]/u.test(value) || /%(?![\da-f]{2})/i.test(value)) return false;
         try {
           if (/[\s\x00-\x1f\x7f\\]/u.test(decodeURI(value))) return false;
           const url = new URL(value);
           const authority = value.split("/")[2];
-          if (url.protocol !== "https:" || url.port || url.username || url.password || !authority || authority.includes("@")) return false;
-          const host = url.hostname.toLowerCase();
-          const labels = host.split(".");
-          return host.length <= 253 && labels.length > 1 && /^[a-z]{2,63}$/.test(labels.at(-1)) && labels.every((label) =>
-            /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) &&
-            !["localhost", "local", "internal", "invalid", "test", "example", "onion", "lan", "corp", "home"].includes(labels.at(-1)) &&
-            host !== "home.arpa" && !host.endsWith(".home.arpa");
+          return ["http:", "https:"].includes(url.protocol) && Boolean(authority) && !authority.includes("@") &&
+            !url.username && !url.password;
         } catch { return false; }
       }
 
@@ -2792,7 +2803,7 @@
             service.name === service.name.trim() && service.name.length > 0 && service.name.length <= 120 &&
             !/[\x00-\x1f\x7f]/.test(service.name) && Object.hasOwn(audioServiceCapabilities, service.provider) &&
             typeof service.enabled === "boolean" && isWireAudioModelId(service.modelId) &&
-            (!Object.hasOwn(service, "modelId") || audioServiceCapabilities[service.provider].operations.includes("generate_music")) &&
+            (!Object.hasOwn(service, "modelId") || audioServiceCapabilities[service.provider].modelConfigurable === true) &&
             isWireAudioCallback(service) &&
             (!service.enabled || audioServiceCapabilities[service.provider].operations.length > 0) &&
             typeof service.apiKeyConfigured === "boolean" && (!service.enabled || service.apiKeyConfigured || audioServiceCapabilities[service.provider].sessionImport)) &&
@@ -3423,11 +3434,20 @@
         return optimisticNetworkProxy?.networkProxy ?? confirmedNetworkProxy;
       }
 
+      function effectiveCustomInstructions() {
+        return optimisticCustomInstructions?.value ?? confirmedCustomInstructions;
+      }
+
       function hasNetworkProxyChanges() {
         if (!networkProxyDraft) return false;
         const effective = effectiveNetworkProxy();
         return networkProxyDraft.mode !== effective.mode ||
           networkProxyDraft.url.trim() !== effective.url;
+      }
+
+      function hasCustomInstructionsChanges() {
+        return customInstructionsDraft !== null &&
+          customInstructionsDraft.trim() !== effectiveCustomInstructions();
       }
 
       function activeQueuedFollowUps() {
@@ -3467,11 +3487,13 @@
         state.settings.defaultFollowUpBehavior = effectiveDefaultFollowUpBehavior();
         state.settings.showContextUsage = effectiveContextUsageVisibility();
         state.settings.networkProxy = { ...effectiveNetworkProxy() };
+        state.settings.customInstructions = effectiveCustomInstructions();
         state.settings.defaultFollowUpBehaviorRevision =
           confirmedDefaultFollowUpBehaviorRevision;
         state.settings.contextUsageVisibilityRevision =
           confirmedContextUsageVisibilityRevision;
         state.settings.networkProxyRevision = confirmedNetworkProxyRevision;
+        state.settings.customInstructionsRevision = confirmedCustomInstructionsRevision;
         state.settings.uiLanguage = optimisticUiLanguage?.language ?? confirmedUiLanguage;
         state.settings.uiLanguageRevision = confirmedUiLanguageRevision;
         if (confirmedAudioServices) state.audioServices = { ...confirmedAudioServices };
@@ -3548,6 +3570,8 @@
           state?.settings?.contextUsageVisibilityRevision;
         const networkProxy = state?.settings?.networkProxy;
         const networkProxyRevision = state?.settings?.networkProxyRevision;
+        const customInstructions = state?.settings?.customInstructions;
+        const customInstructionsRevision = state?.settings?.customInstructionsRevision;
         if (
           isDefaultFollowUpBehavior(behavior) &&
           isDecimalRevision(behaviorRevision) &&
@@ -3593,6 +3617,24 @@
           }
         }
         if (
+          typeof customInstructions === "string" &&
+          !customInstructions.includes("\0") &&
+          Array.from(customInstructions).length <= 8000 &&
+          isDecimalRevision(customInstructionsRevision) &&
+          compareDecimalRevisions(
+            customInstructionsRevision,
+            confirmedCustomInstructionsRevision,
+          ) > 0
+        ) {
+          confirmedCustomInstructions = customInstructions;
+          confirmedCustomInstructionsRevision = customInstructionsRevision;
+          const optimistic = optimisticCustomInstructions;
+          if (optimistic && compareDecimalRevisions(
+            customInstructionsRevision,
+            optimistic.committedRevision ?? optimistic.startedRevision,
+          ) > 0) optimisticCustomInstructions = null;
+        }
+        if (
           isNetworkProxySettings(networkProxy) &&
           isDecimalRevision(networkProxyRevision) &&
           compareDecimalRevisions(
@@ -3626,11 +3668,17 @@
         const contextRevision = payload?.contextUsageVisibilityRevision;
         const networkProxy = payload?.networkProxy;
         const networkProxyRevision = payload?.networkProxyRevision;
+        const customInstructions = payload?.customInstructions;
+        const customInstructionsRevision = payload?.customInstructionsRevision;
         if (
           !isDefaultFollowUpBehavior(behavior) ||
           typeof showContextUsage !== "boolean" ||
           !isDecimalRevision(behaviorRevision) ||
           !isDecimalRevision(contextRevision) ||
+          typeof customInstructions !== "string" ||
+          customInstructions.includes("\0") ||
+          Array.from(customInstructions).length > 8000 ||
+          !isDecimalRevision(customInstructionsRevision) ||
           !isNetworkProxySettings(networkProxy) ||
           !isUiLanguage(payload.uiLanguage) ||
           !isDecimalRevision(payload.uiLanguageRevision) ||
@@ -3638,6 +3686,25 @@
         ) return false;
         const audioAdopted = adoptAudioServices(payload.audioServices);
         let adopted = adoptUiLanguage(payload.uiLanguage, payload.uiLanguageRevision, payload.commandId) || audioAdopted;
+        if (
+          compareDecimalRevisions(
+            customInstructionsRevision,
+            confirmedCustomInstructionsRevision,
+          ) > 0
+        ) {
+          confirmedCustomInstructions = customInstructions;
+          confirmedCustomInstructionsRevision = customInstructionsRevision;
+          const optimistic = optimisticCustomInstructions;
+          if (optimistic) {
+            if (payload.commandId === optimistic.commandId) {
+              optimistic.committedRevision = customInstructionsRevision;
+            } else if (compareDecimalRevisions(
+              customInstructionsRevision,
+              optimistic.committedRevision ?? optimistic.startedRevision,
+            ) > 0) optimisticCustomInstructions = null;
+          }
+          adopted = true;
+        }
         if (
           compareDecimalRevisions(
             behaviorRevision,
@@ -4008,6 +4075,7 @@
           skillInProgress: skillOperationInProgress,
           sendInProgress: Boolean(activeAttempt),
           networkProxyDirty: hasNetworkProxyChanges(),
+          customInstructionsDirty: hasCustomInstructionsChanges(),
           uiLanguageSaving: Boolean(optimisticUiLanguage),
         };
         if (
@@ -4207,6 +4275,10 @@
           kind === "save_global_settings" && payload.networkProxy !== undefined
         ) {
           requireView().clearGlobalSettingsFieldError("networkProxy.url");
+        } else if (
+          kind === "save_global_settings" && payload.customInstructions !== undefined
+        ) {
+          requireView().clearGlobalSettingsFieldError("customInstructions");
         }
         let commandError = null;
         let commandWarning = null;
@@ -4858,6 +4930,7 @@
         } else {
           renderDefaultFollowUpBehavior();
           renderNetworkProxySettings();
+          renderCustomInstructions();
           requireView().renderContextUsage();
           requireView().renderSessions();
         }
@@ -4979,6 +5052,28 @@
           } else {
             modeGroup.removeAttribute("aria-describedby");
           }
+        }
+        syncOperationState();
+      }
+
+      function renderCustomInstructions() {
+        const control = document.getElementById("customInstructions");
+        if (!control) return;
+        const value = customInstructionsDraft ?? effectiveCustomInstructions();
+        if ((customInstructionsDraft === null || document.activeElement !== control) &&
+          control.value !== value) control.value = value;
+        const count = Array.from(value).length;
+        const countControl = document.getElementById("customInstructionsCount");
+        if (countControl) {
+          const label = t("{count} / {maximum}", { count, maximum: 8000 });
+          if (countControl.textContent !== label) countControl.textContent = label;
+        }
+        const status = document.getElementById("customInstructionsStatus");
+        if (status) {
+          const dirty = hasCustomInstructionsChanges();
+          const label = dirty ? t("Unsaved changes") : "";
+          if (status.textContent !== label) status.textContent = label;
+          status.classList.toggle("dirty", dirty);
         }
         syncOperationState();
       }
@@ -5607,7 +5702,7 @@
       function audioOperationLabel(operation) {
         return t({ separate_stems: "Stem separation", generate_music: "Music generation",
           generate_sound_effect: "Sound effect generation", extend_music: "Extend song", get_whole_song: "Get Whole Song",
-          retrieve_music: "Retrieve for preview" }[operation] || operation);
+          retrieve_music: "Existing Suno songs" }[operation] || operation);
       }
 
       function handleAudioServiceSelection(id) {
@@ -5669,7 +5764,7 @@
         audioSettingsDrafts.set(selectedAudioServiceId, {
           connection: { id: selectedAudioServiceId, name: document.getElementById("audioServiceName").value,
             provider, enabled: supported.length > 0 && document.getElementById("audioServiceEnabled").checked,
-            ...(supported.includes("generate_music") && modelId ? { modelId } : {}),
+            ...(audioServiceCapabilities[provider].modelConfigurable && modelId ? { modelId } : {}),
             ...(provider === "sunoapi" && callbackUrl ? { callbackUrl } : {}) },
           baseConnection: previous ? previous.baseConnection : saved,
           expectedRevision: previous?.expectedRevision || confirmedAudioServices?.revision || "0",
@@ -5705,7 +5800,7 @@
           return false;
         }
         if (!isWireAudioCallback(connection)) {
-          showStatus(t("Enter a public HTTPS callback URL you own, using a domain name, valid encoding and no custom port, credentials, query, fragment, or whitespace (maximum 2048 characters)."), true);
+          showStatus(t("Enter an HTTP or HTTPS callback URL with valid encoding and no embedded credentials, fragment, or whitespace (maximum 2048 characters)."), true);
           document.getElementById("audioServiceCallback").focus();
           return false;
         }
@@ -5793,6 +5888,22 @@
           unavailable: "Suno verification unavailable; try again later" }[status] || "No verified Suno connection");
       }
 
+      function audioConnectionPresentation(value, configured, draft) {
+        if (draft?.conflict) return { label: t("Needs attention"), status: "partial" };
+        if (draft) return { label: t("Unsaved changes"), status: "partial" };
+        if (!configured) return { label: t("Needs setup"), status: "partial" };
+        if (!configured.enabled) return { label: t("Disabled"), status: "stopped" };
+        if (audioServiceCapabilities[value.provider].sessionImport) {
+          const account = confirmedSunoAccounts.find((entry) => entry.serviceId === value.id);
+          return account?.status === "signed_in"
+            ? { label: t("Ready"), status: "complete" }
+            : { label: t("Needs attention"), status: "partial" };
+        }
+        return configured.apiKeyConfigured
+          ? { label: t("Ready"), status: "complete" }
+          : { label: t("Needs setup"), status: "partial" };
+      }
+
       function clearSunoCookieInput() {
         document.getElementById("sunoSessionValue").value = "";
         sunoInputRevision += 1;
@@ -5815,8 +5926,13 @@
         const expectedRevision = draft?.expectedRevision;
         try {
           if (audioSettingsBusy || audioSettingsSubmitting || draft?.conflict || connection?.provider !== "suno") return false;
-          if (sessionValue.length > 8192 || !/^(?:__client=)?[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(sessionValue)) {
-            showStatus(t("Paste only the Suno __client Cookie value or exactly __client=value (maximum 8192 characters), never a full Cookie header."), true);
+          const trimmedSession = sessionValue.trim();
+          const jwt = "[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+";
+          const rawSession = new RegExp("^" + jwt + "$").test(trimmedSession);
+          const cookieSession = new RegExp("(?:^|;\\s*)(?:__client|__session)=" + jwt + "(?:;|$)").test(
+            trimmedSession.replace(/^Cookie\\s*:\\s*/i, ""));
+          if (sessionValue.length > 16384 || /[\u0000-\u001f\u007f]/.test(sessionValue) || !(rawSession || cookieSession)) {
+            showStatus(t("Paste a Suno __client or __session value, or a Cookie header containing one of them (maximum 16384 characters)."), true);
             input.focus();
             return false;
           }
@@ -5863,56 +5979,6 @@
         }
         // Capture the saved identity before awaiting; selection remains navigable.
         return runCommand(kind, { serviceId: id });
-      }
-
-      function selectedSunoRetrievalAccount() {
-        const saved = savedAudioConnection();
-        if (saved?.provider !== "suno" || !saved.enabled || audioSettingsDrafts.has(saved.id)) return null;
-        return confirmedSunoAccounts.find((account) => account.serviceId === saved.id &&
-          ["signed_in", "saved"].includes(account.status) && account.accountId) || null;
-      }
-
-      async function retrieveExistingSunoSongs() {
-        const account = selectedSunoRetrievalAccount();
-        if (!account || audioResumeBusy || audioSettingsBusy || audioSettingsSubmitting) return false;
-        const input = document.getElementById("sunoRetrieveSongs");
-        const values = input.value.trim().split(/\s+/u);
-        const pattern = /^(?:https:\/\/suno\.com\/song\/)?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/;
-        const clipIds = values.map((value) => pattern.exec(value)?.[1]?.toLowerCase());
-        if (input.value.length > 512 || clipIds.length < 1 || clipIds.length > 2 ||
-          clipIds.some((id) => !id) || new Set(clipIds).size !== clipIds.length) {
-          showStatus(t("Enter one or two unique Suno song URLs or UUIDs, one per line. Use https://suno.com/song/{id} without query parameters or fragments."), true);
-          input.focus();
-          return false;
-        }
-        const sessionId = activeSessionId();
-        const retrieved = await runCommand("retrieve_music", { sessionId, serviceId: account.serviceId,
-          expectedAccountId: account.accountId, clipIds }, { cancellable: true, onOutcome: (outcome) => {
-            if (outcome.known && outcome.succeeded && activeSessionId() === sessionId) {
-              showStatus(window.LiveSmithI18n.message("Audio results updated. Open Session audio results for status."));
-            }
-          } });
-        return retrieved;
-      }
-
-      function renderSunoRetrieval() {
-        const input = document.getElementById("sunoRetrieveSongs");
-        const account = selectedSunoRetrievalAccount();
-        const saved = savedAudioConnection();
-        const identity = confirmedSunoAccounts.find((entry) => entry.serviceId === saved?.id);
-        const owner = JSON.stringify([activeSessionId(), selectedAudioServiceId, saved?.provider, identity?.accountId]);
-        if (input.dataset.owner !== owner) {
-          input.value = "";
-          input.dataset.owner = owner;
-        }
-        input.disabled = !account || audioResumeBusy || audioSettingsBusy || audioSettingsSubmitting;
-        input.oninput = renderSunoRetrieval;
-        const button = document.getElementById("retrieveSunoSongsButton");
-        button.disabled = input.disabled || !input.value.trim();
-        button.onclick = retrieveExistingSunoSongs;
-        document.getElementById("sunoRetrieveAccount").textContent = account
-          ? t("Retrieve using {connection} · {accountName}", { connection: saved.name, accountName: account.accountName || saved.name })
-          : t("Select an enabled, saved Suno connection with a connected account. Save any connection changes first.");
       }
 
       function setAudioToolsBusy(settingsBusy, resumeBusy) {
@@ -6024,20 +6090,20 @@
             row.className = "audio-service-row"; row.dataset.audioServiceId = id;
             const label = document.createElement("span"); label.className = "audio-service-label";
             label.append(document.createElement("strong"), document.createElement("small"));
-            const status = document.createElement("span"); status.className = "audio-service-status";
+            const status = document.createElement("span"); status.className = "audio-service-status activity-state";
             row.append(label, status);
             row.addEventListener("click", () => handleAudioServiceSelection(id));
             picker.append(row);
           }
-          const pending = audioSettingsDrafts.has(id);
+          const rowDraft = audioSettingsDrafts.get(id);
           const configured = savedAudioConnection(id);
+          const presentation = audioConnectionPresentation(value, configured, rowDraft);
           row.children[0].children[0].textContent = value.name || t("New audio connection");
           row.children[0].children[1].textContent = t(audioServiceCapabilities[value.provider].label);
-          row.children[1].textContent = pending ? t("Unsaved changes") : audioServiceCapabilities[value.provider].sessionImport
-            ? sunoAccountStatus(id) + " · " + t(configured?.enabled ? "Enabled" : "Disabled") : !configured?.apiKeyConfigured
-            ? t("Needs setup") : configured.enabled ? t("Enabled") : t("Disabled");
-          row.children[1].dataset.pending = String(pending);
-          row.title = (value.name || t("New audio connection")) + " · " + t(audioServiceCapabilities[value.provider].label);
+          row.children[1].textContent = presentation.label;
+          row.children[1].dataset.status = presentation.status;
+          row.title = (value.name || t("New audio connection")) + " · " + t(audioServiceCapabilities[value.provider].label) +
+            " · " + (audioServiceCapabilities[value.provider].sessionImport ? sunoAccountStatus(id) : presentation.label);
           row.disabled = audioSettingsSubmitting || audioSettingsBusy && !sunoLoginCommands.has(commandInProgress);
           row.setAttribute("aria-pressed", String(id === selectedAudioServiceId));
         }
@@ -6073,7 +6139,17 @@
           const key = document.getElementById("audioServiceApiKey");
           document.getElementById("audioServiceName").value = service.name;
           provider.value = service.provider;
-          document.getElementById("audioServiceModel").value = service.modelId || "";
+          const modelInput = document.getElementById("audioServiceModel");
+          modelInput.value = service.modelId || "";
+          const modelSuggestions = document.getElementById("sunoApiModelOptions");
+          const suggestedModels = audioServiceCapabilities.sunoapi.modelIds || [];
+          const suggestionKey = JSON.stringify(suggestedModels);
+          if (modelSuggestions.dataset.models !== suggestionKey) {
+            modelSuggestions.dataset.models = suggestionKey;
+            modelSuggestions.replaceChildren(...suggestedModels.map((id) => new Option(id, id)));
+          }
+          if (service.provider === "sunoapi") modelInput.setAttribute("list", modelSuggestions.id);
+          else modelInput.removeAttribute("list");
           const callback = document.getElementById("audioServiceCallback");
           callback.value = service.callbackUrl || "";
           callback.required = service.provider === "sunoapi" && service.enabled;
@@ -6081,11 +6157,18 @@
           for (const id of ["audioServiceName", "audioServiceProvider", "audioServiceModel", "audioServiceCallback", "audioServiceApiKey"]) {
             document.getElementById(id).disabled = busy || Boolean(draft?.conflict);
           }
-          document.getElementById("audioServiceModelField").hidden = !supported.includes("generate_music");
+          document.getElementById("audioServiceModelField").hidden = !audioServiceCapabilities[service.provider].modelConfigurable;
           document.getElementById("audioServiceCallbackField").hidden = service.provider !== "sunoapi";
           document.getElementById("audioServiceEnabledField").hidden = !supported.length;
           document.getElementById("audioServiceKeyField").hidden = sessionImport;
           if (sessionImport) { key.value = ""; key.disabled = true; }
+          const platformActions = document.getElementById("sunoPlatformActions");
+          platformActions.hidden = service.provider !== "suno-platform";
+          const openPlatform = document.getElementById("openSunoPlatformButton");
+          openPlatform.disabled = busy || service.provider !== "suno-platform";
+          openPlatform.onclick = () => runCommand("open_suno_platform", undefined, { onOutcome: (outcome) => {
+            if (outcome.known && outcome.succeeded) showStatus(t("Suno Platform opened in your default browser. Create or manage an official API key there."));
+          } });
           document.getElementById("sunoLoginControls").hidden = !sessionImport;
           const savedSuno = sessionImport && saved?.provider === "suno";
           document.getElementById("sunoLoginStatus").textContent = savedSuno
@@ -6118,7 +6201,8 @@
             button.onclick = () => runSunoLoginCommand(kind);
           }
           document.getElementById("audioServiceModelHint").textContent = service.provider === "sunoapi"
-            ? t("Leave blank to use V4_5ALL. This integration uses prompt-based generation without custom mode or a duration setting.")
+            ? t("Leave blank to use {model}. This integration uses prompt-based generation without custom mode or a duration setting.",
+              { model: audioServiceCapabilities.sunoapi.defaultModelId })
             : sessionImport ? t("Normally choose Music version above. Only enter an exact model ID for an explicit override; leave blank for the account default.")
             : t("Leave blank to use the integration default. Sound effects use a dedicated model.");
           document.getElementById("audioServiceModelSummary").textContent = t(sessionImport ? "Advanced model ID" : "Model override (optional)");
@@ -6128,10 +6212,12 @@
             ? t("Music · Custom lyrics and styles · Extend · Get Whole Song · Library · Retrieve & preview") : supported.length
             ? supported.map(audioOperationLabel).join(" · ")
             : t("Unavailable: no verified public API protocol is configured for this provider.");
-          document.getElementById("audioServiceOperations").hidden = sessionImport;
+          document.getElementById("audioServiceOperations").hidden = false;
           document.getElementById("audioServiceDisclosure").textContent = sessionImport
             ? t("Generation uses your Suno credits. Enable and save this connection to use it in chat; submissions are never retried automatically.") : service.provider === "sunoapi"
             ? t("SunoAPI.org is a third-party API service with its own key and billing. It is not Suno's official API or a Suno website subscription. Your prompt is sent to SunoAPI.org.")
+            : service.provider === "suno-platform"
+            ? t("Official Suno API connection. Create its key at platform.suno.com. Platform access and usage are separate from the Suno.com subscription Cookie connection.")
             : supported.includes("separate_stems")
             ? t("Selected audio is sent to this external service. Stem separation uses processing minutes for each requested stem.")
             : t("Generation sends your prompt to this external service and may incur separate API charges. A website subscription may not include API access.");
@@ -6141,6 +6227,11 @@
         }
         const conflict = Boolean(draft?.conflict);
         document.getElementById("audioServiceConflict").hidden = !conflict;
+        const draftStatus = document.getElementById("audioDraftStatus");
+        const nextDraftStatus = conflict ? t("Needs attention") : draft ? t("Unsaved changes") : "";
+        if (draftStatus.textContent !== nextDraftStatus) draftStatus.textContent = nextDraftStatus;
+        draftStatus.classList.toggle("dirty", Boolean(draft) && !conflict);
+        draftStatus.classList.toggle("field-error", conflict);
         const reload = document.getElementById("reloadAudioServiceButton");
         reload.hidden = !draft;
         reload.disabled = busy;
@@ -6150,11 +6241,26 @@
         document.getElementById("clearAudioServiceButton").disabled = busy || conflict || !saved?.apiKeyConfigured;
         document.getElementById("clearAudioServiceButton").hidden = Boolean(service && audioServiceCapabilities[service.provider].sessionImport);
         document.getElementById("removeAudioServiceButton").disabled = busy || conflict || !service;
-        renderSunoRetrieval();
+        const maintenance = document.getElementById("audioServiceMaintenance");
+        const maintenanceOwner = service ? service.id + ":" + service.provider : "";
+        if (maintenance.dataset.owner !== maintenanceOwner) {
+          maintenance.dataset.owner = maintenanceOwner;
+          maintenance.open = false;
+        }
+        maintenance.hidden = !saved;
+        document.getElementById("audioServiceMaintenanceHint").textContent = service && audioServiceCapabilities[service.provider].sessionImport
+          ? t("Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.")
+          : t("Clear the saved API key or remove this connection. Downloaded audio stays available.");
         renderAudioJobs();
       }
 
-      function remoteAudioLabel(role) {
+      function remoteAudioLabel(role, job, key) {
+        if (job?.operation === "retrieve_music") {
+          const index = (job.remoteOutputs || []).findIndex((output) => output.key === key && output.role === role);
+          if (index >= 0) return t("Suno song {number}", {
+            number: new Intl.NumberFormat(window.LiveSmithI18n.locale).format(index + 1),
+          });
+        }
         return t(role === "music_alternative" ? "Alternative music" : "Music");
       }
 
@@ -6202,10 +6308,10 @@
         renderAudioJobs();
         try {
           const accepted = await confirmAction({
-            title: window.LiveSmithI18n.message("Save this output for Live?"),
-            message: window.LiveSmithI18n.message("Download only {output} using {connection}. This may use up to one existing Suno download allowance. No allowance or quota will be purchased.",
-              { output: remoteAudioLabel(output.dataset.remoteAudioRole), connection: savedAudioConnection(job.serviceId).name }),
-            acceptLabel: window.LiveSmithI18n.message("Download (save for Live)"),
+            title: window.LiveSmithI18n.message("Save this output for Live and model use?"),
+            message: window.LiveSmithI18n.message("Save only {output} locally using {connection}. This may use up to one existing Suno download allowance. Once saved, Live can import it and an audio-capable model can listen when you ask. No allowance or quota will be purchased.",
+              { output: remoteAudioLabel(output.dataset.remoteAudioRole, job, outputKey), connection: savedAudioConnection(job.serviceId).name }),
+            acceptLabel: window.LiveSmithI18n.message("Save for Live & model"),
           });
           if (!accepted || pending.invalidated || pendingAudioDownload !== pending ||
             identity !== audioDownloadIdentity(output) || audioResumeBusy || audioSettingsBusy || audioSettingsSubmitting ||
@@ -6220,7 +6326,7 @@
       function renderRemoteAudioOutputs(group, job) {
         const remotes = job.remoteOutputs || [];
         group.hidden = remotes.length === 0;
-        group.firstElementChild.textContent = t("Suno online outputs");
+        group.firstElementChild.textContent = t("Online playback");
         for (const output of group.querySelectorAll("[data-remote-audio-key]")) {
           if (!remotes.some((entry) => entry.key === output.dataset.remoteAudioKey && entry.role === output.dataset.remoteAudioRole)) output.remove();
         }
@@ -6244,7 +6350,7 @@
               document.getElementById("sessionAudioResults").open = true;
               const frame = document.createElement("iframe");
               frame.id = preview.getAttribute("aria-controls");
-              frame.title = t("Suno online player · {output}", { output: remoteAudioLabel(remote.role) });
+              frame.title = t("Suno online player · {output}", { output: remoteAudioLabel(remote.role, job, remote.key) });
               frame.setAttribute("referrerpolicy", "no-referrer");
               frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
               frame.src = "https://suno.com/embed/" + remote.key;
@@ -6262,11 +6368,11 @@
             output.append(label, actions);
             group.append(output);
           }
-          output.firstElementChild.textContent = remoteAudioLabel(remote.role);
+          output.firstElementChild.textContent = remoteAudioLabel(remote.role, job, remote.key);
           output.querySelector("[data-preview-audio]").textContent = t("Preview");
           output.querySelector("[data-close-audio-preview]").textContent = t("Close preview");
           const frame = output.querySelector("iframe");
-          if (frame) frame.title = t("Suno online player · {output}", { output: remoteAudioLabel(remote.role) });
+          if (frame) frame.title = t("Suno online player · {output}", { output: remoteAudioLabel(remote.role, job, remote.key) });
           let download = output.querySelector("[data-download-audio-output]");
           if (job.outputs.some((asset) => asset.role === remote.role)) download?.remove();
           else {
@@ -6279,10 +6385,18 @@
               });
               output.querySelector(".audio-settings-actions").append(download);
             }
-            download.textContent = t("Download (save for Live)");
-            download.setAttribute("aria-label", t("Download {output} (save for Live)", { output: remoteAudioLabel(remote.role) }));
+            download.textContent = t("Save for Live & model");
+            download.setAttribute("aria-label", t("Save {output} for Live and model use", { output: remoteAudioLabel(remote.role, job, remote.key) }));
           }
         }
+      }
+
+      function audioJobActivityStatus(status) {
+        if (["preparing", "submitting", "running", "collecting"].includes(status)) return "pending";
+        if (["ready", "completed"].includes(status)) return "complete";
+        if (["partial", "unknown"].includes(status)) return "partial";
+        if (["interrupted", "cancelled"].includes(status)) return "stopped";
+        return "failed";
       }
 
       function renderAudioJobs() {
@@ -6292,10 +6406,17 @@
         const container = document.getElementById("audioJobs");
         const shelf = document.getElementById("sessionAudioResults");
         shelf.hidden = jobs.length === 0;
+        if (shelf.hidden) shelf.open = false;
         document.getElementById("sessionAudioResultsCount").textContent = jobs.length
           ? new Intl.NumberFormat(window.LiveSmithI18n.locale).format(jobs.length) : "";
         const running = jobs.some(job => ["preparing", "submitting", "running", "collecting"].includes(job.status));
-        document.getElementById("sessionAudioResultsStatus").textContent = running ? t("Processing audio…") : "";
+        const needsAttention = jobs.some(job => ["partial", "failed", "interrupted", "unknown"].includes(job.status));
+        const stopped = jobs.length > 0 && jobs.every(job => job.status === "cancelled");
+        const shelfStatus = document.getElementById("sessionAudioResultsStatus");
+        const nextShelfStatus = running ? t("In progress") : needsAttention ? t("Needs attention") : stopped ? t("Stopped") : jobs.length ? t("Ready") : "";
+        const nextShelfTone = running ? "pending" : needsAttention ? "partial" : stopped ? "stopped" : "complete";
+        if (shelfStatus.textContent !== nextShelfStatus) shelfStatus.textContent = nextShelfStatus;
+        if (shelfStatus.dataset.status !== nextShelfTone) shelfStatus.dataset.status = nextShelfTone;
         if (signature !== renderedAudioJobs) {
           renderedAudioJobs = signature;
           if (container.dataset.sessionId !== state.activeSessionId) {
@@ -6309,13 +6430,6 @@
             if (!ids.has(card.dataset.audioJobId)) card.remove();
           }
           container.querySelector("[data-audio-empty]")?.remove();
-          if (!jobs.length) {
-            const empty = document.createElement("p");
-            empty.className = "field-hint";
-            empty.dataset.audioEmpty = "";
-            empty.textContent = t("No audio processing jobs in this Session.");
-            container.append(empty);
-          }
           const statuses = { preparing: t("Preparing audio"), submitting: t("Submitting audio"),
             running: t("Processing audio"), collecting: t("Collecting audio"), ready: t("Generated · online"), completed: t("Audio ready"),
             partial: t("Partial audio results"), failed: t("Audio processing failed"),
@@ -6330,12 +6444,20 @@
               card.className = "audio-job";
               card.dataset.audioJobId = job.id;
               card.dataset.audioJobIdentity = identity;
+              const header = document.createElement("div"); header.className = "audio-job-header";
+              const heading = document.createElement("div"); heading.className = "audio-job-heading";
+              const title = document.createElement("h4"); title.id = "audio-job-title-" + job.id;
+              const route = document.createElement("p"); route.className = "audio-job-route"; route.id = "audio-job-route-" + job.id;
+              const status = document.createElement("span"); status.className = "activity-state"; status.id = "audio-job-status-" + job.id;
+              heading.append(title, route); header.append(heading, status);
+              card.setAttribute("aria-labelledby", title.id);
+              card.setAttribute("aria-describedby", status.id + " " + route.id);
               const details = document.createElement("details");
               details.className = "settings-disclosure audio-job-details";
               const summary = document.createElement("summary");
               const detailText = document.createElement("p"); detailText.className = "field-hint";
               details.append(summary, detailText);
-              card.append(document.createElement("h4"), document.createElement("p"), details);
+              card.append(header, details);
               const remoteGroup = document.createElement("div"); remoteGroup.dataset.audioRemotes = "";
               const localGroup = document.createElement("div"); localGroup.dataset.audioLocalFiles = "";
               remoteGroup.append(document.createElement("h5")); localGroup.append(document.createElement("h5"));
@@ -6343,13 +6465,17 @@
               container.append(card);
             }
             if (container.children[jobIndex] !== card) container.insertBefore(card, container.children[jobIndex] || null);
-            card.children[0].textContent = statuses[job.status];
+            const activityStatus = audioJobActivityStatus(job.status);
+            card.querySelector("h4").textContent = audioOperationLabel(job.operation);
+            const status = card.querySelector(".audio-job-header .activity-state");
+            status.textContent = job.status === "ready" && job.operation === "retrieve_music"
+              ? t("Ready to play") : statuses[job.status];
+            status.dataset.status = activityStatus;
             const service = savedAudioConnection(job.serviceId);
-            card.children[1].className = "field-hint";
-            card.children[1].textContent = (service?.provider === job.provider ? service.name : job.serviceId) +
-              " · " + t(audioServiceCapabilities[job.provider].label) + " · " + audioOperationLabel(job.operation) +
+            card.querySelector(".audio-job-route").textContent = (service?.provider === job.provider ? service.name : job.serviceId) +
+              " · " + t(audioServiceCapabilities[job.provider].label) +
               (job.modelId ? " · " + job.modelId : "");
-            const details = card.children[2];
+            const details = card.querySelector(".audio-job-details");
             details.children[0].textContent = t("Task details");
             details.children[1].textContent = job.message || "";
             details.hidden = !job.message;
@@ -6360,7 +6486,7 @@
             renderRemoteAudioOutputs(card.querySelector("[data-audio-remotes]"), job);
             const localGroup = card.querySelector("[data-audio-local-files]");
             localGroup.hidden = job.outputs.length === 0;
-            localGroup.firstElementChild.textContent = t("Saved local files");
+            localGroup.firstElementChild.textContent = t("Saved audio");
             const assetIds = new Set(job.outputs.map((asset) => asset.id));
             for (const output of card.querySelectorAll("[data-audio-output]")) {
               if (!assetIds.has(output.dataset.audioOutput)) output.remove();
@@ -6404,7 +6530,7 @@
                 new Intl.NumberFormat(window.LiveSmithI18n.locale, { maximumFractionDigits: 1 }).format(asset.sampleRate / 1000) + " kHz";
               output.children[3].textContent = t("Download local file");
               output.children[3].setAttribute("aria-label", t("Download local file · {output}", { output: asset.label }));
-              output.children[4].textContent = t("Your default browser downloads this saved local file. No Suno credits or download allowance are used. Keep Live Smith open until the download finishes.");
+              output.children[4].textContent = t("An audio-capable model can listen to this saved Session audio when you ask. Your default browser can also download the local file without using Suno credits or download allowance; keep Live Smith open until that download finishes.");
             }
             let resume = card.querySelector("[data-resume-audio-job]");
             if (!job.resumable) resume?.remove();
@@ -6452,6 +6578,54 @@
           url: document.getElementById("networkProxyUrl")?.value ?? "",
         };
         syncOperationState();
+      }
+
+      function handleCustomInstructionsInput() {
+        const control = document.getElementById("customInstructions");
+        if (!control) return;
+        customInstructionsDraft = control.value;
+        requireView().clearGlobalSettingsFieldError("customInstructions");
+        renderCustomInstructions();
+      }
+
+      async function saveCustomInstructions() {
+        const control = document.getElementById("customInstructions");
+        if (!control) return false;
+        const raw = control.value;
+        const value = raw.trim();
+        if (raw.includes("\0") || Array.from(raw).length > 8000) {
+          showStatus(t("Custom Instructions must be at most 8000 characters."), true);
+          control.focus({ preventScroll: true });
+          return false;
+        }
+        if (value === effectiveCustomInstructions()) {
+          customInstructionsDraft = null;
+          renderCustomInstructions();
+          return false;
+        }
+        const optimistic = {
+          value,
+          commandId: createCorrelationId("command"),
+          startedRevision: confirmedCustomInstructionsRevision,
+          committedRevision: null,
+        };
+        optimisticCustomInstructions = optimistic;
+        writeEffectiveGlobalSettingsToState();
+        syncOperationState();
+        let saved = false;
+        try {
+          saved = await runCommand("save_global_settings", {
+            customInstructions: value,
+          }, { commandId: optimistic.commandId });
+        } finally {
+          if (optimisticCustomInstructions === optimistic) {
+            optimisticCustomInstructions = null;
+          }
+          customInstructionsDraft = saved ? null : raw;
+          writeEffectiveGlobalSettingsToState();
+          renderCustomInstructions();
+        }
+        return saved;
       }
 
       async function saveNetworkProxySettings() {
@@ -8441,6 +8615,8 @@
                 "defaultFollowUpBehaviorRevision",
                 "showContextUsage",
                 "contextUsageVisibilityRevision",
+                "customInstructions",
+                "customInstructionsRevision",
                 "networkProxy",
                 "networkProxyRevision",
                 "uiLanguage",
@@ -8453,6 +8629,10 @@
               !isDecimalRevision(payload.defaultFollowUpBehaviorRevision) ||
               typeof payload.showContextUsage !== "boolean" ||
               !isDecimalRevision(payload.contextUsageVisibilityRevision) ||
+              typeof payload.customInstructions !== "string" ||
+              payload.customInstructions.includes("\0") ||
+              Array.from(payload.customInstructions).length > 8000 ||
+              !isDecimalRevision(payload.customInstructionsRevision) ||
               !isNetworkProxySettings(payload.networkProxy) ||
               !isDecimalRevision(payload.networkProxyRevision) ||
               !isUiLanguage(payload.uiLanguage) ||
@@ -9279,15 +9459,18 @@
         loadSessionModelCapabilities,
         resolveConfirm,
         renderDefaultFollowUpBehavior,
+        renderCustomInstructions,
         renderUiLanguage,
         setUiLanguage,
         renderNetworkProxySettings,
         runCommand,
         handleNetworkProxyModeChange,
         handleNetworkProxyUrlInput,
+        handleCustomInstructionsInput,
         saveContextUsageVisibility,
         saveDefaultFollowUpBehavior,
         saveNetworkProxySettings,
+        saveCustomInstructions,
         submitComposer,
         setCloseDecisionPending: (pending) => {
           closeDecisionPending = Boolean(pending);

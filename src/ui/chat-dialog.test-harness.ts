@@ -359,6 +359,8 @@ function stateFixture(): ChatBridgeState {
       defaultFollowUpBehaviorRevision: "0",
       uiLanguage: "system",
       uiLanguageRevision: "0",
+      customInstructions: "",
+      customInstructionsRevision: "0",
       showContextUsage: true,
       contextUsageVisibilityRevision: "0",
       networkProxy: { mode: "none", url: "" },
@@ -867,6 +869,8 @@ async function createDialogHarness(
       typeof event.defaultFollowUpBehaviorRevision === "string" &&
       typeof event.showContextUsage === "boolean" &&
       typeof event.contextUsageVisibilityRevision === "string" &&
+      typeof event.customInstructions === "string" &&
+      typeof event.customInstructionsRevision === "string" &&
       event.networkProxy &&
       typeof event.networkProxy === "object" &&
       typeof event.networkProxyRevision === "string"
@@ -878,6 +882,9 @@ async function createDialogHarness(
       serverState.settings.showContextUsage = event.showContextUsage;
       serverState.settings.contextUsageVisibilityRevision =
         event.contextUsageVisibilityRevision;
+      serverState.settings.customInstructions = event.customInstructions;
+      serverState.settings.customInstructionsRevision =
+        event.customInstructionsRevision;
       serverState.settings.networkProxy = cloneState(
         event.networkProxy as NetworkProxySettings,
       );
@@ -898,6 +905,9 @@ async function createDialogHarness(
     if (event.type === "global_settings_changed") {
       event.networkProxy ??= cloneState(serverState.settings.networkProxy);
       event.networkProxyRevision ??= serverState.settings.networkProxyRevision;
+      event.customInstructions ??= serverState.settings.customInstructions;
+      event.customInstructionsRevision ??=
+        serverState.settings.customInstructionsRevision;
       if (!Object.hasOwn(event, "uiLanguage")) event.uiLanguage = serverState.settings.uiLanguage;
       if (!Object.hasOwn(event, "uiLanguageRevision")) event.uiLanguageRevision = serverState.settings.uiLanguageRevision;
     }
@@ -1405,6 +1415,7 @@ async function createDialogHarness(
                 uiLanguage?: UiLanguage;
                 networkProxy?: NetworkProxySettings;
                 audioServices?: import("../audio-services/contracts.js").AudioServicesSettingsPatch;
+                customInstructions?: string;
                 profile?: SavedProfile;
                 profileId?: string;
                 provider?: "openai" | "anthropic" | "google";
@@ -1456,6 +1467,12 @@ async function createDialogHarness(
                     incrementContextUsageVisibilityRevision(
                       serverState.settings.contextUsageVisibilityRevision,
                     );
+                } else if (typeof command.customInstructions === "string") {
+                  serverState.settings.customInstructions =
+                    command.customInstructions.trim();
+                  serverState.settings.customInstructionsRevision = String(
+                    BigInt(serverState.settings.customInstructionsRevision) + 1n,
+                  );
                 } else if (command.networkProxy) {
                   serverState.settings.networkProxy = cloneState(
                     command.networkProxy,

@@ -1640,7 +1640,6 @@
         "apply_result",
         "error",
       ]);
-
       function isTimelineActivityEvent(event) {
         return timelineActivityKinds.has(event?.kind);
       }
@@ -2135,6 +2134,12 @@
           excerpt.textContent = truncate(excerptText, 112);
           summary.append(excerpt);
         }
+        const state = document.createElement("span");
+        state.className = "activity-state";
+        state.dataset.status = status;
+        state.setAttribute("aria-hidden", "true");
+        state.textContent = activityStatusLabel(status);
+        summary.append(state);
         return summary;
       }
 

@@ -128,6 +128,7 @@ test("selection preserves non-secret drafts but clears keys; collection changes 
     harness.emitServerEvent(broadcast(state, next));
     await harness.settle();
     assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceConflict")!.hidden, false);
+    assert.equal(harness.document.querySelector(`[data-audio-service-id="${service.id}"] .audio-service-status`)!.textContent, "Needs attention");
     assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceName")!.value, "Unfinished name");
     harness.click("#reloadAudioServiceButton");
     harness.input("#audioServiceName", "Reloaded name");
@@ -241,7 +242,7 @@ for (const [isNew, withState] of [[false, false], [false, true], [true, false], 
   });
 }
 
-test("Suno exposes explicit activation separately from Cookie login and lists feature limits", async () => {
+test("Suno keeps essential connection facts visible and moves adapter details into aligned help", async () => {
   const harness = await createDialogHarness(audioState([{ ...service, provider: "suno", enabled: false, apiKeyConfigured: false }]));
   try {
     assert.equal(harness.document.querySelector<HTMLOptionElement>('#audioServiceProvider option[value="suno"]')!.disabled, false);
@@ -253,8 +254,21 @@ test("Suno exposes explicit activation separately from Cookie login and lists fe
       assert.equal(harness.document.querySelector<HTMLElement>(selector)!.hidden, true, selector);
     }
     assert.equal(harness.document.querySelector<HTMLElement>("#sunoLoginControls")!.hidden, false);
-    assert.match(harness.document.querySelector("#audioServiceOperations")!.textContent!, /Custom lyrics.*Extend.*Library.*Retrieve/);
-    assert.match(harness.document.querySelector("#sunoFeatureHelp")!.textContent!, /Not connected: Sounds/);
+    const operations = harness.document.querySelector<HTMLElement>("#audioServiceOperations")!;
+    assert.equal(operations.hidden, false);
+    assert.match(operations.textContent!, /Custom lyrics.*Extend.*Library.*Retrieve/);
+    assert.match(harness.document.querySelector("#audioServiceDisclosure")!.textContent!, /Suno credits.*save.*never retried/i);
+    const heading = harness.document.querySelector("#sunoConnectionHeading");
+    const help = harness.document.querySelector<HTMLElement>("#sunoFeatureHelp")!;
+    assert.equal(heading?.nextElementSibling, help);
+    assert.equal(help.parentElement?.classList.contains("field-label-row"), true);
+    assert.equal(help.textContent, "?");
+    assert.equal(help.tabIndex, 0);
+    assert.equal(help.getAttribute("role"), "note");
+    assert.equal(help.dataset.tooltip, help.getAttribute("aria-label"));
+    assert.match(help.dataset.tooltip ?? "", /adapter gaps, not restrictions on Live Smith/i);
+    assert.match(help.dataset.tooltip ?? "", /Suno Studio workspace editing or publishing/i);
+    assert.equal(harness.document.querySelector("#sunoLoginControls details#sunoFeatureHelp"), null);
     assert.equal(harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!.type, "password");
     assert.equal(harness.document.querySelector<HTMLButtonElement>("#openSunoWebsiteButton")!.disabled, false);
     assert.deepEqual(harness.errors, []);

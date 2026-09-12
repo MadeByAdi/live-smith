@@ -1621,7 +1621,7 @@ test("the circular transport button preserves Send and Stop semantics", async ()
   }
 });
 
-test("Agent groups Model Profile with Session Skills while App owns preferences", async () => {
+test("Agent owns Model Profile, Context owns instructions and Session Skills, and App owns preferences", async () => {
   const harness = await createDialogHarness();
   try {
     assert.equal(harness.document.querySelector("#agentTab")?.textContent, "Agent");
@@ -1636,27 +1636,31 @@ test("Agent groups Model Profile with Session Skills while App owns preferences"
     }
     const agentPanel = harness.document.querySelector("#agentPanel");
     const appPanel = harness.document.querySelector("#appPanel");
+    const contextPanel = harness.document.querySelector("#contextPanel");
     const contextRoot = harness.document.querySelector("#context");
     const contextGroup = contextRoot?.querySelector(":scope > .context-shell");
     const profileGroup = harness.document.querySelector("#modelProfileSettings");
     const appGroup = harness.document.querySelector("#appPreferencesSettings");
+    const customInstructions = harness.document.querySelector("#customInstructionsSettings");
     const skillManager = harness.document.querySelector("#skillManager");
     const skillViewer = harness.document.querySelector("#skillViewer");
     const profileControls = harness.document.querySelector("#modelProfileControls");
     const lockNotice = harness.document.querySelector("#settingsLockNotice");
     assert.ok(agentPanel);
     assert.ok(appPanel);
+    assert.ok(contextPanel);
     assert.ok(contextRoot);
     assert.ok(contextGroup);
     assert.ok(profileGroup);
     assert.ok(appGroup);
+    assert.ok(customInstructions);
     assert.ok(skillManager);
     assert.ok(skillViewer);
     assert.ok(profileControls);
     assert.ok(lockNotice);
     assert.equal(profileGroup.tagName, "SECTION");
     assert.equal(appGroup.tagName, "SECTION");
-    assert.equal(contextRoot.classList.contains("settings"), true);
+    assert.equal(contextRoot.parentElement?.classList.contains("settings"), true);
     assert.equal(contextGroup.tagName, "SECTION");
     assert.equal(contextGroup.classList.contains("settings-scope"), true);
     assert.equal(contextGroup.getAttribute("aria-labelledby"), "contextHeading");
@@ -1665,8 +1669,12 @@ test("Agent groups Model Profile with Session Skills while App owns preferences"
       "contextHeading",
     );
     assert.equal(agentPanel.contains(profileGroup), true);
-    assert.equal(agentPanel.contains(skillManager), true);
-    assert.equal(agentPanel.contains(skillViewer), true);
+    assert.equal(agentPanel.contains(skillManager), false);
+    assert.equal(agentPanel.contains(skillViewer), false);
+    assert.equal(contextPanel.contains(contextRoot), true);
+    assert.equal(contextPanel.contains(customInstructions), true);
+    assert.equal(contextPanel.contains(skillManager), true);
+    assert.equal(contextPanel.contains(skillViewer), true);
     assert.equal(appPanel.contains(appGroup), true);
     const profileHeader = profileGroup.querySelector(":scope > .inspector-scope-header");
     const appHeader = appGroup.querySelector(":scope > .inspector-scope-header");
@@ -1693,11 +1701,8 @@ test("Agent groups Model Profile with Session Skills while App owns preferences"
     assert.equal(profileGroup.contains(lockNotice), true);
     assert.equal(profileControls.contains(lockNotice), false);
     assert.equal(profileControls.getAttribute("aria-busy"), "false");
-    assert.equal(
-      Boolean(profileActions.compareDocumentPosition(skillManager) &
-        harness.window.Node.DOCUMENT_POSITION_FOLLOWING),
-      true,
-    );
+    assert.equal(contextRoot.nextElementSibling, customInstructions);
+    assert.equal(customInstructions.nextElementSibling, skillManager);
 
     assert.ok(
       harness.document.querySelector("#modelSettingsSection #discoverModelsButton"),

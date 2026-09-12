@@ -112,6 +112,8 @@
         toggleLabel.className = "skill-toggle";
         const toggle = document.createElement("input");
         toggle.type = "checkbox";
+        toggle.name = "sessionSkillIds";
+        toggle.value = skill.id;
         toggle.checked = active.has(skill.id);
         toggle.setAttribute("aria-label", t("Use Skill {id} in this Session", { id: skill.id }));
         toggle.addEventListener("change", () => {

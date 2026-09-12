@@ -4,6 +4,7 @@ import { commandCalls, createDialogHarness } from "./chat-dialog.test-harness.js
 import { audioCommands, audioState, broadcast, musicService, selectAudioService, selectedAudioService } from "./chat-dialog.audio-test-helpers.js";
 
 const cookie = "eyJmaXh0dXJlIjp0cnVlfQ.eyJzdWIiOiJ1aS10ZXN0In0.c3ludGhldGlj";
+const fullCookie = `Cookie: ignored=private; __session=${cookie}; __client_uat=123`;
 const website = { id: "suno-personal", name: "Personal Suno", provider: "suno" as const, enabled: false, apiKeyConfigured: false };
 type Harness = Awaited<ReturnType<typeof createDialogHarness>>;
 const inputValue = (harness: Harness) => harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!.value;
@@ -37,8 +38,8 @@ test("opening Suno from a draft only opens the default browser, without saving o
   } finally { harness.close(); }
 });
 
-for (const value of [cookie, "__client=" + cookie]) {
-  test(`saved connection imports ${value.startsWith("__client") ? "an exact Cookie assignment" : "the raw Cookie value"} without a settings save`, async () => {
+for (const value of [cookie, "__client=" + cookie, fullCookie]) {
+  test(`saved connection imports ${value.startsWith("Cookie:") ? "a current Cookie header" : value.startsWith("__client") ? "an exact Cookie assignment" : "the raw Cookie value"} without a settings save`, async () => {
     const harness = await createDialogHarness(audioState([website, musicService]));
     try {
       harness.input("#sunoSessionValue", value);
@@ -62,8 +63,8 @@ for (const value of [cookie, "__client=" + cookie]) {
 test("invalid Cookie formats never save or import, clear the field and focus it for correction", async () => {
   const harness = await createDialogHarness(audioState([website]));
   try {
-    for (const value of ["Cookie: __client=" + cookie, "__client=" + cookie + "; other=value", "__client=" + cookie + ";",
-      '[{"name":"__client","value":"' + cookie + '"}]', "__session=" + cookie, cookie + "\nCookie:other=value", "a".repeat(8193), ""]) {
+    for (const value of ["Cookie: __client_uat=123", "__client=not-a-jwt", "__session=not-a-jwt",
+      '[{"name":"__client","value":"' + cookie + '"}]', cookie + "\nCookie:other=value", "a".repeat(16_385), ""]) {
       harness.input("#sunoSessionValue", value);
       harness.document.querySelector("#sunoSessionValue")!.dispatchEvent(new harness.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       await harness.settle();
@@ -198,7 +199,7 @@ test("draft connect clears the Cookie immediately, saves only configuration, the
     const input = harness.document.querySelector<HTMLInputElement>("#sunoSessionValue")!;
     assert.equal(input.type, "password");
     assert.equal(input.autocomplete, "off");
-    assert.equal(input.maxLength, 8192);
+    assert.equal(input.maxLength, 16384);
     harness.input("#sunoSessionValue", cookie);
     harness.holdNextCommand();
     harness.click("#connectSunoButton");

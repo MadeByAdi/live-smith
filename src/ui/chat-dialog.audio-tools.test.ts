@@ -22,7 +22,7 @@ test("generated music, alternatives and sound effects show their bound service, 
   try {
     const players = Array.from(harness.document.querySelectorAll<HTMLAudioElement>("#audioJobs audio"));
     assert.equal(players.length, 3);
-    assert.match(harness.document.querySelector("#audioJobs")!.textContent!, /Third-party studio · Suno via SunoAPI.org \(third-party\) · Music generation · V4_5ALL/);
+    assert.match(harness.document.querySelector("#audioJobs")!.textContent!, /Music generation.*Third-party studio · Suno via SunoAPI.org \(third-party\) · V4_5ALL/s);
     assert.match(harness.document.querySelector("#audioJobs")!.textContent!, /Sound effect generation/);
     assert.match(players[2]!.getAttribute("aria-label")!, /Rain · Sound effect generation/);
     assert.equal(harness.document.querySelector("[data-resume-audio-job]"), null);

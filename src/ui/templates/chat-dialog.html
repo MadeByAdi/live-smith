@@ -31,6 +31,7 @@
         --field: #202020;
         --line: #1d1d1d;
         --line-soft: #454545;
+        --line-divider: rgba(255, 255, 255, 0.09);
         --text: #f2f2f2;
         --muted: #c6c6c6;
         --quiet: #a9a9a9;
@@ -59,6 +60,7 @@
         --focus: var(--accent);
         --focus-soft: rgba(255, 255, 255, 0.07);
         --warn: #ffd166;
+        --success: #8fcf73;
         --danger: #ff6e57;
         --trace: #78b9e8;
         --sessions-pane-width: 180px;
@@ -249,7 +251,7 @@
         text-align: left;
         color: var(--text);
         background: transparent;
-        border: 1px solid transparent;
+        border: 1px solid var(--line-soft);
         border-radius: var(--radius-control);
       }
 
@@ -265,9 +267,8 @@
       }
 
       .session-row[aria-pressed="true"] {
-        border-color: transparent;
-        background: var(--accent-soft);
-        box-shadow: inset 3px 0 0 var(--accent);
+        border-color: var(--line-hover);
+        background: var(--pane-2);
       }
 
       .session-row[data-switching] {
@@ -276,9 +277,8 @@
       }
 
       .session-entry[data-selected] > .session-row {
-        border-color: rgba(124, 184, 232, 0.72);
-        background: rgba(124, 184, 232, 0.1);
-        box-shadow: inset 3px 0 0 var(--trace);
+        border-color: var(--line-hover);
+        background: var(--pane-2);
       }
 
       .sessions-pane.command-busy .session-row:disabled {
@@ -295,20 +295,20 @@
 
       .session-entry:not([data-selected]) >
       button.session-row:not([aria-pressed="true"]):not(:disabled):hover {
-        border-color: transparent;
+        border-color: var(--line-hover);
         background: var(--surface-hover);
       }
 
       .session-entry[data-selected] >
       button.session-row:not(:disabled):hover {
-        border-color: rgba(124, 184, 232, 0.9);
-        background: rgba(124, 184, 232, 0.16);
+        border-color: var(--line-hover);
+        background: var(--surface-hover);
       }
 
       .session-entry:not([data-selected]) >
       button.session-row[aria-pressed="true"]:not(:disabled):hover {
-        border-color: rgba(255, 165, 0, 0.85);
-        background: rgba(255, 165, 0, 0.18);
+        border-color: var(--line-hover);
+        background: var(--surface-hover);
       }
 
       .history-session-row,
@@ -466,7 +466,7 @@
         min-width: 116px;
         padding: 4px;
         background: #292929;
-        border: 1px solid #666;
+        border: 0;
         border-radius: 4px;
         box-shadow: 0 8px 20px rgba(0, 0, 0, 0.38);
       }
@@ -606,7 +606,7 @@
         padding: 12px;
         color: var(--text);
         background: var(--field);
-        border: 1px solid var(--line-soft);
+        border: 0;
         border-radius: 7px;
         box-shadow: 0 12px 28px rgba(0, 0, 0, 0.44);
       }
@@ -973,14 +973,16 @@
 
       .markdown-body blockquote {
         margin: 0.55em 0 0.75em;
-        padding: 0.12em 0 0.12em 0.75em;
+        padding: 0.5em 0.7em;
         color: var(--muted);
-        border-left: 2px solid var(--accent);
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius-control);
+        background: rgba(255, 255, 255, 0.025);
       }
 
       .timeline-item.user .markdown-body blockquote {
         color: inherit;
-        border-left-color: currentColor;
+        border-color: rgba(255, 255, 255, 0.2);
       }
 
       .markdown-body code {
@@ -1169,7 +1171,7 @@
       .timeline-activity-group-summary,
       .timeline-activity-step-summary {
         display: grid;
-        grid-template-columns: minmax(105px, max-content) minmax(0, 1fr);
+        grid-template-columns: minmax(105px, max-content) minmax(0, 1fr) auto;
         align-items: baseline;
         gap: 7px;
         min-height: 24px;
@@ -1202,6 +1204,37 @@
       .timeline-activity-excerpt {
         color: var(--quiet);
       }
+
+      .activity-state {
+        display: inline-flex;
+        align-items: center;
+        justify-self: end;
+        gap: 5px;
+        min-width: 0;
+        color: var(--quiet);
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      .activity-state:empty { display: none; }
+
+      .activity-state::before {
+        content: "";
+        flex: 0 0 6px;
+        width: 6px;
+        height: 6px;
+        border-radius: 1px;
+        background: currentColor;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
+      }
+
+      .activity-state[data-status="pending"] { color: var(--trace); }
+      .activity-state[data-status="complete"] { color: var(--success); }
+      .activity-state[data-status="partial"] { color: var(--warn); }
+      .activity-state[data-status="failed"] { color: var(--danger); }
+      .activity-state[data-status="stopped"] { color: var(--quiet); }
 
       .timeline-activity-detail {
         display: grid;
@@ -1275,6 +1308,7 @@
         position: static;
         display: inline-grid;
         place-items: center;
+        flex: 0 0 14px;
         width: 14px;
         height: 14px;
         border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1353,11 +1387,7 @@
         container-name: networkProxy;
         container-type: inline-size;
         display: grid;
-        gap: 7px;
-        padding: 8px;
-        background: rgba(0, 0, 0, 0.08);
-        border: 1px solid var(--line-soft);
-        border-radius: 6px;
+        gap: var(--space-2);
       }
 
       .network-proxy-control-label {
@@ -1877,8 +1907,6 @@
       }
 
       .composer-select {
-        -webkit-appearance: none;
-        appearance: none;
         field-sizing: content;
         width: auto;
         min-width: 0;
@@ -1886,13 +1914,9 @@
         height: 30px;
         padding: 0 22px 0 8px;
         color: var(--text);
-        background-color: transparent;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23c6c6c6' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 7px center;
-        background-size: 10px 10px;
-        border: 1px solid transparent;
-        border-radius: 7px;
+        background-color: var(--field);
+        border: 0;
+        border-radius: var(--radius-control);
         font-family: inherit;
         font-size: 10px;
         font-weight: 650;
@@ -1917,7 +1941,7 @@
 
       .composer-select:focus {
         outline: 0;
-        border-color: transparent;
+        background-color: var(--composer-control-highlight);
         box-shadow: none;
       }
 
@@ -2045,6 +2069,8 @@
 
       .attachment-menu-button:focus-visible {
         outline: 0;
+        border-color: var(--focus);
+        background: var(--composer-control-highlight);
       }
 
       .attachment-menu-button[aria-expanded="true"] {
@@ -2068,7 +2094,7 @@
         width: min(292px, calc(100vw - 36px));
         padding: 5px;
         background: var(--field);
-        border: 1px solid var(--line-soft);
+        border: 0;
         border-radius: 7px;
         box-shadow: 0 12px 28px rgba(0, 0, 0, 0.44);
       }
@@ -2120,7 +2146,7 @@
         grid-template-columns: minmax(0, 1fr);
         padding: 3px;
         background: var(--field);
-        border: 1px solid var(--line-soft);
+        border: 0;
         border-radius: 7px;
         box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
       }
@@ -2175,11 +2201,30 @@
       input,
       select {
         width: 100%;
-        border: 1px solid var(--line-soft);
-        background: var(--field);
+        background-color: var(--field);
         color: var(--text);
         border-radius: var(--radius-control);
         font: inherit;
+      }
+
+      textarea,
+      input {
+        border: 1px solid var(--line-soft);
+      }
+
+      select,
+      button.composer-select {
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23c6c6c6' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 7px center;
+        background-size: 10px 10px;
+      }
+
+      select option {
+        color: var(--text);
+        background-color: var(--field);
       }
 
       textarea {
@@ -2189,25 +2234,39 @@
         line-height: 1.4;
       }
 
-      input,
-      select {
+      input {
         height: var(--control-height);
         padding: 0 var(--space-2);
       }
 
+      select {
+        height: var(--control-height);
+        padding: 0 26px 0 var(--space-2);
+        border: 0;
+      }
+
       textarea:focus,
-      input:focus,
-      select:focus {
+      input:focus {
         outline: 0;
         border-color: var(--focus);
-        box-shadow: inset 0 0 0 1px var(--focus-soft);
+        box-shadow: none;
+      }
+
+      select:focus {
+        outline: 0;
+        background-color: var(--surface-hover);
+        box-shadow: none;
+      }
+
+      select:focus-visible,
+      button.composer-select:focus-visible {
+        outline: 0;
+        background-color: var(--surface-hover);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23ff9f1a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       }
 
       button:focus-visible,
-      summary:focus-visible,
-      input:focus-visible,
-      select:focus-visible,
-      textarea:focus-visible {
+      summary:focus-visible {
         outline: 2px solid var(--focus);
         outline-offset: 2px;
       }
@@ -2216,8 +2275,10 @@
         outline: 0;
       }
 
-      .tab-panel:focus-visible {
-        box-shadow: inset 0 2px 0 var(--focus);
+      .inspector-pane:has(.tab-panel:focus-visible) .tab-bar button.active,
+      .tab-bar button:focus-visible {
+        outline: 0;
+        border-color: var(--focus);
       }
 
       button {
@@ -2377,8 +2438,6 @@
 
       .settings-scope + .settings-scope {
         margin-top: var(--space-6);
-        padding-top: var(--space-4);
-        border-top: 1px solid var(--line-soft);
       }
 
       .inspector-scope-header {
@@ -2394,10 +2453,13 @@
 
       .session-results {
         min-width: 0;
-        margin: 0 var(--space-3);
-        border-block: 1px solid var(--line-soft);
+        margin: 0 var(--space-3) var(--space-2);
+        overflow: hidden;
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius-panel);
         background: var(--pane);
       }
+      .session-results[open] { border-color: var(--line-hover); }
       .session-results[hidden] { display: none; }
       .session-results > summary {
         display: flex;
@@ -2411,59 +2473,68 @@
         list-style: none;
       }
       .session-results > summary::-webkit-details-marker { display: none; }
-      .session-results > summary::before { content: "›"; font-size: var(--text-heading); }
+      .session-results > summary::before { content: "›"; font-size: var(--text-heading); transform-origin: center; transition: transform 120ms ease-out; }
       .session-results[open] > summary::before { transform: rotate(90deg); }
       .session-results > summary:hover { color: var(--text); background: var(--surface-hover); }
       .session-results .result-count { color: var(--quiet); font-variant-numeric: tabular-nums; }
-      #sessionAudioResultsStatus { margin-left: auto; color: var(--warn); }
-      #audioResultsSection { max-height: min(34vh, 300px); overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3); }
+      #sessionAudioResultsStatus { margin-left: auto; }
+      #audioResultsSection { max-height: min(36vh, 320px); overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-3) var(--space-3); }
       #audioJobs [data-audio-remotes]:not([hidden]), #audioJobs [data-audio-local-files]:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--space-2); }
       #audioJobs [data-audio-remotes] > h5, #audioJobs [data-audio-local-files] > h5 { flex-basis: 100%; }
       .audio-job {
-        border-top: 1px solid var(--line-soft);
-        padding-block: var(--space-3);
+        margin-top: var(--space-2);
+        padding: var(--space-2) 0;
         overflow-wrap: anywhere;
       }
-      .audio-job:first-child { border-top: 0; }
-      .audio-job h4, .audio-job p { margin: 0 0 var(--space-2); }
+      .audio-job-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-2); }
+      .audio-job-heading { min-width: 0; }
+      .audio-job h4, .audio-job p { margin: 0; }
       .audio-job h4 { font-size: var(--text-body); font-weight: 600; }
+      .audio-job-route { margin-top: var(--space-1) !important; color: var(--quiet); font-size: var(--text-small); line-height: 1.4; }
       .audio-job audio { display: block; width: 100%; margin-bottom: var(--space-2); }
       .audio-job h5 { margin: var(--space-3) 0 0; color: var(--muted); font-size: var(--text-small); font-weight: 500; }
       .audio-job [hidden] { display: none; }
-      .audio-remote-output, [data-audio-output] { flex: 1 1 240px; min-width: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-control); background: var(--bg); }
+      .audio-remote-output, [data-audio-output] { flex: 1 1 240px; min-width: 0; padding: var(--space-3); border: 1px solid var(--line-soft); border-radius: var(--radius-control); background: var(--field); }
       .audio-remote-output iframe { display: block; width: 100%; height: 180px; margin-top: var(--space-2); border: 0; border-radius: var(--radius-control); }
       [data-download-local-audio] { font-size: var(--text-small); }
       #audioSettingsSection [hidden] { display: none; }
-      .audio-settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-      .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+      #audioSettingsSection { gap: var(--space-2); }
+      .audio-settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-1); }
+      .audio-section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: 0; }
       .audio-section-heading h3 { margin: 0; }
       .audio-service-list { display: grid; gap: var(--space-1); max-height: 230px; overflow-y: auto; overscroll-behavior: contain; }
-      .audio-service-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 52px; padding: var(--space-2) var(--space-3); text-align: left; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: var(--radius-control); cursor: pointer; }
-      .audio-service-row[aria-pressed="true"] { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
-      .audio-service-row:not(:disabled):not([aria-pressed="true"]):hover { background: var(--surface-hover); }
+      .audio-service-row { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 46px; padding: 6px var(--space-2); text-align: left; color: var(--text); background: transparent; border: 1px solid var(--line-soft); border-radius: var(--radius-control); cursor: pointer; }
+      .audio-service-row[aria-pressed="true"] { border-color: var(--line-hover); background: var(--pane-2); }
+      .audio-service-row:not(:disabled):not([aria-pressed="true"]):hover { border-color: var(--line-hover); background: var(--surface-hover); }
       .audio-service-row:disabled { cursor: default; opacity: 0.65; }
       .audio-service-label { flex: 1; min-width: 0; }
       .audio-service-label strong { display: block; font-size: var(--text-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .audio-service-label small { display: block; margin-top: var(--space-1); color: var(--muted); font-size: var(--text-small); line-height: 1.4; overflow-wrap: anywhere; }
-      .audio-service-status { flex: 0 0 auto; max-width: 110px; font-size: var(--text-small); color: var(--muted); text-align: right; }
-      .audio-service-status[data-pending="true"] { color: var(--warn); }
-      .audio-connection-editor { margin-top: var(--space-2); border-block: 1px solid var(--line-soft); }
-      .audio-connection-editor > summary { padding-block: var(--space-3); cursor: pointer; font-size: var(--text-label); font-weight: 600; overflow-wrap: anywhere; }
-      .audio-editor-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-3); }
+      .audio-service-status { flex: 0 0 auto; max-width: 118px; text-align: right; }
+      .audio-connection-editor { margin-top: 0; }
+      .audio-connection-editor > summary { padding: 6px var(--space-2); cursor: pointer; border-radius: var(--radius-control); background: var(--pane-2); font-size: var(--text-label); font-weight: 600; overflow-wrap: anywhere; }
+      .audio-editor-body { display: grid; gap: var(--space-2); padding-top: var(--space-2); }
+      .audio-editor-body > * { margin-block: 0; }
       .audio-editor-body .field { margin: 0; }
-      .audio-editor-body .field-hint { line-height: 1.5; }
-      #sunoAccountName, #sunoRetrieveAccount { overflow-wrap: anywhere; }
-      #sunoCookieHelp li + li { margin-top: var(--space-2); }
-      .audio-model-options { margin-top: var(--space-2); }
-      .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: var(--text-small); padding-block: var(--space-2); }
+      .audio-editor-body .field-hint { line-height: 1.4; }
+      #sunoAccountName { overflow-wrap: anywhere; }
+      #sunoCookieHelp li + li { margin-top: var(--space-1); }
+      .audio-model-options { margin-top: var(--space-1); }
+      .audio-model-options > summary { cursor: pointer; color: var(--muted); font-size: var(--text-small); border-radius: var(--radius-control); }
+      .audio-model-options > summary:hover { color: var(--text); background: rgba(255, 255, 255, 0.035); }
       .settings-disclosure > .field, .audio-model-options > .field { margin-block: var(--space-2); }
-      .settings-group { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line-soft); }
+      .settings-group { margin-top: var(--space-4); }
       .settings-subheading { font-size: var(--text-label); margin: 0 0 var(--space-2); font-weight: 600; }
+      .settings-subheading-row .settings-subheading { margin: 0; }
       .connection-state { color: var(--muted); font-size: var(--text-label); margin: 0 0 var(--space-1); }
+      .audio-provider-panel { display: grid; gap: var(--space-1); padding: 0; border: 0; border-radius: 0; background: transparent; }
+      .audio-provider-panel > * { margin-block: 0; }
       .field-with-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; }
       .field-with-action button { padding-inline: var(--space-2); }
       #audioServiceModel { font-family: var(--font-code); }
-      .audio-maintenance { padding-top: var(--space-2); margin-top: var(--space-2); }
+      .audio-maintenance { margin-top: var(--space-2); }
+      .audio-commit-actions { margin-top: var(--space-2); }
+      .audio-service-maintenance { margin-top: var(--space-2); }
       .danger-action { color: var(--danger); background: transparent; border-color: transparent; }
       .audio-output-meta { color: var(--quiet); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
 
@@ -2478,17 +2549,17 @@
       }
 
       .model-setup-guide:not([hidden]) + .settings-section {
-        margin-top: 14px;
+        margin-top: var(--space-4);
       }
 
       .settings-section + .model-setup-guide {
-        margin-top: 14px;
+        margin-top: var(--space-4);
       }
 
       .model-setup-guide {
         display: grid;
-        gap: 7px;
-        padding: 10px;
+        gap: var(--space-2);
+        padding: var(--space-3);
         color: var(--muted);
         background: rgba(124, 184, 232, 0.08);
         border: 1px solid rgba(124, 184, 232, 0.3);
@@ -2525,8 +2596,8 @@
       }
 
       .settings-lock-notice {
-        margin: 0 0 12px;
-        padding: 8px 10px;
+        margin: 0 0 var(--space-3);
+        padding: var(--space-2) var(--space-3);
         color: var(--warn);
         background: rgba(255, 209, 102, 0.08);
         border: 1px solid rgba(255, 209, 102, 0.35);
@@ -2544,9 +2615,9 @@
       }
 
       .settings-scope .settings-section + .settings-section {
-        margin-top: var(--space-4);
-        padding-top: var(--space-4);
-        border-top: 1px solid var(--line-soft);
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+        border-top: 1px solid var(--line-divider);
       }
 
       .settings-scope .settings-section h3 {
@@ -2572,30 +2643,21 @@
       .key-row {
         display: grid;
         grid-template-columns: 1fr auto;
-        gap: 6px;
+        gap: var(--space-2);
       }
 
       .subscription-auth-panel {
         --subscription-state: var(--quiet);
-        position: relative;
         display: grid;
-        gap: 9px;
+        gap: var(--space-2);
         min-width: 0;
-        padding: 7px 0 8px 12px;
+        padding: var(--space-3);
         color: var(--muted);
-        background: transparent;
+        background: rgba(255, 255, 255, 0.025);
         border: 0;
-        border-radius: 0;
+        border-radius: var(--radius-panel);
         font-size: 10px;
         line-height: 1.4;
-      }
-
-      .subscription-auth-panel::before {
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 2px;
-        background: var(--subscription-state);
-        content: "";
       }
 
       .subscription-auth-panel[data-auth-state="pending"] {
@@ -2621,7 +2683,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 10px;
+        gap: var(--space-2);
       }
 
       .subscription-auth-experimental {
@@ -2864,15 +2926,14 @@
 
       .subscription-auth-details ul {
         display: grid;
-        gap: 4px;
-        margin: 7px 0 0;
-        padding: 8px 8px 0 18px;
-        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        gap: var(--space-1);
+        margin: var(--space-2) 0 0;
+        padding: 0 var(--space-2) 0 var(--space-6);
       }
 
       .direct-api-fields {
         display: grid;
-        gap: 9px;
+        gap: var(--space-3);
       }
 
       .capability-preview {
@@ -2972,10 +3033,8 @@
 
       .citation-sources {
         display: grid;
-        gap: 7px;
-        margin-top: 11px;
-        padding-top: 9px;
-        border-top: 1px solid var(--line-soft);
+        gap: var(--space-2);
+        margin-top: var(--space-3);
       }
 
       .citation-sources-label {
@@ -3006,7 +3065,7 @@
         overflow: hidden;
         color: var(--trace);
         background: rgba(120, 185, 232, 0.06);
-        border-left: 2px solid rgba(120, 185, 232, 0.46);
+        border: 1px solid rgba(120, 185, 232, 0.28);
         border-radius: 4px;
         font-size: 10px;
         line-height: 1.3;
@@ -3064,11 +3123,6 @@
         align-items: center;
         gap: 5px;
         min-width: 0;
-      }
-
-      .model-load-copy .inline-help::after {
-        right: auto;
-        left: 0;
       }
 
       .manual-model-entry {
@@ -3146,13 +3200,11 @@
 
       .skill-group {
         display: grid;
-        gap: 6px;
+        gap: var(--space-2);
       }
 
       .skill-group + .skill-group {
-        margin-top: 5px;
-        padding-top: 11px;
-        border-top: 1px solid var(--line-soft);
+        margin-top: var(--space-4);
       }
 
       .skill-group h3 {
@@ -3268,8 +3320,7 @@
 
       .skill-viewer-body {
         min-width: 0;
-        padding-top: 12px;
-        border-top: 1px solid var(--line-soft);
+        margin-top: var(--space-3);
         font-size: 12px;
         line-height: 1.6;
         overflow-wrap: anywhere;
@@ -3312,9 +3363,10 @@
         align-items: center;
         gap: var(--space-2);
         margin-top: var(--space-4);
-        padding: var(--space-3) 0 0;
-        border-top: 1px solid var(--line-soft);
-        background: transparent;
+        padding: var(--space-2);
+        border: 0;
+        border-radius: var(--radius-control);
+        background: rgba(255, 255, 255, 0.025);
       }
 
       .settings-actions button,
@@ -3340,7 +3392,6 @@
         min-width: 0;
         background: transparent;
         border: 0;
-        border-top: 1px solid var(--line-soft);
       }
 
       .settings-disclosure > summary {
@@ -3350,13 +3401,14 @@
         gap: var(--space-2);
         min-height: var(--control-height);
         margin: 0;
-        padding: var(--space-2) 0;
+        padding: var(--space-2);
         color: var(--muted);
         font-size: var(--text-small);
         font-weight: 500;
+        border-radius: var(--radius-control);
         list-style: none;
         cursor: pointer;
-        transition: background 120ms ease, border-color 120ms ease;
+        transition: background-color 120ms ease, color 120ms ease;
       }
 
       .settings-disclosure > summary::-webkit-details-marker {
@@ -3365,10 +3417,12 @@
 
       .settings-disclosure > summary:hover {
         color: var(--text);
+        background: rgba(255, 255, 255, 0.035);
       }
 
       .settings-disclosure[open] > summary {
         color: var(--text);
+        background: rgba(255, 255, 255, 0.025);
       }
       .settings-disclosure > summary:not(:has(.settings-disclosure-chevron))::after { content: "›"; font-size: var(--text-heading); }
       .settings-disclosure[open] > summary:not(:has(.settings-disclosure-chevron))::after { transform: rotate(90deg); }
@@ -3409,21 +3463,45 @@
       }
 
       .settings-disclosure > .advanced-fields {
-        padding: var(--space-2) 0 var(--space-3);
+        padding: var(--space-2);
       }
 
       .capability-settings-section > .settings-disclosure {
-        margin-top: 8px;
+        margin-top: var(--space-2);
       }
 
       .capability-settings-section > .settings-disclosure + .settings-disclosure {
-        margin-top: 7px;
+        margin-top: var(--space-2);
+      }
+
+      #audioSettingsSection details > summary {
+        min-height: 28px;
+        padding: var(--space-1) var(--space-2);
+      }
+
+      #audioSettingsSection details > .field {
+        margin: var(--space-1) var(--space-2);
+      }
+
+      #audioSettingsSection details > .field-hint,
+      #audioSettingsSection details > .audio-settings-actions,
+      #sunoCookieHelp > ol {
+        margin: var(--space-1) var(--space-2) 0;
+      }
+
+      #sunoCookieHelp > ol {
+        padding-left: 20px;
+      }
+
+      #audioSettingsSection .settings-actions {
+        margin-top: 0;
+        padding: var(--space-1) var(--space-2);
       }
 
       .advanced-groups {
         display: grid;
         gap: var(--space-3);
-        padding: var(--space-2) 0 var(--space-3);
+        padding: var(--space-2);
       }
 
       .app-confirmation-layer {
@@ -3470,17 +3548,11 @@
 
       .advanced-group {
         display: grid;
-        gap: 9px;
+        gap: var(--space-3);
         min-width: 0;
         margin: 0;
-        padding: 0 0 13px;
+        padding: 0;
         border: 0;
-        border-bottom: 1px solid var(--line-soft);
-      }
-
-      .advanced-group:last-child {
-        padding-bottom: 0;
-        border-bottom: 0;
       }
 
       .advanced-group legend {
@@ -3516,8 +3588,7 @@
       }
 
       .skill-paste {
-        border-top: 1px solid var(--line-soft);
-        padding-top: 8px;
+        margin-top: var(--space-2);
       }
 
       .skill-paste > summary {
@@ -3528,13 +3599,13 @@
 
       .skill-paste-fields {
         display: grid;
-        gap: 7px;
+        gap: var(--space-2);
       }
 
       .skill-import-body {
         display: grid;
-        gap: 8px;
-        padding-top: 8px;
+        gap: var(--space-2);
+        padding-top: var(--space-2);
       }
 
       .skill-paste textarea {
@@ -3578,6 +3649,38 @@
         align-content: start;
         min-height: 0;
         color: var(--muted);
+      }
+
+      .context-settings > .custom-instructions-settings,
+      .context-settings > .skill-manager {
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+        border-top: 1px solid var(--line-divider);
+      }
+
+      .context-settings > .skill-viewer { margin-top: var(--space-6); }
+
+      .custom-instructions-settings > .inspector-scope-header {
+        margin-bottom: var(--space-2);
+      }
+
+      .custom-instructions-settings textarea {
+        min-height: 96px;
+        height: 96px;
+        resize: vertical;
+      }
+
+      .custom-instructions-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-2);
+      }
+
+      .custom-instructions-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: var(--space-2);
       }
 
       .context-shell {
@@ -3653,7 +3756,7 @@
         padding: 7px 8px;
         color: var(--muted);
         background: var(--pane);
-        border-left: 2px solid var(--line-soft);
+        border-radius: var(--radius-control);
         font-size: 11px;
         line-height: 1.4;
         overflow-wrap: anywhere;
@@ -3766,8 +3869,8 @@
           <div id="conversationAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="messageActionAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <details id="sessionAudioResults" class="session-results" hidden>
-            <summary id="sessionAudioResultsSummary"><span data-i18n="Session audio results">Session audio results</span><span id="sessionAudioResultsCount" class="result-count"></span><span id="sessionAudioResultsStatus" class="field-hint" role="status" aria-live="polite"></span></summary>
-            <section id="audioResultsSection" aria-label="Session audio results" data-i18n-aria-label="Session audio results">
+            <summary id="sessionAudioResultsSummary"><span data-i18n="Session audio">Session audio</span><span id="sessionAudioResultsCount" class="result-count"></span><span id="sessionAudioResultsStatus" class="activity-state" role="status" aria-live="polite"></span></summary>
+            <section id="audioResultsSection" aria-label="Session audio" data-i18n-aria-label="Session audio">
               <div id="audioJobs"></div>
             </section>
           </details>
@@ -3806,7 +3909,7 @@
                       <h2 id="editScopeHeading" data-i18n="Scope">Scope</h2>
                       <span id="editScopeHelp" class="inline-help" tabindex="0" role="note" aria-label="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-tooltip="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-i18n-aria-label="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately." data-i18n-data-tooltip="Only selected categories may change, regardless of approval mode. Clear all for read-only. Reading Live state stays available. Changes save immediately.">?</span>
                       <span id="permissionsSaveStatus" class="permissions-save-status" role="status" aria-live="polite" hidden></span>
-                      <label class="edit-scope-all"><input id="editScopeAll" type="checkbox" aria-label="All edit scopes" data-i18n-aria-label="All edit scopes"><span data-i18n="All">All</span></label>
+                      <label class="edit-scope-all"><input id="editScopeAll" name="editScopeAll" type="checkbox" aria-label="All edit scopes" data-i18n-aria-label="All edit scopes"><span data-i18n="All">All</span></label>
                     </div>
                     <fieldset>
                       <legend class="visually-hidden" data-i18n="Allowed changes">Allowed changes</legend>
@@ -3972,11 +4075,13 @@
               </section>
 
               <section id="modelSettingsSection" class="settings-section" aria-labelledby="modelSettingsHeading">
-                <h3 id="modelSettingsHeading" data-i18n="Models">Models</h3>
+                <div class="field-label-row">
+                  <h3 id="modelSettingsHeading" data-i18n="Models">Models</h3>
+                  <span id="discoverModelsHelp" class="inline-help" tabindex="0" role="note" aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account.">?</span>
+                </div>
                 <div class="model-load-row">
                   <div class="model-load-copy">
                     <span id="profileModelCount" class="field-hint" role="status" aria-live="polite"></span>
-                    <span id="discoverModelsHelp" class="inline-help" tabindex="0" role="note" aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-aria-label="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account." data-i18n-data-tooltip="Loads this connection's catalog. Direct API reloads add new models; changing API replaces the list. OAuth reloads match the selected account.">?</span>
                   </div>
                   <button id="discoverModelsButton" class="secondary" type="button" data-idle-label="Load Models" data-i18n-data-idle-label="Load Models" onclick="LiveSmithUI.discoverModels()" data-i18n="Load Models">Load Models</button>
                 </div>
@@ -4153,44 +4258,6 @@
               </div>
               </section>
 
-              <section id="skillManager" class="settings-scope skill-manager" aria-labelledby="skillsHeading" aria-busy="false" tabindex="-1">
-                <div class="inspector-scope-header">
-                  <h2 id="skillsHeading" data-i18n="Session Skills">Session Skills</h2>
-                  <span class="inline-help" tabindex="0" role="note" aria-label="Enable for this Session, or use $skill-id for one turn." data-tooltip="Enable for this Session, or use $skill-id for one turn." data-i18n-aria-label="Enable for this Session, or use $skill-id for one turn." data-i18n-data-tooltip="Enable for this Session, or use $skill-id for one turn.">?</span>
-                </div>
-                <section class="skill-group" aria-labelledby="builtInSkillsHeading">
-                  <h3 id="builtInSkillsHeading" data-i18n="Built-in">Built-in</h3>
-                  <div id="builtInSkillList" class="skill-list" role="list" aria-labelledby="builtInSkillsHeading"></div>
-                  <p id="builtInSkillEmptyState" class="skill-empty" hidden data-i18n="Same-ID User Skills are shown below.">Same-ID User Skills are shown below.</p>
-                </section>
-                <section class="skill-group" aria-labelledby="userSkillsHeading">
-                  <h3 id="userSkillsHeading" data-i18n="User Skills">User Skills</h3>
-                  <div id="userSkillList" class="skill-list" role="list" aria-labelledby="userSkillsHeading"></div>
-                  <p id="userSkillEmptyState" class="skill-empty" data-i18n="No user Skills.">No user Skills.</p>
-                  <details class="skill-paste">
-                    <summary data-i18n="Import Skill">Import Skill</summary>
-                    <div class="skill-import-body">
-                      <div id="skillDropZone" class="skill-drop-zone">
-                        <strong data-i18n="Drop SKILL.md">Drop SKILL.md</strong>
-                      </div>
-                      <div class="skill-paste-fields">
-                        <label for="skillPasteText" data-i18n="Paste SKILL.md">Paste SKILL.md</label>
-                        <textarea id="skillPasteText" name="skillMarkdown" autocomplete="off" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What this Skill does&#10;---&#10;Instructions…"></textarea>
-                        <button id="installPastedSkillButton" class="secondary" type="button" disabled data-i18n="Install Skill">Install Skill</button>
-                      </div>
-                    </div>
-                  </details>
-                </section>
-              </section>
-              <section id="skillViewer" class="settings-scope skill-viewer" aria-labelledby="skillViewerId" hidden>
-                <div class="skill-viewer-header">
-                  <button id="closeSkillViewer" class="secondary" type="button" aria-label="Back to Skills" data-i18n-aria-label="Back to Skills" data-i18n="← Skills">← Skills</button>
-                  <span data-i18n="Built-in · Read-only">Built-in · Read-only</span>
-                </div>
-                <code id="skillViewerId" class="skill-viewer-id" translate="no"></code>
-                <p id="skillViewerDescription" class="skill-viewer-description"></p>
-                <div id="skillViewerBody" class="skill-viewer-body"></div>
-              </section>
             </div>
           </div>
           <div id="appPanel" class="tab-panel app-panel" role="tabpanel" aria-labelledby="appTab" tabindex="0" hidden>
@@ -4203,7 +4270,7 @@
                 <h3 id="followUpSettingsHeading" data-i18n="Conversation &amp; Display">Conversation &amp; Display</h3>
                 <div class="field">
                   <label for="uiLanguage" data-i18n="Interface language">Interface language</label>
-                  <select id="uiLanguage" aria-label="Interface language" onchange="LiveSmithUI.setUiLanguage(this.value)" data-i18n-aria-label="Interface language">
+                  <select id="uiLanguage" name="uiLanguage" autocomplete="off" aria-label="Interface language" onchange="LiveSmithUI.setUiLanguage(this.value)" data-i18n-aria-label="Interface language">
                     <option value="system" data-i18n="System language">System language</option>
                   </select>
                 </div>
@@ -4269,21 +4336,24 @@
                   </div>
                   <div class="field">
                     <label for="audioServiceProvider" data-i18n="Provider">Provider</label>
-                    <select id="audioServiceProvider" onchange="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceOperations"></select>
+                    <select id="audioServiceProvider" name="audioServiceProvider" autocomplete="off" onchange="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceOperations"></select>
                     <span id="audioServiceOperations" class="field-hint"></span>
                   </div>
                   <div class="field" id="audioServiceCallbackField" hidden>
-                    <label for="audioServiceCallback" data-i18n="Public HTTPS callback URL">Public HTTPS callback URL</label>
+                    <label for="audioServiceCallback" data-i18n="Callback URL">Callback URL</label>
                     <input id="audioServiceCallback" name="audioCallbackUrl" type="url" inputmode="url" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceCallbackHint" />
-                    <span id="audioServiceCallbackHint" class="field-hint" data-i18n="Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.">Required to enable SunoAPI.org. Use a public HTTPS domain you own, without a custom port, credentials, query parameters, or a fragment. SunoAPI.org sends generation notifications here; Live Smith polls for results. Live Smith does not host or test this callback.</span>
+                    <span id="audioServiceCallbackHint" class="field-hint" data-i18n="Required to enable SunoAPI.org. Use any HTTP or HTTPS callback accepted by the provider, including a custom port or query token. SunoAPI.org sends notifications here; Live Smith polls for results and does not contact or test this URL.">Required to enable SunoAPI.org. Use any HTTP or HTTPS callback accepted by the provider, including a custom port or query token. SunoAPI.org sends notifications here; Live Smith polls for results and does not contact or test this URL.</span>
                   </div>
                   <p class="field-hint" id="audioServiceDisclosure"></p>
-                  <div id="sunoLoginControls" hidden>
-                    <h4 class="settings-subheading" data-i18n="Account connection">Account connection</h4>
+                  <section id="sunoLoginControls" class="audio-provider-panel" hidden>
+                    <div class="field-label-row settings-subheading-row">
+                      <h4 id="sunoConnectionHeading" class="settings-subheading" data-i18n="Suno.com connection">Suno.com connection</h4>
+                      <span id="sunoFeatureHelp" class="inline-help" tabindex="0" role="note" aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno.">?</span>
+                    </div>
                     <p id="sunoLoginStatus" class="connection-state" role="status" aria-live="polite"></p>
                     <p id="sunoAccountName" class="field-hint" hidden></p>
                     <div class="audio-settings-actions">
-                      <button id="openSunoWebsiteButton" class="secondary" type="button" data-i18n="Open Suno in default browser">Open Suno in default browser</button>
+                      <button id="openSunoWebsiteButton" class="secondary" type="button" title="Open Suno in default browser" aria-label="Open Suno in default browser" data-i18n-title="Open Suno in default browser" data-i18n-aria-label="Open Suno in default browser" data-i18n="Open Suno">Open Suno</button>
                       <button id="refreshSunoLoginButton" class="secondary" type="button" data-i18n="Refresh connection" disabled>Refresh connection</button>
                     </div>
                     <details id="sunoCookieEditor" class="settings-disclosure">
@@ -4292,15 +4362,15 @@
                       <summary data-i18n="How to find your Suno Cookie">How to find your Suno Cookie</summary>
                       <ol class="field-hint">
                         <li data-i18n="Open Suno and sign in yourself in your browser. No browser extension is needed.">Open Suno and sign in yourself in your browser. No browser extension is needed.</li>
-                        <li data-i18n="Open browser developer tools → Application or Storage → Cookies → auth.suno.com. Find __client and copy only its value.">Open browser developer tools → Application or Storage → Cookies → auth.suno.com. Find __client and copy only its value.</li>
-                        <li data-i18n="If it is not listed, open Network, reload Suno, and select the client request to auth.suno.com. In its request Cookies, copy only the Suno __client value, never the whole Cookie header.">If it is not listed, open Network, reload Suno, and select the client request to auth.suno.com. In its request Cookies, copy only the Suno __client value, never the whole Cookie header.</li>
-                        <li data-i18n="Paste it into the local Suno Cookie field below and choose Connect. Never paste it into chat or share it. Do not paste browser exports or other cookies.">Paste it into the local Suno Cookie field below and choose Connect. Never paste it into chat or share it. Do not paste browser exports or other cookies.</li>
+                        <li data-i18n="Open browser developer tools → Network, reload Suno, and select a request to auth.suno.com or studio-api-prod.suno.com.">Open browser developer tools → Network, reload Suno, and select a request to auth.suno.com or studio-api-prod.suno.com.</li>
+                        <li data-i18n="Copy its request Cookie header. Current sessions may contain __session and __client_uat instead of __client; both forms are supported.">Copy its request Cookie header. Current sessions may contain __session and __client_uat instead of __client; both forms are supported.</li>
+                        <li data-i18n="Paste it into the local Suno session field and choose Connect. Live Smith keeps only required Suno/Clerk fields and discards unrelated cookies. Never paste it into chat or share it.">Paste it into the local Suno session field and choose Connect. Live Smith keeps only required Suno/Clerk fields and discards unrelated cookies. Never paste it into chat or share it.</li>
                       </ol>
                     </details>
                     <div class="field">
-                      <label for="sunoSessionValue" data-i18n="Suno Cookie (__client)">Suno Cookie (__client)</label>
-                      <input id="sunoSessionValue" type="password" maxlength="8192" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure sunoCookieHint" />
-                      <span id="sunoCookieHint" class="field-hint" data-i18n="Only the __client value or exactly __client=value, up to 8192 characters. Saved privately for this connection; the field clears when submitted.">Only the __client value or exactly __client=value, up to 8192 characters. Saved privately for this connection; the field clears when submitted.</span>
+                      <label for="sunoSessionValue" data-i18n="Suno session Cookie">Suno session Cookie</label>
+                      <input id="sunoSessionValue" name="sunoSessionCookie" type="password" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure sunoCookieHint" />
+                      <span id="sunoCookieHint" class="field-hint" data-i18n="Accepts a __client or __session value, or a Cookie header containing one of them. Saved and refreshed privately for this connection; unrelated cookies are discarded and the field clears when submitted.">Accepts a __client or __session value, or a Cookie header containing one of them. Saved and refreshed privately for this connection; unrelated cookies are discarded and the field clears when submitted.</span>
                     </div>
                     <div class="audio-settings-actions">
                       <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
@@ -4316,59 +4386,46 @@
                         <span id="sunoModelStatus" class="field-hint" role="status" aria-live="polite"></span>
                       </div>
                     </div>
-                    <details class="settings-disclosure" id="sunoFeatureHelp">
-                      <summary data-i18n="Suno features and limits">Suno features and limits</summary>
-                      <p class="field-hint" data-i18n="Experimental Suno.com subscription connection. Import your Cookie, then enable and save this connection to expose music tools in chat. Generation uses your Suno credits. Security challenges require manual action on Suno; failed or unknown submissions are never retried automatically.">Experimental Suno.com subscription connection. Import your Cookie, then enable and save this connection to expose music tools in chat. Generation uses your Suno credits. Security challenges require manual action on Suno; failed or unknown submissions are never retried automatically.</p>
-                      <p class="field-hint" data-i18n="Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, retrieve existing songs for online preview, extend a song, or get its whole version.">Ask in chat to create music, use your lyrics and styles, exclude styles, set Weirdness and Style Influence (0–100), reuse an existing Persona ID, browse songs, retrieve existing songs for online preview, extend a song, or get its whole version.</p>
-                      <p class="field-hint" data-i18n="Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.">Not connected: Sounds/Loop/BPM/Key, vocal gender or duration controls, audio uploads, Cover/Remaster, Replace Section, Suno stems, new Voices, custom-model training, and workspace editing. Existing LALAL.AI stem tools and ElevenLabs sound effects remain separate services.</p>
-                    </details>
-                    <details class="settings-disclosure">
-                    <summary data-i18n="Connection maintenance">Connection maintenance</summary>
-                    <div class="audio-settings-actions audio-maintenance">
-                      <button id="logoutSunoButton" class="secondary danger-action" type="button" data-i18n="Clear local Cookie" disabled>Clear local Cookie</button>
-                    </div>
-                    <p class="field-hint" data-i18n="Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.">Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.</p>
-                    </details>
-                    <details id="sunoRetrieveDetails" class="audio-model-options">
-                      <summary data-i18n="Preview existing Suno songs">Preview existing Suno songs</summary>
-                      <p id="sunoRetrieveHelp" class="field-hint" data-i18n="Retrieve already generated songs for online preview. Preview does not require download authorization or use your download allowance. To save one output for Live, choose Download and confirm; this may use up to one existing download allowance.">Retrieve already generated songs for online preview. Preview does not require download authorization or use your download allowance. To save one output for Live, choose Download and confirm; this may use up to one existing download allowance.</p>
-                      <p id="sunoRetrieveAccount" class="field-hint" role="status"></p>
-                      <div class="field">
-                        <label for="sunoRetrieveSongs" data-i18n="Suno song links or IDs (1–2)">Suno song links or IDs (1–2)</label>
-                        <textarea id="sunoRetrieveSongs" rows="2" maxlength="512" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="sunoRetrieveHelp sunoRetrieveAccount sunoRetrieveFormat" disabled></textarea>
-                        <span id="sunoRetrieveFormat" class="field-hint" data-i18n="One per line: https://suno.com/song/{id} or a song UUID.">One per line: https://suno.com/song/{id} or a song UUID.</span>
-                      </div>
-                      <div class="audio-settings-actions">
-                        <button id="retrieveSunoSongsButton" class="secondary" type="button" data-i18n="Retrieve for preview" disabled>Retrieve for preview</button>
-                      </div>
-                    </details>
-                  </div>
+                  </section>
                   <details class="audio-model-options settings-disclosure" id="audioServiceModelField">
                     <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
                     <div class="field">
                       <label for="audioServiceModel" data-i18n="Music model (optional)">Music model (optional)</label>
                       <input id="audioServiceModel" name="audioModelId" type="text" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="LiveSmithUI.handleAudioSettingsInput()" aria-describedby="audioServiceModelHint" />
+                      <datalist id="sunoApiModelOptions"></datalist>
                       <span id="audioServiceModelHint" class="field-hint"></span>
                     </div>
                   </details>
                   <label id="audioServiceEnabledField" class="context-usage-setting" for="audioServiceEnabled">
-                    <input id="audioServiceEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
+                    <input id="audioServiceEnabled" name="audioConnectionEnabled" type="checkbox" aria-describedby="audioServiceDisclosure" onchange="LiveSmithUI.handleAudioSettingsInput()" />
                     <span data-i18n="Enable connection">Enable connection</span>
                   </label>
                   <div class="field" id="audioServiceKeyField">
                     <label for="audioServiceApiKey" data-i18n="API key">API key</label>
-                    <input id="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
+                    <input id="audioServiceApiKey" name="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
                     <span id="audioServiceKeyStatus" class="field-hint" role="status" aria-live="polite"></span>
                     <span id="audioServiceKeyHint" class="field-hint" data-i18n="Leave blank to keep this connection's saved key. Clear key disables only this connection.">Leave blank to keep this connection's saved key. Clear key disables only this connection.</span>
+                    <div id="sunoPlatformActions" class="audio-settings-actions" hidden>
+                      <button id="openSunoPlatformButton" class="secondary" type="button" data-i18n="Open Suno Platform">Open Suno Platform</button>
+                    </div>
                   </div>
                   <p id="audioServiceConflict" class="field-hint" role="status" hidden data-i18n="Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.">Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.</p>
-                  <div class="audio-settings-actions">
-                    <button id="saveAudioServiceButton" class="primary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings()" data-i18n="Save audio settings" disabled>Save audio settings</button>
+                  <details id="audioServiceMaintenance" class="settings-disclosure audio-service-maintenance" hidden>
+                    <summary data-i18n="Connection maintenance">Connection maintenance</summary>
+                    <p id="audioServiceMaintenanceHint" class="field-hint"></p>
+                    <div class="audio-settings-actions audio-maintenance">
+                      <button id="logoutSunoButton" class="secondary danger-action" type="button" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
+                      <button id="clearAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" hidden disabled>Clear key</button>
+                      <button id="removeAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
+                    </div>
+                  </details>
+                  <div class="settings-actions audio-commit-actions" role="group" aria-labelledby="audioConnectionActionsLabel">
+                    <span class="settings-actions-status">
+                      <span id="audioConnectionActionsLabel" class="settings-actions-owner" data-i18n="Audio connection">Audio connection</span>
+                      <span id="audioDraftStatus" class="draft-status" role="status" aria-live="polite"></span>
+                    </span>
                     <button id="reloadAudioServiceButton" class="secondary" type="button" onclick="LiveSmithUI.reloadAudioService()" data-i18n="Reload connection" hidden>Reload connection</button>
-                  </div>
-                  <div class="audio-settings-actions audio-maintenance">
-                    <button id="clearAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" disabled>Clear key</button>
-                    <button id="removeAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
+                    <button id="saveAudioServiceButton" class="primary" type="button" onclick="LiveSmithUI.saveAudioServiceSettings()" data-i18n="Save audio settings" disabled>Save audio settings</button>
                   </div>
                   </div>
                 </details>
@@ -4377,7 +4434,65 @@
             </div>
           </div>
           <div id="contextPanel" class="tab-panel" role="tabpanel" aria-labelledby="contextTab" tabindex="0" hidden>
-            <div id="context" class="context settings"></div>
+            <div class="settings context-settings">
+              <div id="context" class="context"></div>
+              <section id="customInstructionsSettings" class="settings-scope custom-instructions-settings" aria-labelledby="customInstructionsHeading">
+                <div class="inspector-scope-header">
+                  <h2 id="customInstructionsHeading" data-i18n="Custom Instructions">Custom Instructions</h2>
+                  <span class="inline-help" tabindex="0" role="note" aria-label="Set standing creative, workflow, and tool preferences for every Session. Your current request can override them. Security, Edit Scope, approval, credentials, and actual capabilities remain enforced." data-tooltip="Set standing creative, workflow, and tool preferences for every Session. Your current request can override them. Security, Edit Scope, approval, credentials, and actual capabilities remain enforced." data-i18n-aria-label="Set standing creative, workflow, and tool preferences for every Session. Your current request can override them. Security, Edit Scope, approval, credentials, and actual capabilities remain enforced." data-i18n-data-tooltip="Set standing creative, workflow, and tool preferences for every Session. Your current request can override them. Security, Edit Scope, approval, credentials, and actual capabilities remain enforced.">?</span>
+                </div>
+                <div class="field">
+                  <label class="visually-hidden" for="customInstructions" data-i18n="Custom Instructions">Custom Instructions</label>
+                  <textarea id="customInstructions" name="customInstructions" autocomplete="off" maxlength="16000" spellcheck="true" placeholder="e.g. If the deliverable is unclear, ask whether I want editable Live work, rendered audio, or both…" aria-describedby="customInstructionsHint customInstructionsCount" oninput="LiveSmithUI.handleCustomInstructionsInput()" data-i18n-placeholder="e.g. If the deliverable is unclear, ask whether I want editable Live work, rendered audio, or both…"></textarea>
+                  <span id="customInstructionsHint" class="field-hint" data-i18n="Applies as a default across Sessions; the current request takes precedence.">Applies as a default across Sessions; the current request takes precedence.</span>
+                </div>
+                <div class="custom-instructions-meta">
+                  <span id="customInstructionsStatus" class="draft-status" role="status" aria-live="polite"></span>
+                  <span id="customInstructionsCount" class="field-hint" aria-hidden="true"></span>
+                </div>
+                <div class="custom-instructions-actions">
+                  <button id="saveCustomInstructionsButton" class="primary" type="button" onclick="LiveSmithUI.saveCustomInstructions()" disabled data-i18n="Save instructions">Save instructions</button>
+                </div>
+              </section>
+              <section id="skillManager" class="settings-scope skill-manager" aria-labelledby="skillsHeading" aria-busy="false" tabindex="-1">
+                <div class="inspector-scope-header">
+                  <h2 id="skillsHeading" data-i18n="Session Skills">Session Skills</h2>
+                  <span class="inline-help" tabindex="0" role="note" aria-label="Enable for this Session, or use $skill-id for one turn." data-tooltip="Enable for this Session, or use $skill-id for one turn." data-i18n-aria-label="Enable for this Session, or use $skill-id for one turn." data-i18n-data-tooltip="Enable for this Session, or use $skill-id for one turn.">?</span>
+                </div>
+                <section class="skill-group" aria-labelledby="builtInSkillsHeading">
+                  <h3 id="builtInSkillsHeading" data-i18n="Built-in">Built-in</h3>
+                  <div id="builtInSkillList" class="skill-list" role="list" aria-labelledby="builtInSkillsHeading"></div>
+                  <p id="builtInSkillEmptyState" class="skill-empty" hidden data-i18n="Same-ID User Skills are shown below.">Same-ID User Skills are shown below.</p>
+                </section>
+                <section class="skill-group" aria-labelledby="userSkillsHeading">
+                  <h3 id="userSkillsHeading" data-i18n="User Skills">User Skills</h3>
+                  <div id="userSkillList" class="skill-list" role="list" aria-labelledby="userSkillsHeading"></div>
+                  <p id="userSkillEmptyState" class="skill-empty" data-i18n="No user Skills.">No user Skills.</p>
+                  <details class="skill-paste">
+                    <summary data-i18n="Import Skill">Import Skill</summary>
+                    <div class="skill-import-body">
+                      <div id="skillDropZone" class="skill-drop-zone">
+                        <strong data-i18n="Drop SKILL.md">Drop SKILL.md</strong>
+                      </div>
+                      <div class="skill-paste-fields">
+                        <label for="skillPasteText" data-i18n="Paste SKILL.md">Paste SKILL.md</label>
+                        <textarea id="skillPasteText" name="skillMarkdown" autocomplete="off" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What this Skill does&#10;---&#10;Instructions…"></textarea>
+                        <button id="installPastedSkillButton" class="secondary" type="button" disabled data-i18n="Install Skill">Install Skill</button>
+                      </div>
+                    </div>
+                  </details>
+                </section>
+              </section>
+              <section id="skillViewer" class="settings-scope skill-viewer" aria-labelledby="skillViewerId" hidden>
+                <div class="skill-viewer-header">
+                  <button id="closeSkillViewer" class="secondary" type="button" aria-label="Back to Skills" data-i18n-aria-label="Back to Skills" data-i18n="← Skills">← Skills</button>
+                  <span data-i18n="Built-in · Read-only">Built-in · Read-only</span>
+                </div>
+                <code id="skillViewerId" class="skill-viewer-id" translate="no"></code>
+                <p id="skillViewerDescription" class="skill-viewer-description"></p>
+                <div id="skillViewerBody" class="skill-viewer-body"></div>
+              </section>
+            </div>
           </div>
         </aside>
       </main>

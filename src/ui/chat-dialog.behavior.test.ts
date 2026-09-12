@@ -355,8 +355,8 @@ test("first-run model setup is primary while advanced controls stay collapsed", 
       "#extraBodySettings",
     ]) assert.equal(harness.document.querySelector(removedDisclosure), null);
     assert.equal(
-      harness.document.querySelector("#skillManager")?.closest("#agentPanel")?.id,
-      "agentPanel",
+      harness.document.querySelector("#skillManager")?.closest("#contextPanel")?.id,
+      "contextPanel",
     );
     harness.click("#appTab");
     assert.equal(
@@ -663,26 +663,27 @@ test("a Session approval update from another dialog refreshes the active control
   }
 });
 
-test("Profile actions stay local to Model Profile before Session Skills", async () => {
+test("Agent keeps Profile actions while Context owns Session Skills", async () => {
   const harness = await createDialogHarness();
   try {
-    const panel = harness.document.querySelector<HTMLElement>("#agentPanel");
+    const agentPanel = harness.document.querySelector<HTMLElement>("#agentPanel");
+    const contextPanel = harness.document.querySelector<HTMLElement>("#contextPanel");
     const profile = harness.document.querySelector<HTMLElement>("#modelProfileSettings");
     const actions = harness.document.querySelector<HTMLElement>(".settings-actions");
     const skills = harness.document.querySelector<HTMLElement>("#skillManager");
 
-    assert.ok(panel);
+    assert.ok(agentPanel);
+    assert.ok(contextPanel);
     assert.ok(profile);
     assert.ok(actions);
     assert.ok(skills);
     assert.equal(actions.parentElement?.id, "modelProfileControls");
     assert.equal(profile.contains(actions), true);
-    assert.equal(panel.contains(actions), true);
-    assert.equal(
-      Boolean(actions.compareDocumentPosition(skills) &
-        harness.window.Node.DOCUMENT_POSITION_FOLLOWING),
-      true,
-    );
+    assert.equal(agentPanel.contains(actions), true);
+    assert.equal(agentPanel.contains(skills), false);
+    assert.equal(contextPanel.contains(skills), true);
+    harness.click("#contextTab");
+    assert.equal(contextPanel.hidden, false);
     assert.deepEqual(harness.errors, []);
   } finally {
     harness.close();

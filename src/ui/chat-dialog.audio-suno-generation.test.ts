@@ -10,7 +10,7 @@ test("connected Suno can explicitly enable and save music tools without API key 
   const harness = await createDialogHarness(state);
   try {
     assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceEnabled")!.checked, false);
-    assert.match(harness.document.querySelector(".audio-service-status")!.textContent!, /Connected to Suno.com · Disabled/);
+    assert.equal(harness.document.querySelector(".audio-service-status")!.textContent, "Disabled");
     assert.equal(harness.document.querySelector<HTMLElement>("#audioServiceKeyField")!.hidden, true);
     toggle(harness, true);
     harness.input("#audioServiceModel", "chirp-account-model");
@@ -23,7 +23,7 @@ test("connected Suno can explicitly enable and save music tools without API key 
       },
     } });
     assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceEnabled")!.checked, true);
-    assert.match(harness.document.querySelector(".audio-service-status")!.textContent!, /Connected to Suno.com · Enabled/);
+    assert.equal(harness.document.querySelector(".audio-service-status")!.textContent, "Ready");
     assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceModel")!.value, "chirp-account-model");
     assert.equal(harness.document.querySelector<HTMLButtonElement>("#saveAudioServiceButton")!.disabled, true);
     assert.deepEqual(harness.errors, []);

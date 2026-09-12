@@ -20,7 +20,10 @@ test("Add SunoAPI requires a user callback to enable, keeps other services, and 
     assert.equal(callback.placeholder, "");
     assert.match(harness.document.querySelector("#audioServiceDisclosure")!.textContent!, /third-party API service/);
     assert.match(harness.document.querySelector("#audioServiceCallbackHint")!.textContent!, /notifications here.*polls for results/);
-    assert.match(harness.document.querySelector("#audioServiceModelHint")!.textContent!, /V4_5ALL/);
+    assert.match(harness.document.querySelector("#audioServiceModelHint")!.textContent!, /V6/);
+    assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceModel")!.getAttribute("list"), "sunoApiModelOptions");
+    assert.deepEqual(Array.from(harness.document.querySelectorAll<HTMLOptionElement>("#sunoApiModelOptions option"))
+      .map((option) => option.value), ["V6", "V6_WILD", "V6_MINI", "V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4"]);
     harness.input("#audioServiceApiKey", "fixture-suno-ui");
     toggle(harness, true);
     assert.equal(callback.required, true);
@@ -100,17 +103,11 @@ test("disabled SunoAPI may omit callback; provider changes clear callback, model
   } finally { harness.close(); }
 });
 
-test("callback input and wire validation reject unsafe addresses without sending or reflecting credentials", async () => {
+test("callback input and wire validation reject only malformed or credential-bearing addresses", async () => {
   const state = audioState([sunoService]);
   const harness = await createDialogHarness(state);
-  const invalid = ["http://hooks.example.com/cb", "https:///hooks.example.com/cb", "https://localhost./cb", "https://a.localhost/cb",
-    "https://home.arpa/cb", "https://host.local/cb", "https://local/cb", "https://127.1/cb", "https://0x7f000001/cb",
-    "https://2130706433/cb", "https://10.1.2.3/cb", "https://172.16.1.1/cb", "https://192.168.0.1/cb",
-    "https://169.254.169.254/cb", "https://100.64.0.1/cb", "https://0.0.0.0/cb", "https://224.0.0.1/cb",
-    "https://8.8.8.8/cb", "https://[2606:4700:4700::1111]/cb", "https://hooks.example.com:8443/cb",
-    "https://hooks.example.com./cb", "https://[::]/cb", "https://[::1]/cb", "https://[fc00::1]/cb", "https://[fe80::1]/cb",
-    "https://[::ffff:10.1.2.3]/cb", "https://[2001:db8::1]/cb", "https://[2002:7f00:1::]/cb",
-    "https://hooks.example.com/cb?", "https://hooks.example.com/cb#", "https://@hooks.example.com/cb",
+  const invalid = ["ftp://hooks.example.com/cb", "https:///hooks.example.com/cb",
+    "https://hooks.example.com/cb#", "https://@hooks.example.com/cb",
     "https://%66ixture-secret@hooks.example.com/cb", "https://fixture-secret%3Apass%40hooks.example.com/cb",
     "https://hooks.example.com\\@localhost/cb", "https://hooks.example.com/c b", "https://hooks.example.com/%20",
     "https://hooks.example.com/%5c", "https://hooks.example.com/%0a", "https://hooks.example.com/%GG",
@@ -177,7 +174,7 @@ test("audio wire projections reject callback and model fields without their prov
     await harness.settle();
     for (const invalid of [{ ...service, modelId: "unused" }, { ...musicService, modelId: "m".repeat(129) },
       ...[service, musicService].map((value) => ({ ...value, callbackUrl: sunoService.callbackUrl })),
-      { ...sunoService, callbackUrl: undefined }, { ...sunoService, callbackUrl: "https://127.1/callback" }]) {
+      { ...sunoService, callbackUrl: undefined }, { ...sunoService, callbackUrl: "https://127.1/callback#fragment" }]) {
       harness.emitServerEvent(broadcast(state, { revision: "2", connections: [invalid] }));
       harness.emitServerEvent({ type: "done", sendId: harness.sendIds[0], sessionId: state.activeSessionId,
         state: { ...state, audioServices: { revision: "2", connections: [invalid] } } });
@@ -191,11 +188,11 @@ test("audio wire projections reject callback and model fields without their prov
   } finally { harness.close(); }
 });
 
-test("public domain callback URLs share storage and DOM validation", async () => {
+test("user-selected callback URLs with local hosts, ports and queries share storage and DOM validation", async () => {
   const harness = await createDialogHarness(audioState([sunoService]));
   try {
-    for (const callbackUrl of ["https://hooks.example.com/%E9%9F%B3", "https://hooks.example.com:443/cb",
-      "https://hooks.example.com/" + "a".repeat(2022)]) {
+    for (const callbackUrl of ["https://hooks.example.com/%E9%9F%B3", "http://localhost:8787/cb?token=fixture",
+      "https://127.0.0.1:9443/cb?stage=done", "https://hooks.example.com/" + "a".repeat(2022)]) {
       assert.equal(isAudioServiceCallbackUrl(callbackUrl), true, callbackUrl);
       harness.input("#audioServiceCallback", callbackUrl);
       harness.click("#saveAudioServiceButton");

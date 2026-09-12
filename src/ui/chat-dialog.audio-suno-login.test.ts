@@ -288,8 +288,9 @@ test("Chinese Cookie connection labels, help, account name and local-clear confi
   state.settings.uiLanguage = "zh-CN";
   const harness = await createDialogHarness(state);
   try {
-    assert.equal(text(harness, '#audioServiceProvider option[value="suno"]'), "Suno.com（实验性）");
-    assert.equal(text(harness, "#openSunoWebsiteButton"), "在默认浏览器中打开 Suno");
+    assert.equal(text(harness, '#audioServiceProvider option[value="suno"]'), "Suno.com 订阅（实验性）");
+    assert.equal(text(harness, "#openSunoWebsiteButton"), "打开 Suno");
+    assert.equal(harness.document.querySelector("#openSunoWebsiteButton")?.getAttribute("aria-label"), "在默认浏览器中打开 Suno");
     assert.equal(text(harness, "#connectSunoButton"), "连接");
     assert.equal(text(harness, "#refreshSunoLoginButton"), "刷新连接");
     assert.equal(text(harness, "#logoutSunoButton"), "清除本地 Cookie");
@@ -297,7 +298,8 @@ test("Chinese Cookie connection labels, help, account name and local-clear confi
     harness.click("#sunoCookieHelp summary");
     assert.equal(harness.document.querySelector<HTMLDetailsElement>("#sunoCookieHelp")!.open, true);
     assert.match(text(harness, "#sunoCookieHelp"), /auth.suno.com/);
-    assert.match(text(harness, "#sunoCookieHelp"), /仅复制其值/);
+    assert.match(text(harness, "#sunoCookieHelp"), /复制该请求的 Cookie 请求头/);
+    assert.match(text(harness, "#sunoCookieHelp"), /__session/);
     harness.click("#logoutSunoButton");
     await harness.settle();
     assert.match(text(harness, "body"), /浏览器中的 Suno 登录和窗口会保留/);

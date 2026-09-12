@@ -8,7 +8,9 @@ test("audio connections are visible with status, and editing expands only on exp
   try {
     assert.equal(h.document.querySelectorAll("[data-audio-service-id]").length, 3);
     const rows = h.document.querySelector("#audioServiceSelector")!.textContent!;
-    assert.match(rows, /Work separation.*Enabled.*Music studio.*Enabled.*Third-party studio.*Disabled/s);
+    assert.match(rows, /Work separation.*Ready.*Music studio.*Ready.*Third-party studio.*Disabled/s);
+    assert.equal(h.document.querySelector(`[data-audio-service-id="${service.id}"] .activity-state`)?.getAttribute("data-status"), "complete");
+    assert.equal(h.document.querySelector(`[data-audio-service-id="${sunoService.id}"] .activity-state`)?.getAttribute("data-status"), "stopped");
     assert.equal(h.document.querySelector<HTMLDetailsElement>("#audioServiceFields")!.open, false);
     const row = h.document.querySelector<HTMLButtonElement>(`[data-audio-service-id="${musicService.id}"]`)!;
     row.focus(); row.click();
@@ -16,6 +18,7 @@ test("audio connections are visible with status, and editing expands only on exp
     assert.equal(h.document.querySelector<HTMLDetailsElement>("#audioServiceFields")!.open, true);
     assert.equal(h.document.activeElement, row, "selection must not destroy keyboard focus");
     assert.equal(h.document.querySelector<HTMLInputElement>("#audioServiceName")!.value, musicService.name);
+    assert.equal(h.document.querySelector("#audioServiceProvider")?.getAttribute("name"), "audioServiceProvider");
     assert.deepEqual(h.errors, []);
   } finally { h.close(); }
 });
@@ -34,11 +37,28 @@ test("new connection opens its editor and optional model controls do not dominat
   } finally { h.close(); }
 });
 
+test("connection maintenance closes when its selected connection changes", async () => {
+  const h = await createDialogHarness(audioState([service, musicService]));
+  try {
+    selectAudioService(h, service.id);
+    const editor = h.document.querySelector("#audioServiceFields .audio-editor-body")!;
+    const maintenance = h.document.querySelector<HTMLDetailsElement>("#audioServiceMaintenance")!;
+    const saveActions = h.document.querySelector(".audio-commit-actions")!;
+    assert.ok([...editor.children].indexOf(maintenance) < [...editor.children].indexOf(saveActions),
+      "maintenance belongs before the editor's final save action");
+    h.click("#audioServiceMaintenance > summary");
+    assert.equal(maintenance.open, true);
+    selectAudioService(h, musicService.id);
+    assert.equal(maintenance.open, false);
+  } finally { h.close(); }
+});
+
 test("reopening the selected connection preserves its unsaved key until Save", async () => {
   const h = await createDialogHarness(audioState());
   try {
     selectAudioService(h, service.id);
     h.input("#audioServiceApiKey", "synthetic-replacement-key");
+    assert.equal(h.document.querySelector("#audioDraftStatus")?.textContent, "Unsaved changes");
     h.click("#audioServiceEditorSummary");
     assert.equal(h.document.querySelector<HTMLDetailsElement>("#audioServiceFields")!.open, false);
     selectAudioService(h, service.id);
@@ -75,11 +95,36 @@ test("audio outputs show duration and format before playback without replacing t
   const h = await createDialogHarness(state);
   try {
     const output = h.document.querySelector("[data-audio-output]")!;
+    const card = h.document.querySelector<HTMLElement>("[data-audio-job-id]")!;
+    assert.equal(card.querySelector("h4")?.textContent, "Stem separation");
+    assert.equal(card.querySelector(".activity-state")?.textContent, "Partial audio results");
+    assert.equal(card.querySelector(".activity-state")?.getAttribute("data-status"), "partial");
+    assert.match(card.getAttribute("aria-describedby") ?? "", /audio-job-status-job-one audio-job-route-job-one/);
     assert.match(output.textContent!, /14:59.*WAV/);
     const player = output.querySelector("audio");
     selectAudioService(h, service.id);
     h.input("#audioServiceName", "Draft label");
     assert.equal(output.querySelector("audio"), player);
+  } finally { h.close(); }
+});
+
+test("unchanged audio status text is not rewritten during draft input", async () => {
+  const state = audioState();
+  state.audioJobs = [job(state.activeSessionId, { status: "completed", resumable: false })];
+  const h = await createDialogHarness(state);
+  try {
+    selectAudioService(h, service.id);
+    h.input("#audioServiceName", "First draft name");
+    const draftStatus = h.document.querySelector("#audioDraftStatus")!;
+    const resultsStatus = h.document.querySelector("#sessionAudioResultsStatus")!;
+    const mutations: MutationRecord[] = [];
+    const observer = new h.window.MutationObserver((records) => mutations.push(...records));
+    observer.observe(draftStatus, { childList: true, characterData: true, subtree: true });
+    observer.observe(resultsStatus, { attributes: true, childList: true, characterData: true, subtree: true });
+    h.input("#audioServiceName", "Second draft name");
+    await Promise.resolve();
+    observer.disconnect();
+    assert.deepEqual(mutations, []);
   } finally { h.close(); }
 });
 

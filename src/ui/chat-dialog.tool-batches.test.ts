@@ -53,6 +53,11 @@ test("one tool step starts in a collapsed activity group", async () => {
       group.querySelector(":scope > summary .timeline-activity-excerpt")?.textContent,
       "Song observed",
     );
+    const status = group.querySelector<HTMLElement>(
+      ":scope > summary .activity-state",
+    );
+    assert.equal(status?.dataset.status, "complete");
+    assert.equal(status?.textContent, "Completed");
     assert.match(
       group.querySelector(":scope > summary")?.getAttribute("aria-label") ?? "",
       /1 activity step in history/,
@@ -75,6 +80,38 @@ test("one tool step starts in a collapsed activity group", async () => {
       null,
     );
     assert.doesNotMatch(step.textContent ?? "", /tool call/i);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("audio tool activity uses the shared status language", async () => {
+  const state = stateFixture();
+  state.events = [
+    toolEvent(
+      "event-tool-1",
+      "tool_call",
+      "generate_music",
+      "Preparing music generation",
+    ),
+    toolEvent(
+      "event-tool-2",
+      "tool_result",
+      "generate_music",
+      "Generated 2 online outputs.",
+    ),
+  ];
+
+  const harness = await createDialogHarness(state);
+  try {
+    const group = harness.document.querySelector<HTMLElement>(
+      "#timeline > .timeline-activity-group",
+    );
+    assert.equal(
+      group?.querySelector(":scope > summary .activity-state")?.textContent,
+      "Completed",
+    );
     assert.deepEqual(harness.errors, []);
   } finally {
     harness.close();

@@ -566,6 +566,10 @@ model never receives a key, endpoint, or generic HTTP execution tool. The chat
 model needs function-tool support, not native audio generation support.
 Saved-job listing and recovery remain available to the model when no service
 connection is enabled; only new remote operations depend on enabled connections.
+When the active Profile has verified audio-input support on a protocol that can
+carry tool-produced audio, `listen_to_audio_asset` can attach one exact local
+Session result to the next model turn. Text-only Profiles never receive that tool
+or those bytes. Online players and remote provider URLs are not model input.
 The connection is bound when these tools are admitted for a chat request.
 Changing that connection before upload or paid submission stops the operation;
 send a new request to use the changed configuration. Editing another connection
@@ -592,21 +596,50 @@ Stopping an incomplete response does not confirm service-side cancellation or a
 refund. A lost response is never regenerated automatically; a complete local
 file that outlives a job-record failure can be recovered without another request.
 
+### Suno Platform official API
+
+**Suno Platform (official API)** is a first-party API-key connection. Open
+[platform.suno.com](https://platform.suno.com/) in the system default browser
+to create or manage an API account and key. The adapter sends authenticated
+requests only to `https://api.suno.com`; it never receives or uses the
+Suno.com website Cookie. Platform access, quotas, and billing are separate from
+consumer Pro/Premier subscription credits.
+
+The implemented flow submits `POST /v0/audio`, persists its returned task ID,
+polls `GET /v0/audio/{id}`, and saves the completed HTTPS audio result locally.
+Description mode lets Suno choose lyrics and style. Custom mode maps literal
+lyrics, style, optional title, an existing supported voice ID, and the
+instrumental flag. Instrumental description requests use the custom style form
+without inventing lyrics. The current Platform contract does not expose a model
+selector or duration through Live Smith. Cover and Mashup are advertised by the
+Platform but do not yet have chat-tool input contracts here.
+
+Suno's public page confirms the official REST product but keeps the endpoint
+reference behind account access. The implemented request shape follows the
+available partner-facing `/v0/audio` contract and is covered by synthetic
+request-capture tests; without a configured Platform key, those tests do not
+establish live account access or current quota. Paid submissions, unknown
+outcomes, HTTP failures, and Stop are never automatically retried.
+
 ### Suno through a third-party API
 
 **Suno via SunoAPI.org (third-party)** is a separate connection, not Suno's
 official API or a Suno subscription login. It uses a SunoAPI.org API key and
 that service's [published generation protocol](https://docs.sunoapi.org/suno-api/generate-music).
-An enabled connection also requires a user-owned public HTTPS callback URL.
+An enabled connection also requires a user-owned callback URL accepted by that
+provider.
 The provider requires this address when submitting full-song generation even
 when the desktop client retrieves results by polling. Live Smith does not host
 the callback or verify ownership/reachability; do not enter a placeholder or an
-address belonging to someone else. URLs with credentials, query strings,
-fragments, custom ports, IP literals, or local-only hostnames are rejected.
+address belonging to someone else. HTTP and HTTPS callbacks may contain a
+provider-required query token, custom port, IP literal, or local hostname.
+Malformed URLs, fragments, embedded credentials, whitespace, and values that
+reflect the API key are rejected. Live Smith never contacts the callback URL.
 
 The connection exposes prompt-based `generate_music` in non-custom mode, with an
 instrumental flag and up to 3,000 prompt characters. The integration defaults to
-`V4_5ALL`; a saved supported model ID can select another published version.
+`V6`; a saved supported model ID can select another published version. The model
+field suggests the current published IDs while remaining editable.
 Explicit duration, custom lyric mode, covers and extensions are not part of this
 operation. Returned task IDs are persisted before polling. One or two final
 tracks are saved as music results; Resume uses the original task, not a new
@@ -616,17 +649,18 @@ responses and refreshed download URLs. The published protocol has no
 cancellation operation, so Stop ends the local wait without claiming a refund
 or remote cancellation.
 
-Downloads accept HTTPS on the documented `file.aiquickdraw.com` audio host,
-without the API key or redirects. An unrecognized CDN is rejected and the job
-remains available for investigation/recovery; the client never follows an
-arbitrary provider-supplied URL to a local or private service.
+Downloads accept the HTTP or HTTPS URL returned by the authenticated task result,
+including signed queries, custom ports, IP addresses, and changing CDN hosts.
+They never carry the API key, Cookie, referrer, or browser credentials and never
+follow redirects. Malformed, embedded-credential, credential-reflecting, non-HTTP,
+and fragment-bearing URLs are rejected.
 
 A Suno Pro/Premier subscription is not a credential for the SunoAPI.org connector.
 Website subscription sign-in is a separate connection, described below.
 
 ### Suno.com website sign-in
 
-**Suno.com (experimental)** uses the ordinary `suno.com` account, not Suno
+**Suno.com subscription (experimental)** uses the ordinary `suno.com` account, not Suno
 Platform or SunoAPI.org. It requires no browser extension or particular browser.
 On macOS and Windows, the website action opens `https://suno.com/create` using
 the system default browser and its existing login state. Google login and any
@@ -636,13 +670,16 @@ This is a manual Cookie import, not an automatic OAuth callback:
 
 1. Add a Suno connection in **Inspector → App → Audio tools** and open Suno.
    Opening the website does not require saving the connection first.
-2. In the browser's developer tools, locate the `__client` Cookie for
-   `auth.suno.com` under Storage/Application → Cookies. If the authentication
-   domain is not shown there, inspect a request to `auth.suno.com/v1/client`
-   in Network after reloading the Suno page and locate that Cookie.
-3. Copy only the `__client` value into Live Smith's private Suno Cookie field.
-   A raw value or an exact `__client=value` assignment is accepted. Full Cookie
-   headers, Google Cookies, passwords and arbitrary scripts are not accepted.
+2. Open the browser's developer tools → Network, reload Suno, and inspect a
+   request to `auth.suno.com` or `studio-api-prod.suno.com`.
+3. Copy its request Cookie header into Live Smith's private Suno session field.
+   Older sessions may contain `__client`; current sessions may instead contain
+   `__session` and `__client_uat`. A raw `__client` or `__session` JWT is also
+   accepted. Live Smith canonicalizes the input and retains only `__client`,
+   `__session`, Clerk update timestamps, and a valid Suno device identifier;
+   unrelated analytics, Google, Cloudflare, and other cookies are discarded.
+   If no usable device identifier is present, a private UUID is generated and
+   retained for this connection after verification.
 4. Connect the account. If the named connection is still a draft, Live Smith
    saves it first and imports only after a confirmed save. Import verifies the
    active Suno session before privately saving the credential. The input is
@@ -677,18 +714,23 @@ Closing Live Smith does not close the browser. Legacy managed browser directorie
 are not read, imported or deleted by this workflow.
 
 The experimental tools use the Suno.com account directly. No official Suno SDK
-or OAuth grant is implied, and no SDK dependency is bundled. The adapter follows
-the [source-backed v2-web contract](https://github.com/paperfoot/suno-cli/tree/f0dea4d4e0ef998a508e73f05749eb2b138a253d/src/api),
-which is unofficial and may change. Synthetic protocol tests do not establish
+or OAuth grant is implied, and no SDK dependency is bundled. The adapter maps a
+bounded subset of the current Suno web client's `v2-web` request contract, which
+is unofficial and may change. Synthetic protocol tests do not establish
 that a particular live account can generate. Cookie identity alone does not
 prove plan entitlements, sufficient credits or freedom from security challenges.
+Before enabling it, review [Suno's current terms](https://suno.com/terms). Live
+Smith does not represent this unofficial protocol as authorized or stable, and
+website or policy changes may make it unavailable for an account.
 
 - `generate_music`: description mode (up to 3000 characters), or `options.mode:
   "custom"` with literal lyrics (up to 5000, empty for instrumentals), title
-  (80), styles and excluded styles (1000 each), Weirdness and Style Influence
-  (0–100), and an existing Persona ID. Account model limits can be lower and are
-  checked before submission. Sliders map to their structured fields, not prompt
-  suffixes. Instrumental and lyric intent are separate from a style description.
+  (100), styles and excluded styles (1000 each), Weirdness and Style Influence
+  (0–100), male or female vocal gender, a 10–480 second duration on catalog
+  models that report version 6 support, and an existing Persona ID. Account model
+  limits can be lower and are checked before submission. Sliders, vocal gender,
+  and duration map to structured fields rather than prompt suffixes. Instrumental
+  and lyric intent are separate from a style description.
 - `inspect_music_service`: current account model/credit catalog, one bounded
   library page (20 songs with opaque pagination), or one Persona by ID. It does
   not enumerate all Voices or train/register a new voice. Returned text is data,
@@ -697,10 +739,9 @@ prove plan entitlements, sufficient credits or freedom from security challenges.
   generation status; missing evidence is not treated as permission.
 - `retrieve_music`: add one or two selected existing songs from the account for preview,
   without generating, extending or authorizing a download. Chat calls require
-  clip IDs observed through that connection's library or saved jobs. The explicit
-  retrieval form accepts the user's Suno song links or IDs and checks that the
-  selected saved account has not changed. Repeating an identical retrieval in
-  the same Session reuses its existing job and any saved outputs.
+  clip IDs the model observed through that connection's library or saved jobs.
+  Repeating an identical retrieval in the same Session reuses its existing job
+  and any saved outputs.
 - `extend_music`: lyrics/styles for a completed, observed song starting at an
   explicit second before its end. `get_whole_song` joins one extension's
   existing lineage, not an arbitrary collection of audio files. These operations
@@ -715,8 +756,17 @@ versions cannot be selected from the catalog. A saved ID missing from a newly
 loaded catalog remains visible instead of silently changing the selection.
 **Advanced model ID** retains explicit ID entry; **Discard** restores the saved
 connection without a settings write. Catalogs stay in the current dialog and
-are invalidated when their account credentials change, not persisted to disk.
+are invalidated by explicit authentication lifecycle changes or a different
+account, not by a verified automatic Cookie rotation, and are not persisted to disk.
 There is no model-name guessing or fallback to a different account/provider.
+Every Suno.com API request carries a fresh bounded `browser-token`, the imported
+device identifier when available (otherwise a generated private UUID persisted
+with that connection), and the Suno Origin/Referer used by the web client. `__client`
+credentials use Clerk's active-client and token endpoints. `__session`
+credentials use the session `touch` endpoint on the current auth host, with the
+observed legacy Clerk host as a non-paid compatibility fallback; they rotate the
+returned session JWT, preserve updated Clerk timestamps when supplied, and
+atomically save the verified rotation without replacing a concurrent reimport.
 Every generation is preceded by
 account/parameter validation and a CAPTCHA check; only an explicit no-challenge
 response permits submission. Verification challenges stop the operation and
@@ -733,11 +783,12 @@ generation retry.
 
 #### Online preview, file downloads and Live import
 
-Suno generation completion is separate from a file download. **Session audio
-results**, above the chat composer, holds the active Session's processing jobs;
+Suno generation completion is separate from a file download. **Session audio**,
+above the chat composer, holds the active Session's processing jobs and results;
 it is separate from application connection settings and collapses when switching
-Sessions. A generated song can be ready for online listening without a local audio asset. The result card
-offers an explicitly opened Suno embedded player at `https://suno.com/embed/{clip_id}`.
+Sessions. A generated song can be ready for online listening without a local audio
+asset. The result card offers an explicitly opened Suno embedded player at
+`https://suno.com/embed/{clip_id}`.
 The player loads only when requested and remains owned by Suno, inside a
 sandboxed cross-origin frame with no referrer. Live Smith passes no Cookie or API
 token to it and does not capture its playback data. The player uses the host
@@ -747,7 +798,7 @@ generation. Closing the preview, collapsing the result shelf or switching
 Session removes the embedded player. Collapsing the shelf also pauses local
 audio; reopening it does not automatically play or download anything.
 
-Saving a song for Live is a separate, explicit per-song download action. Its
+Saving a song for Live and model use is a separate, explicit per-song download action. Its
 confirmation explains that an existing download allowance may be consumed.
 Only the selected output is authorized, using the original job's exact account
 and immutable clip identity. If the song is already unlocked, it is not
@@ -761,18 +812,23 @@ browser with a two-minute link for this file only, not the dialog's control
 credential. Keep Live Smith open until the browser finishes the download; no
 Suno request or additional download allowance is needed. Repeating a saved output's download reuses that
 asset without a provider request. Importing into Live requires this local asset
-and remains a separate scoped Apply operation; an online preview cannot be used
-as an import source.
+and remains a separate scoped Apply operation. When asked, a verified audio-input
+Profile can also receive the exact local WAV or MP3 through
+`listen_to_audio_asset`, subject to the request's binary-count and byte limits.
+The tool result text is recorded before its untrusted audio part is admitted, and
+the bytes are not persisted in conversation events. An online preview cannot be
+used as either a Live import source or model input.
 
-#### Human-assisted generation and result retrieval
+#### Human-assisted generation and local handoff
 
 When a direct generation stops at human verification, its paid submission has
 not started. Use the normal Suno website to complete verification and generate
-the requested song, then return the selected song links to **Preview existing
-Suno songs** in that saved connection's Audio tools editor. The website generation
-is the generation attempt: do not also resubmit the same request through chat.
-Live Smith does not claim that merely opening Suno or clicking “verified” clears
-the server-side challenge, and it does not capture or replay CAPTCHA tokens.
+the requested song. Download the selected result there, then drag or paste its
+local WAV or MP3 into Live Smith when it should become model input or a source
+for Live. The website generation is the generation attempt: do not also resubmit
+the same request through chat. Live Smith does not claim that merely opening Suno
+or clicking “verified” clears the server-side challenge, and it does not capture
+or replay CAPTCHA tokens.
 
 Retrieval and Resume check the original Suno songs without automatically
 downloading them. A generated song can be complete but still unavailable for
@@ -783,7 +839,7 @@ missing or uncertain authorization response is never replayed automatically.
 The adapter requests the prepared MP3 through
 `GET /api/download/clip/{clip_id}?format=mp3`, rather than treating the song's
 playback URL as a file download. Preparation and transfer have a cancellable
-two-minute deadline; only the Suno CDNs and the exact
+ten-minute deadline; only the Suno CDNs and the exact
 `suno-data-uploads.s3.amazonaws.com` bucket returned by authorized MP3 preparation
 are accepted over HTTPS, without API credentials or redirects.
 Missing permission, a failed preparation or an unfamiliar host stops that output
@@ -801,12 +857,13 @@ are retained when a sibling fails. Recovery uses the same IDs without generating
 again. Renewing a Cookie for the same verified account permits recovery; switching
 the connection to another account does not. Saved files remain recoverable locally.
 
-Not implemented: Sounds/One Shot/Loop/BPM/Key, structured vocal-gender/duration
-controls, upload/recording, Cover/Remaster, Replace Section, Add Vocals/Instrumental,
+The Suno.com adapter does not currently map Sounds/One Shot/Loop/BPM/Key,
+upload/recording, Cover/Remaster, Replace Section, Add Vocals/Instrumental,
 Suno stem extraction, Voice enrollment, custom-model training, Inspo/My Taste,
-workspace edits and publishing. These require additional reliable contracts and
-end-to-end validation; they are not simulated with text tags. Use the existing
-LALAL.AI integration for supported stems and ElevenLabs for sound effects.
+or Suno Studio workspace editing and publishing. These are adapter gaps, not
+restrictions on Live Smith or the user's workflow, and they are not simulated
+with text tags. Ableton editing remains available; configured LALAL.AI stem and
+ElevenLabs sound-effect tools can be used independently or in the same workflow.
 
 ### Stem separation
 
@@ -827,12 +884,16 @@ is rendered before the track's effects. Post-effects mixes, instrument-track
 renders, and Session View rendered ranges are not available through this tool.
 The snapshot is fixed before upload; later Clip edits cannot change an existing
 processing task. A text-only chat model receives source and result references,
-not audio bytes. Existing verified audio-input models retain their normal input
-delivery behavior.
+not audio bytes. With a verified audio-input Profile, the model may call
+`listen_to_audio_asset` for one exact saved result when the user asks it to hear,
+analyze, compare, or transcribe that audio.
 
 Audio processing files are limited to 128 MiB and 15 minutes each, with a 1 GiB
 total and 40 processing jobs per Session. Composer audio attachments retain
-their separate 20 MiB/120-second input limit. Results are inspected as WAV or MP3,
+their separate 20 MiB/120-second input limit. LALAL.AI keeps WAV sources lossless
+and requests MP3 output for MP3 sources so a valid long compressed input is not
+expanded past the per-file result limit. Media transfer has a ten-minute deadline;
+API metadata calls retain a two-minute deadline. Results are inspected as WAV or MP3,
 stored privately, and exposed through authenticated local playback. Remote
 download links, credentials, and filesystem paths never enter tool results.
 Download links from the documented LALAL.AI output host use HTTPS without API
@@ -864,6 +925,10 @@ Metadata is committed before its audio file, and an incomplete file
 is not presented as an available result. LALAL.AI currently limits status checks
 to 24 hours after task creation, so remote recovery can expire even though downloaded local results
 remain available.
+Status polling is coordinated by credential owner within one storage scope, with
+a small margin below LALAL.AI's published 30-checks-per-minute account limit.
+Provider-confirmed terminal failures and failed sibling outputs are retained as
+terminal state and are not presented as recoverable work.
 
 Stop and window closure interrupt local processing. A bounded cancellation
 request is attempted for an accepted remote task; this does not claim that the

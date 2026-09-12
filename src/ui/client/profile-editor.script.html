@@ -50,6 +50,7 @@
 
       const controlIdByGlobalSettingsField = {
         "networkProxy.url": "networkProxyUrl",
+        customInstructions: "customInstructions",
       };
 
       const controlIdByModelField = {
@@ -163,6 +164,7 @@
       }
 
       function inspectorTabForField(field) {
+        if (field === "customInstructions") return "context";
         return controlIdByGlobalSettingsField[field] ? "app" : "agent";
       }
 

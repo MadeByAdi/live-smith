@@ -97,9 +97,12 @@ src/
     elevenlabs.ts, elevenlabs-http.ts
       Official music and sound-effect requests, bounded MP3 responses, and
       cancellation without automatic regeneration.
+    suno-platform.ts, suno-platform-http.ts
+      First-party Suno Platform API-key generation, task polling, and bounded
+      credential-free media collection through api.suno.com.
     sunoapi.ts, sunoapi-http.ts
-      Explicit third-party SunoAPI.org submission, polling, and allowed-CDN
-      downloads; no official Suno subscription credentials.
+      Explicit third-party SunoAPI.org submission, polling, and provider-returned
+      media downloads; no Suno Platform or website-subscription credentials.
     suno.ts, suno-catalog.ts, suno-download.ts, suno-http.ts
       Experimental Suno.com account-bound generation, custom parameters,
       extension/whole-song requests, bounded catalog/library reads, short-lived
@@ -679,10 +682,12 @@ byte-for-byte unchanged.
 
 Selected definitions are escaped at the wrapper boundary, sorted by ID, and
 limited to 128 KiB after final UTF-8 rendering. The same immutable block is used
-for every model turn. System order is the fixed built-in safety instructions,
-the lower-priority Skill boundary, rendered Skill blocks, then the Live action
-system prompt. Empty activation uses the canonical base system instructions
-without a Skill wrapper.
+for every model turn. A send also snapshots the global Custom Instructions value
+with its other configuration. System order is the fixed built-in safety
+instructions, the hard Session Edit Scope block, the bounded JSON-encoded Custom
+Instructions block when present, the lower-priority Skill boundary and rendered
+Skill blocks, then the Live action system prompt. Empty optional context uses the
+canonical base system instructions without extra wrappers.
 Skill IDs/descriptions, their `built-in` or `user` source, and active IDs may
 enter chat state; bodies, hashes, frontmatter source, and paths never enter chat
 state, Session events, logs, or errors.
@@ -696,6 +701,15 @@ process-wide mutation serialization, and state-drift revalidation. Skill
 Markdown has lower priority than system and safety instructions and cannot
 authorize secrets, filesystem access, unsupported provider fields, or actions
 outside the built-in schema.
+
+The current request, selected Skills, and Custom Instructions can choose editable
+Live construction, external rendered audio, both, or any supported workflow.
+When a request leaves materially different deliverables unresolved, the agent
+uses relevant Live context if it resolves the ambiguity and otherwise asks the
+user instead of applying a built-in creative preference or a keyword classifier.
+External generation tools describe their output as rendered Session audio rather
+than Live tracks, MIDI, devices, Scenes, or Arrangement structure. No prompt
+keyword classifier hides tools or chooses the deliverable.
 
 ### Bridge routes
 
@@ -865,16 +879,25 @@ work, and adapters retain the admitted connection rather than reloading a new
 account. Changes to unrelated connections do not invalidate the request.
 `audio-job-runtime.ts` shares active-job exclusion and verified local recovery
 across operations.
-`runtime/suno-website.ts` opens only `https://suno.com/create` through the system
-default-browser handler. Website navigation is independent of saved connections
+`runtime/suno-website.ts` opens fixed `https://suno.com/create` and
+`https://platform.suno.com/` destinations through the system default-browser
+handler. Website navigation is independent of saved connections
 and is never evidence of authentication. No browser process, profile directory,
 extension or debugging connection is owned by Live Smith.
+Official Suno Platform connections are ordinary API-key audio connections. Their
+transport is isolated from the following website-session lifecycle and never
+receives a Suno.com Cookie.
 `app/suno-session-manager.ts` binds explicitly imported Suno Cookies to exact
 saved audio connection IDs. Import and refresh use the bounded Suno-only
 `audio-services/suno-session.ts` verifier through proxy-aware Fetch. The adapter
 reads the current Clerk client/session identity; it never automates Google
-login or extracts browser data. Generation uses a separate private HTTP client
-that mints short-lived account/session-bound tokens only when needed for a request.
+login or extracts browser data. Both Clerk `__client` token exchange and current
+`__session` + `__client_uat` touch/rotation are supported. Verified rotations
+are atomically saved to the same private connection without overwriting a
+concurrent user reimport. Generation uses a separate private HTTP client that
+resolves short-lived account/session-bound tokens only when needed for a request
+and supplies a persistent private device ID plus the web protocol's bounded
+browser-token header.
 `storage/suno-sessions.ts` owns private per-connection credentials outside public
 settings. Global settings changes clear the prior credential owner only after
 validation and revision checks, before persistence, under the same global-settings
@@ -886,27 +909,28 @@ Local views do not trigger network requests and do not present disk-only identit
 as freshly verified authentication after an extension-host restart. `sunoAccounts` projects only bounded account
 identity and status, never a Cookie. Explicit saved enablement and a private
 credential are required for tool admission; UI identity is not runtime authority.
-Private admission snapshots include exact Suno credentials, while recovery
-fingerprints bind verified account IDs so rotating a Cookie does not orphan
-accepted tasks. Custom options are typed, capability-gated and validated against
+Private admission snapshots bind the exact Suno account and user-controlled
+configuration; a verified automatic Cookie rotation reloads only that account's
+current private credential. Recovery fingerprints likewise bind verified account
+IDs so rotation does not orphan accepted tasks. Custom options are typed,
+capability-gated and validated against
 the selected account's model catalog. Read-only preparation and challenge checks
 precede the paid submission boundary. A multi-clip receipt is persisted atomically
 before polling and has immutable ID/role associations, including failed siblings.
 Only library/job-observed clip IDs on the selected connection can be used by the
 chat tools for extension/whole-song requests or retrieval of existing songs.
-The explicit retrieval UI instead accepts the user's one or two song links/IDs,
-binds the expected account identity, and runs under the ordinary cancellable
-Session-command fence. `retrieve_music` does not call generation preparation or
-submission: its first durable job record includes the selected immutable clip
-manifest, and collection/recovery uses those same IDs. Repeated retrieval reuses
-an exact existing Session/service/account/manifest job without replacing unknown
-generation outcomes. Remote text is bounded untrusted
-data; no generic HTTP tool or credential-bearing locator reaches the chat model.
+`retrieve_music` is admitted through the model tool path and does not call
+generation preparation or submission:
+its first durable job record includes the selected immutable clip manifest, and
+collection/recovery uses those same IDs. Repeated retrieval reuses an exact existing
+Session/service/account/manifest job without replacing unknown generation outcomes.
+Remote text is bounded untrusted data; no generic HTTP tool or credential-bearing
+locator reaches the chat model.
 Closing a dialog neither disconnects the saved account nor closes a user's browser.
 `app/suno-model-catalog.ts` owns one modal-only, read-only model catalog for the
-explicit `load_suno_models` command. The saved connection ID and exact private
-session bind its ownership; ordinary display/model/enablement edits do not
-change the account catalog. Publication revalidates that owner and tags the
+explicit `load_suno_models` command. The saved connection ID and verified account
+bind its ownership; ordinary display/model/enablement edits and automatic Cookie
+rotation do not change the account catalog. Publication revalidates that owner and tags the
 current audio-settings revision. Auth lifecycle changes, including a same-Cookie
 reimport in another dialog, invalidate it. Public state contains only bounded
 model IDs, names and explicit availability/default flags, never private
@@ -920,6 +944,14 @@ Live mutation recovery. Chat transports continue to exchange ordinary function
 calls and textual results. When an enabled processing service can consume the
 audio but the chat model cannot, the host validates and retains the attachment
 without adding its bytes to the model request.
+For a runtime with function tools plus verified audio-input delivery,
+`listen_to_audio_asset` reads one immutable local asset already registered from
+the current Session. The tool is absent for incompatible Profiles. Admission
+checks the shared request binary quota before reading, revalidates the exact
+metadata and content hash, records the textual tool result, and only then attaches
+the base64 WAV or MP3 to the next model turn. The accepted-input callback updates
+quota only after trace reporting, so a failed trace cannot admit the audio part.
+Remote-only outputs and preview frames are never eligible.
 
 An audio job stores its operation, exact service ID, optional model ID, input asset
 when applicable, requested stems, credential-owner
@@ -947,7 +979,7 @@ immutable manifest, without creating local assets. Generation, existing-song
 retrieval and Resume stop at this remote result; they never authorize or fetch
 downloads. The UI can lazily open Suno's own embedded player for an exact
 successful clip ID. This cross-origin sandbox has no parent credentials or
-referrer and does not expose its playback data as a SampleSource.
+referrer and does not expose its playback data as a SampleSource or model input.
 The active Session's result nodes live in a collapsible shelf above the composer,
 not in global App settings. Collapse and Session switches stop embedded/local
 playback, while ordinary result refreshes retain unchanged player nodes. A
@@ -1141,7 +1173,7 @@ retryable instead of leaving an unreachable conversation log.
 Settings schema version 8 combines connection Profiles, per-model configuration
 collections, the strict `defaultFollowUpBehavior` value `queue | steer`, the
 context-usage visibility flag, the validated `none | system | manual` network
-proxy selection, and an independent canonical nonnegative
+proxy selection, bounded global Custom Instructions, and an independent canonical nonnegative
 decimal-string revision for each global setting. It validates legacy
 `approvalMode` for compatibility, but runtime authorization never reads that
 field. Subscription model configurations persist reasoning mode and optional

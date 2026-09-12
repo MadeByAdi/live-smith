@@ -180,7 +180,7 @@ test("localized built-in details pass original bodies to Markdown and keep ident
     state.settings.uiLanguage = language;
     const harness = await createDialogHarness(state);
     try {
-      harness.click("#agentTab");
+      harness.click("#contextTab");
       const body = harness.document.getElementById("skillViewerBody");
       assert.ok(body);
       const renderer = harness.window.LiveSmithMarkdown;

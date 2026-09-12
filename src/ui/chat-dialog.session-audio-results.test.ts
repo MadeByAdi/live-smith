@@ -23,6 +23,10 @@ test("results belong to a collapsible active-Session shelf outside application s
     h.click("#sessionAudioResultsSummary"); await h.settle();
     assert.equal(shelf.open, true);
     assert.equal(h.document.querySelector("#sessionAudioResultsCount")!.textContent, "1");
+    assert.equal(h.document.querySelector("#sessionAudioResultsStatus")!.textContent, "Ready");
+    assert.equal(h.document.querySelector("#sessionAudioResultsStatus")!.getAttribute("data-status"), "complete");
+    assert.equal(h.document.querySelector("#audioJobs h4")!.textContent, "Music generation");
+    assert.equal(h.document.querySelector("#audioJobs .activity-state")!.textContent, "Generated · online");
     assert.equal(commandCalls(h).length, 0);
     assert.deepEqual(h.errors, []);
   } finally { h.close(); }

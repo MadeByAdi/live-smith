@@ -98,7 +98,7 @@ The dialog's shared visual tokens live in the template's `:root`: semantic
 surfaces, typography, spacing, control heights, radii and focus color. Reuse
 these tokens and existing control/disclosure styles instead of adding a
 provider-specific theme or a later override layer. Visual verification includes
-Agent and App settings, the collapsed/open Session audio-results shelf, narrow
+Agent and App settings, the collapsed/open Session audio shelf, narrow
 drawer focus, and long translated labels. The Suno version picker can be tested
 with a read-only catalog load; selecting, saving or discarding a version must
 not generate audio or implicitly enable a connection.
@@ -140,11 +140,13 @@ Processing tests use injected services and local audio fixtures; they do not
 upload user audio or consume generation credits or processing minutes. Real-service validation requires
 an explicitly configured account. Verify separated-stem timing, Warp settings,
 playback, Stop, and import behavior separately in the Ableton host.
-Suno Cookie tests use synthetic credentials, captured HTTP requests and injected
+Suno Platform tests use synthetic API keys and captured `/v0/audio` requests;
+they do not establish live Platform access. Suno.com Cookie tests use synthetic credentials, captured HTTP requests and injected
 default-browser handlers. They do not read browser profiles or log into real
 accounts. The runtime opens the website through the OS default handler, without
 browser discovery, extensions, automation flags or bundled browser dependencies.
-Explicitly imported Cookies are stored in private `suno-session-<serviceId>.json`
+Explicitly imported Cookies are reduced to required Suno/Clerk fields and stored
+in private `suno-session-<serviceId>.json`
 files in the extension storage directory, separately per audio connection, and must
 never enter source, fixtures, logs, screenshots or shared artifacts. See the
 [Cookie connection workflow](MODEL_PROVIDERS.md#sunocom-website-sign-in) for

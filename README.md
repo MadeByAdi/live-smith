@@ -58,7 +58,9 @@ names, and raw provider/SDK output stay in their original language.
   threshold defaults to 90% when the context window is known.
 - **Guide the musical approach.** Enable arrangement Skills per Session or
   mention one for a single request. Open a built-in Skill to read its instructions
-  before enabling it.
+  before enabling it. **Inspector → Context → Custom Instructions** stores
+  standing creative, workflow, and tool preferences across Sessions; the current
+  request can choose a different workflow at any time.
 - **Bring reference material.** Paste or drag images, documents, or audio into
   the composer. Input support depends on the model and connection.
 - **Keep work moving.** Queue a follow-up for the next turn, steer the response
@@ -70,29 +72,41 @@ names, and raw provider/SDK output stay in their original language.
   **Inspector → App → Audio tools**, then describe the music or sound you want.
   Multiple named audio connections, including separate accounts at the same
   provider, can be enabled together.
-- **Generate with a Suno service.** The explicitly labeled SunoAPI.org
-  third-party connection supports prompt-based music generation with its own
-  API key and your public callback URL. It is not Suno subscription access.
+- **Generate through the official Suno Platform API.** Add a separate
+  **Suno Platform (official API)** connection and use an API key managed at
+  [platform.suno.com](https://platform.suno.com/). Platform access and usage
+  are separate from the consumer website subscription.
+- **Use an optional third-party Suno service.** The explicitly labeled
+  SunoAPI.org connection uses that provider's own key, billing, and callback.
+  It is neither Suno Platform nor Suno subscription access.
 - **Connect a Suno.com account.** Open Suno in your system's default browser,
-  then explicitly import its `__client` Cookie in the local connection form.
-  Live Smith verifies and privately saves it without a browser extension or
+  then explicitly import its Suno request Cookie in the local connection form.
+  Both `__client` and current `__session` + `__client_uat` sessions are
+  supported. Live Smith verifies, privately saves, and refreshes only the required fields without a browser extension or
   access to your Google credentials. Enable the saved experimental connection
   to generate music using your subscription credits, supply lyrics/styles and
-  supported sliders, browse songs/models, extend songs and get whole songs.
+  supported sliders, select male or female vocals, request a supported 10–480
+  second duration, browse songs/models, extend songs and get whole songs.
   Load account versions in the connection editor and choose a fixed version or
-  follow the account default. The active Session's audio results appear above
-  the chat composer, separately from connection settings.
-  Completed songs can be auditioned through Suno's embedded player without
-  downloading them. Saving a selected song for Live is a separate confirmation
-  and may consume one download allowance; Live Smith never buys extra quota.
-  If Suno requires human verification, complete generation on its normal website,
-  then retrieve the song links in Live Smith without generating them again.
+  follow the account default. The active Session's generated and processed audio
+  appears above the chat composer, separately from connection settings. Completed
+  songs generated through Live Smith can be auditioned through Suno's embedded
+  player without downloading them. The embedded player is for human listening and
+  is never model input. Saving a selected song for Live and model use is a separate
+  confirmation and may consume one download allowance; Live Smith never buys extra
+  quota. A verified audio-input model can then listen to that saved Session asset
+  when asked. If Suno requires human verification, complete generation and download
+  the chosen song on its normal website, then drag or paste the local WAV or MP3
+  into Live Smith.
   This is not full Suno website parity; see the supported features and limits in the
-  [website sign-in workflow](docs/MODEL_PROVIDERS.md#sunocom-website-sign-in).
+  [website sign-in workflow](docs/MODEL_PROVIDERS.md#sunocom-website-sign-in). The
+  connection uses an unofficial website protocol and remains subject to
+  [Suno's current terms](https://suno.com/terms).
 - **Separate audio into stems.** Add a LALAL.AI connection, then ask to extract vocals, drums, bass, piano, or guitars from
   an audio attachment or an isolated Arrangement Audio Clip range. Saved results
   can be previewed, reused in later requests, and imported through ordinary Live
-  edits. The chat model needs tool support but does not need audio-input support.
+  edits. A verified audio-input model can also listen to a chosen saved stem when
+  asked. Separation itself needs tool support but does not require model audio input.
 
 Try requests such as:
 
@@ -340,6 +354,9 @@ to read an isolated Arrangement Audio Clip range without creating a saved
 attachment. This sends a temporary pre-effects render for the current request;
 Session View Clips and the track device chain are not included. That temporary
 render is model input only and is not an attachment SampleSource.
+Saved Session audio results follow the same verified model-capability gate: the
+agent can listen to one exact local asset when asked, while remote-only Suno
+players and their URLs are never sent to the model.
 
 Deleting a Session removes its private chat attachments, but it does not remove
 audio already imported into the Live Project. If import succeeds and post-import
@@ -358,8 +375,9 @@ with pending work.
 
 Profiles, Sessions, attachments, and imported Skills are stored locally.
 Prompts, relevant Live context, selected Skill guidance, supported attachment
-content, and any Arrangement audio range read by the agent are sent to the model
-provider you choose.
+content, any Arrangement audio range read by the agent, and any saved Session
+audio the user asks an audio-capable model to hear are sent to the model provider
+you choose.
 
 Direct API keys are stored in local Profile settings as plain text. A separate
 private local credential file stores OAuth credentials under exact Profile and
