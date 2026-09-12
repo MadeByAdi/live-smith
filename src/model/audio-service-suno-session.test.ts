@@ -10,8 +10,8 @@ const jwt = (claims: unknown, header: unknown = { alg: "RS256", typ: "JWT" }) =>
   [Buffer.from(JSON.stringify(header)), Buffer.from(JSON.stringify(claims)), Buffer.from("synthetic-signature")]
     .map((part) => part.toString("base64url")).join(".");
 const token = jwt({ sub: "client_synthetic" }, { alg: "HS256" });
-const accessToken = () => jwt({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 3600 });
-const sessionToken = () => jwt({ sub: "user_selected", sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 120 });
+const accessToken = (accountId = "user_selected") => jwt({ sub: accountId, sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 3600 });
+const sessionToken = (accountId = "user_selected") => jwt({ sub: accountId, sid: "sess_selected", exp: Math.floor(Date.now() / 1000) + 120 });
 const endpoint = "https://auth.suno.com/v1/client?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
 const mintEndpoint = "https://auth.suno.com/v1/client/sessions/sess_selected/tokens?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
 const touchEndpoint = "https://auth.suno.com/v1/client/sessions/sess_selected/touch?__clerk_api_version=2025-11-10&_clerk_js_version=5.117.0";
@@ -96,6 +96,32 @@ test("Clerk session route IDs are bounded opaque identifiers rather than a sess_
   assert.equal(calls, 2);
 });
 
+test("bounded provider account IDs do not require the legacy user_ prefix", async () => {
+  const accountId = "account-selected";
+  const clientResult = await verifier(
+    payload([session("sess_selected", accountId)]),
+    { jwt: accessToken(accountId) },
+  )(token, signal());
+  assert.equal(clientResult.accountId, accountId);
+  assert.equal(clientResult.accountName, "Ada Lovelace");
+
+  const imported = sessionToken(accountId);
+  const fresh = accessToken(accountId);
+  const sessionResult = await createSunoSessionResolver(async () =>
+    Response.json({
+      response: {
+        object: "session",
+        id: "sess_selected",
+        status: "active",
+        user: session("sess_selected", accountId).user,
+        last_active_token: { jwt: fresh },
+      },
+    })
+  )(`__session=${imported}`, signal());
+  assert.equal(sessionResult.accountId, accountId);
+  assert.equal(sessionResult.accountName, "Ada Lovelace");
+});
+
 test("session Cookie plus __client_uat uses Clerk touch, rotates the private session and preserves its device", async () => {
   const imported = sessionToken();
   const fresh = accessToken();
@@ -156,9 +182,9 @@ test("last active session never falls back to another account or a public user s
   }
 });
 
-test("identity excludes metadata, invalid Clerk user IDs, controls and credential echoes", async () => {
+test("identity excludes metadata, invalid account IDs, controls and credential echoes", async () => {
   for (const user of [{ ...session().user, id: token }, { ...session().user, first_name: token },
-    { ...session().user, id: "account_other" }, { ...session().user, first_name: "Ada\nCookie" }]) {
+    { ...session().user, id: "account/other" }, { ...session().user, first_name: "Ada\nCookie" }]) {
     await assert.rejects(verifier(payload([{ ...session(), user }]))(token, signal()), safeFailure);
   }
   const privateResult = await verifier(payload([{ ...session(), user: {

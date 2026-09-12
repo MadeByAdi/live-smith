@@ -76,7 +76,7 @@ export function normalizeSunoSessionIdentity(value: unknown, secret: string): Su
   const secrets = sunoSessionSecrets(secret);
   const accountId = identifier(input.accountId);
   const accountName = name(input.accountName, secrets);
-  if (!/^user_[A-Za-z0-9_-]+$/u.test(accountId) || secrets.some((value) => accountId.includes(value))) {
+  if (secrets.some((value) => accountId.includes(value))) {
     throw new SunoSessionUnavailableError();
   }
   return { accountId, ...(accountName ? { accountName } : {}) };
@@ -227,8 +227,7 @@ function sessionClaims(token: string, failure: () => Error = () => new SunoSessi
     const payload = object(JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8")));
     const accountId = identifier(payload.sub);
     const sessionId = identifier(payload.sid);
-    if (header.alg !== "RS256" || !/^user_[A-Za-z0-9_-]+$/u.test(accountId) ||
-        !Number.isSafeInteger(payload.exp)) throw new Error();
+    if (header.alg !== "RS256" || !Number.isSafeInteger(payload.exp)) throw new Error();
     return { accountId, sessionId, expiresAt: (payload.exp as number) * 1000 };
   } catch { throw failure(); }
 }

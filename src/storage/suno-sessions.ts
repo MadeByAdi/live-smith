@@ -48,7 +48,7 @@ export class SunoSessions {
       const before = await fileMetadata(target);
       await checkedRoot(root);
       const current = await fileMetadata(target);
-      if (before ? !current || !sameFile(before, current) : current !== undefined) throw new SunoSessionStorageError();
+      if (before ? !current || !sameSingleLinkFile(before, current) : current !== undefined) throw new SunoSessionStorageError();
       // A retry after an uncertain unlink must still sync the directory.
       await removeFileDurably(target);
       await confirmCommittedRoot(root);
@@ -82,7 +82,7 @@ export class SunoSessions {
     const handle = await fs.open(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
       const opened = await handle.stat();
-      if (!sameFile(before, opened) || !opened.isFile() || opened.size > MAX_RECORD_BYTES) throw new SunoSessionStorageError();
+      if (!sameSingleLinkFile(before, opened) || !opened.isFile() || opened.size > MAX_RECORD_BYTES) throw new SunoSessionStorageError();
       const bytes = Buffer.alloc(MAX_RECORD_BYTES + 1);
       let total = 0;
       while (total < bytes.length) {
@@ -92,9 +92,16 @@ export class SunoSessions {
       }
       if (total > MAX_RECORD_BYTES || total !== opened.size) throw new SunoSessionStorageError();
       const record = decode(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, total))), serviceId);
-      if (!sameFile(opened, await handle.stat()) || !sameFile(opened, await fs.lstat(target))) throw new SunoSessionStorageError();
+      let secured = await handle.stat();
+      if (!sameSingleLinkFile(opened, secured) || !sameSingleLinkFile(opened, await fs.lstat(target))) throw new SunoSessionStorageError();
       await checkedRoot(root);
-      if (platform !== "win32") await handle.chmod(0o600);
+      if (platform !== "win32") {
+        if (!hasPrivateFileMode(secured)) await handle.chmod(0o600);
+        secured = await handle.stat();
+        const current = await fs.lstat(target);
+        if (!sameSingleLinkFile(opened, secured) || !sameSingleLinkFile(opened, current) ||
+          !hasPrivateFileMode(secured) || !hasPrivateFileMode(current)) throw new SunoSessionStorageError();
+      }
       return record;
     } finally { await handle.close(); }
   }
@@ -120,10 +127,15 @@ async function checkedRoot(binding: RootBinding, create = false): Promise<boolea
     try {
       const opened = await handle.stat();
       if (!sameDirectory(binding.identity, opened)) throw new SunoSessionStorageError();
-      await handle.chmod(0o700);
+      if (!hasPrivateDirectoryMode(opened)) await handle.chmod(0o700);
+      const secured = await handle.stat();
+      if (!sameDirectory(opened, secured) || !hasPrivateDirectoryMode(secured)) throw new SunoSessionStorageError();
     } finally { await handle.close(); }
   }
-  if (!sameDirectory(binding.identity, await fs.lstat(root))) throw new SunoSessionStorageError();
+  const current = await fs.lstat(root);
+  if (!sameDirectory(binding.identity, current) || platform !== "win32" && !hasPrivateDirectoryMode(current)) {
+    throw new SunoSessionStorageError();
+  }
   return true;
 }
 
@@ -144,9 +156,18 @@ function sameDirectory(left: DirectoryIdentity, right: DirectoryIdentity): boole
   return left.ino === right.ino && left.dev === right.dev;
 }
 
-function sameFile(left: { ino: number; dev: number; size: number; mtimeMs: number },
-  right: { ino: number; dev: number; size: number; mtimeMs: number }): boolean {
-  return left.ino === right.ino && left.dev === right.dev && left.size === right.size && left.mtimeMs === right.mtimeMs;
+function sameSingleLinkFile(left: { ino: number; dev: number; size: number; mtimeMs: number; nlink: number },
+  right: { ino: number; dev: number; size: number; mtimeMs: number; nlink: number }): boolean {
+  return left.nlink === 1 && right.nlink === 1 && left.ino === right.ino && left.dev === right.dev &&
+    left.size === right.size && left.mtimeMs === right.mtimeMs;
+}
+
+function hasPrivateDirectoryMode(metadata: { mode: number }): boolean {
+  return (metadata.mode & 0o777) === 0o700;
+}
+
+function hasPrivateFileMode(metadata: { mode: number }): boolean {
+  return (metadata.mode & 0o777) === 0o600;
 }
 
 function decode(value: unknown, serviceId: string): StoredSunoSession {

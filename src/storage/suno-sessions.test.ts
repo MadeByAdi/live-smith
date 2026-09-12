@@ -51,6 +51,155 @@ test("invalid IDs, missing storage and foreign transactions fail without secrets
   });
 });
 
+test("an already-private storage root is accepted without chmod", async (t) => {
+  const h = await harness(t);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  let directoryChmods = 0;
+  const chmod = prototype.chmod;
+  t.mock.method(prototype, "chmod", async function (this: fs.FileHandle, mode: number) {
+    if ((await this.stat()).isDirectory()) directoryChmods++;
+    return chmod.call(this, mode);
+  });
+  assert.equal(await h.store.load("one"), undefined);
+  assert.equal(directoryChmods, 0);
+});
+
+test("a permissive storage root is tightened and revalidated", async (t) => {
+  const h = await harness(t);
+  await fs.chmod(h.directory, 0o755);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  let directoryChmods = 0;
+  const chmod = prototype.chmod;
+  t.mock.method(prototype, "chmod", async function (this: fs.FileHandle, mode: number) {
+    if ((await this.stat()).isDirectory()) directoryChmods++;
+    return chmod.call(this, mode);
+  });
+  assert.equal(await h.store.load("one"), undefined);
+  assert.equal(directoryChmods, 1);
+  assert.equal((await fs.stat(h.directory)).mode & 0o777, 0o700);
+});
+
+test("a permissive storage root fails closed when tightening fails", async (t) => {
+  const h = await harness(t);
+  await fs.chmod(h.directory, 0o755);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  t.mock.method(prototype, "chmod", async function (this: fs.FileHandle) {
+    if ((await this.stat()).isDirectory()) throw new Error(record.clientToken);
+  });
+  await assert.rejects(h.store.load("one"), (error) => {
+    assert.ok(error instanceof SunoSessionStorageError);
+    assert.ok(!String(error.stack).includes(record.clientToken));
+    return true;
+  });
+  assert.equal((await fs.stat(h.directory)).mode & 0o777, 0o755);
+});
+
+test("a permissive storage root fails closed when tightening is ineffective", async (t) => {
+  const h = await harness(t);
+  await fs.chmod(h.directory, 0o755);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  t.mock.method(prototype, "chmod", async () => undefined);
+  await assert.rejects(h.store.load("one"), SunoSessionStorageError);
+  assert.equal((await fs.stat(h.directory)).mode & 0o777, 0o755);
+});
+
+test("an already-private credential record is accepted without chmod", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  let fileChmods = 0;
+  const chmod = prototype.chmod;
+  t.mock.method(prototype, "chmod", async function (this: fs.FileHandle, mode: number) {
+    if ((await this.stat()).isFile()) fileChmods++;
+    return chmod.call(this, mode);
+  });
+  assert.deepEqual(await h.store.load("one"), record);
+  assert.equal(fileChmods, 0);
+});
+
+test("a permissive credential record is tightened and revalidated", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const target = path.join(h.directory, "suno-session-one.json");
+  await fs.chmod(target, 0o644);
+  assert.deepEqual(await h.store.load("one"), record);
+  assert.equal((await fs.stat(target)).mode & 0o777, 0o600);
+});
+
+test("a permissive credential record fails closed when tightening fails", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const target = path.join(h.directory, "suno-session-one.json");
+  await fs.chmod(target, 0o644);
+  const probe = await fs.open(h.directory);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  t.mock.method(prototype, "chmod", async function (this: fs.FileHandle) {
+    if ((await this.stat()).isFile()) throw new Error(record.clientToken);
+  });
+  await assert.rejects(h.store.load("one"), (error) => {
+    assert.ok(error instanceof SunoSessionStorageError);
+    assert.ok(!String(error.stack).includes(record.clientToken));
+    return true;
+  });
+  assert.equal((await fs.stat(target)).mode & 0o777, 0o644);
+});
+
+test("a permissive credential record fails closed when tightening is ineffective", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const target = path.join(h.directory, "suno-session-one.json");
+  await fs.chmod(target, 0o644);
+  const probe = await fs.open(target);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  t.mock.method(prototype, "chmod", async () => undefined);
+  await assert.rejects(h.store.load("one"), SunoSessionStorageError);
+  assert.equal((await fs.stat(target)).mode & 0o777, 0o644);
+});
+
+test("multiply linked credential records remain rejected", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const target = path.join(h.directory, "suno-session-one.json");
+  await fs.link(target, path.join(h.directory, "linked-record.json"));
+  await assert.rejects(h.store.load("one"), SunoSessionStorageError);
+});
+
+test("a credential record linked after initial metadata validation is rejected", async (t) => {
+  const h = await harness(t);
+  await h.store.save("one", record);
+  const target = path.join(h.directory, "suno-session-one.json");
+  const linked = path.join(h.directory, "late-linked-record.json");
+  const probe = await fs.open(target);
+  const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
+  await probe.close();
+  const stat = prototype.stat;
+  let linkCreated = false;
+  t.mock.method(prototype, "stat", async function (this: fs.FileHandle, ...args: Parameters<fs.FileHandle["stat"]>) {
+    const metadata = await stat.call(this, ...args);
+    if (!linkCreated && metadata.isFile()) {
+      fsSync.linkSync(target, linked);
+      linkCreated = true;
+    }
+    return metadata;
+  });
+
+  await assert.rejects(h.store.load("one"), SunoSessionStorageError);
+  assert.equal(linkCreated, true);
+  assert.equal((await fs.lstat(target)).nlink, 2);
+});
+
 test("symlink roots and files are never read, replaced, chmodded or deleted", async (t) => {
   const h = await harness(t);
   await h.store.save("one", record);
@@ -141,16 +290,18 @@ test("a directory replaced during one clear operation is not accepted as the ori
   const probe = await fs.open(h.directory);
   const prototype = Object.getPrototypeOf(probe) as fs.FileHandle;
   await probe.close();
-  const chmod = prototype.chmod;
+  const stat = prototype.stat;
   let swapped = false;
-  const mock = t.mock.method(prototype, "chmod", async function (this: fs.FileHandle, mode: number) {
-    if (!swapped && (await this.stat()).isDirectory()) {
+  let directoryStats = 0;
+  const mock = t.mock.method(prototype, "stat", async function (this: fs.FileHandle, ...args: Parameters<fs.FileHandle["stat"]>) {
+    const metadata = await stat.call(this, ...args);
+    if (metadata.isDirectory() && ++directoryStats === 2) {
       swapped = true;
       fsSync.renameSync(h.directory, displaced);
       fsSync.mkdirSync(h.directory);
       fsSync.copyFileSync(path.join(displaced, "suno-session-one.json"), path.join(h.directory, "suno-session-one.json"));
     }
-    return chmod.call(this, mode);
+    return metadata;
   });
   await assert.rejects(h.store.clear("one"), SunoSessionStorageError);
   mock.mock.restore();
