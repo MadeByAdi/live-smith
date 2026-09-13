@@ -1873,15 +1873,8 @@ label {
 
 .subscription-auth-panel {
   --subscription-state: var(--color-quiet);
-  display: grid;
-  gap: var(--spacing-2);
-  min-width: 0;
-  padding: var(--spacing-3);
-  color: var(--color-muted);
+  @apply grid min-w-0 gap-2 rounded-panel border-0 p-3 text-compact text-muted;
   background: rgba(255, 255, 255, 0.025);
-  border: 0;
-  border-radius: var(--radius-panel);
-  font-size: 10px;
   line-height: 1.4;
 }
 
@@ -1901,89 +1894,56 @@ label {
 .subscription-auth-panel[hidden],
 .direct-api-fields[hidden],
 .field[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .subscription-auth-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-2);
+  @apply flex items-center justify-between gap-2;
 }
 
 .subscription-auth-experimental {
-  margin-left: 4px;
-  color: var(--color-quiet);
-  font-size: 8px;
-  font-weight: 650;
+  @apply ml-1 text-[8px] text-quiet font-control uppercase;
   letter-spacing: 0.09em;
-  text-transform: uppercase;
 }
 
 .subscription-auth-panel h4 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 12px;
-  font-weight: 650;
+  @apply m-0 text-label text-text font-control;
   line-height: 1.25;
 }
 
 .subscription-auth-state-badge {
-  flex: none;
-  max-width: 120px;
-  overflow: hidden;
-  padding: 0;
+  @apply max-w-[120px] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent p-0 text-[8px] font-control uppercase;
   color: var(--subscription-state);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  font-size: 8px;
-  font-weight: 650;
   letter-spacing: 0.08em;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .subscription-auth-note {
-  margin: -2px 0 0;
-  color: var(--color-quiet);
+  @apply m-0 -mt-[2px] text-quiet;
   line-height: 1.45;
 }
 
 .subscription-auth-status {
-  display: grid;
-  gap: 8px;
+  @apply grid gap-2;
 }
 
 .subscription-auth-state {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 0;
-  background: transparent;
-  border: 0;
+  @apply grid min-w-0 gap-[2px] border-0 bg-transparent p-0;
 }
 
 .subscription-auth-state-title {
-  color: var(--color-text);
-  font-size: 11px;
-  font-weight: 650;
+  @apply text-small text-text font-control;
 }
 
 .subscription-auth-state-detail {
-  color: var(--color-muted);
+  @apply text-muted;
   overflow-wrap: anywhere;
 }
 
 .subscription-auth-device-ticket {
-  display: grid;
-  gap: 7px;
-  padding: 9px 10px 10px;
+  @apply grid gap-[7px] rounded-[5px] border px-[10px] pb-[10px] pt-[9px];
   background: rgba(255, 209, 102, 0.055);
   border: 1px solid rgba(255, 209, 102, 0.28);
-  border-radius: 5px;
 }
 
 .subscription-auth-device-ticket[hidden],
@@ -1991,23 +1951,13 @@ label {
 .subscription-auth-device-error[hidden],
 .subscription-auth-code-ticket[hidden],
 .subscription-auth-code-ticket button[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .subscription-auth-open-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 9px;
-  color: var(--color-trace);
+  @apply flex min-h-composer-control items-center justify-between gap-2 rounded-control border px-[9px] py-0 text-compact text-trace font-semibold no-underline;
   background: rgba(120, 185, 232, 0.07);
   border: 1px solid rgba(120, 185, 232, 0.34);
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  text-decoration: none;
 }
 
 .subscription-auth-open-link:hover {
@@ -2022,97 +1972,59 @@ label {
 }
 
 .subscription-auth-device-error {
-  margin: 0;
-  color: var(--color-danger);
+  @apply m-0 text-danger;
 }
 
 .subscription-auth-code-ticket {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  padding-top: 1px;
+  @apply flex min-w-0 items-center justify-between gap-[10px] pt-px;
 }
 
 .subscription-auth-code-label {
-  display: grid;
-  gap: 1px;
-  color: var(--color-quiet);
-  font-size: 8px;
-  font-weight: 650;
+  @apply grid gap-px text-[8px] text-quiet font-control uppercase;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .subscription-auth-code-label small {
-  color: var(--color-muted);
-  font-size: 9px;
-  font-weight: 400;
+  @apply text-[9px] text-muted font-[400] normal-case;
   letter-spacing: 0;
-  text-transform: none;
 }
 
 .subscription-auth-code-ticket input {
   width: min(166px, 62%);
-  height: 38px;
-  min-width: 0;
-  padding: 0 8px;
-  color: var(--color-text);
-  text-align: center;
-  background: var(--color-field);
+  @apply h-[38px] min-w-0 bg-field px-2 py-0 text-center text-[16px] text-text font-code font-control;
   border-color: rgba(255, 209, 102, 0.38);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 16px;
-  font-weight: 650;
   letter-spacing: 0.1em;
   line-height: 1.15;
 }
 
 .subscription-auth-code-ticket.authorization-code-entry {
-  display: grid;
+  @apply grid items-end gap-[6px];
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 6px;
 }
 
 .subscription-auth-code-ticket.authorization-code-entry label {
-  grid-column: 1 / -1;
+  @apply col-span-full;
 }
 
 .subscription-auth-code-ticket.authorization-code-entry input {
-  width: 100%;
-  height: 32px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 500;
+  @apply h-control w-full text-left text-small font-medium;
   letter-spacing: 0;
 }
 
 .subscription-auth-code-ticket.authorization-code-entry button {
-  height: 32px;
-  padding: 0 11px;
-  white-space: nowrap;
+  @apply h-control whitespace-nowrap px-[11px] py-0;
 }
 
 .subscription-auth-device-guidance {
-  margin: 0;
-  color: var(--color-quiet);
+  @apply m-0 text-quiet;
 }
 
 .subscription-auth-actions button {
-  align-self: stretch;
-  width: 100%;
-  height: 30px;
-  min-width: 0;
-  padding: 0 9px;
-  font-size: 10px;
+  @apply h-composer-control w-full min-w-0 self-stretch px-[9px] py-0 text-compact;
 }
 
 .subscription-auth-actions .subscription-auth-quiet-action {
-  color: var(--color-quiet);
-  background: transparent;
-  border-color: transparent;
+  @apply border-transparent bg-transparent text-quiet;
 }
 
 .subscription-auth-actions .subscription-auth-quiet-action:not(:disabled):hover,
@@ -2123,35 +2035,27 @@ label {
 }
 
 .subscription-auth-actions button[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .subscription-auth-details {
-  padding-top: 1px;
-  color: var(--color-quiet);
+  @apply pt-px text-quiet;
 }
 
 .subscription-auth-details summary {
-  width: fit-content;
-  color: var(--color-quiet);
-  cursor: pointer;
-  font-size: 9px;
+  @apply w-fit text-[9px] text-quiet cursor-pointer;
 }
 
 .subscription-auth-details[open] summary {
-  color: var(--color-muted);
+  @apply text-muted;
 }
 
 .subscription-auth-details ul {
-  display: grid;
-  gap: var(--spacing-1);
-  margin: var(--spacing-2) 0 0;
-  padding: 0 var(--spacing-2) 0 var(--spacing-6);
+  @apply m-0 mt-2 grid gap-1 py-0 pl-6 pr-2;
 }
 
 .direct-api-fields {
-  display: grid;
-  gap: var(--spacing-3);
+  @apply grid gap-3;
 }
 
 .capability-preview {
