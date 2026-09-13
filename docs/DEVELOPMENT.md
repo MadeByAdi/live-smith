@@ -97,23 +97,42 @@ focus, host integration, OAuth browser/device login, refresh, cancellation,
 shutdown, and provider requests. Use an authorized test account for provider
 checks; ordinary tests must not read a developer's saved credentials.
 
+### UI styling conventions
+
 The dialogs' shared visual tokens live in `src/ui/styles/tokens.css`; reusable
 control and disclosure roles live under `src/ui/styles/components/`;
 dialog-specific composition lives in `chat.css` and `result.css`. Tailwind
 Preflight is omitted deliberately because the WebView already owns its base
-element contract. Keep semantic classes used by the client scripts as behavior
-hooks, and use the shared theme and component roles for presentation instead of
-adding a provider-specific theme or a later override layer. The entries disable
-source scanning because client fragments contain runtime strings and use semantic
-DOM hooks; compose shared rules with complete Tailwind utilities through `@apply`.
-If direct template utilities are introduced later, explicitly register only
-their source files and never construct utility names through interpolation.
+element contract. Keep semantic classes used by the client scripts as stable
+behavior hooks, and use the shared theme and component roles for presentation
+instead of adding a provider-specific theme or a later override layer.
 
-Visual verification includes Composer child focus versus its outer focus
-boundary, floating panels, Agent and App settings, the collapsed/open Session
-audio shelf, Inspector drawer focus, and long translated labels. The Suno
-version picker can be tested with a read-only catalog load; selecting, saving or
-discarding a version must not generate audio or implicitly enable a connection.
+Use Tailwind theme tokens and `@apply` for reusable, standard presentation such
+as spacing, dimensions, typography, colors, borders, visibility, overflow, and
+ordinary interaction states. Keep native CSS when it expresses a browser or
+layout contract more clearly: custom properties, exact grid or flex formulas,
+container queries, keyframes and transforms, pseudo-element content, native or
+WebKit appearance, SVG paint, data-URL assets, precise focus outlines, and
+state-specific translucent values. The goal is one tokenized design system,
+not zero handwritten declarations.
+
+The entries disable source scanning because client fragments contain runtime
+strings and use semantic DOM hooks; compose shared rules with complete Tailwind
+utilities through `@apply`. If direct template utilities are introduced later,
+explicitly register only their source files and never construct utility names
+through interpolation. Do not use generated utility classes as client-script
+selectors.
+
+For visual changes, compare the affected states in Chromium after transitions
+and animations settle. Verification includes keyboard focus, hover, disabled,
+open and hidden states, narrow container boundaries, Composer child focus versus
+its outer focus boundary, floating panels, Agent and App settings, the
+collapsed/open Session audio shelf, Inspector drawer focus, and long translated
+labels. Browser-native controls can paint non-deterministically; verify their
+geometry and surrounding surface separately from native-chrome pixel noise. The
+Suno version picker can be tested with a read-only catalog load; selecting,
+saving or discarding a version must not generate audio or implicitly enable a
+connection.
 
 ## Packaging
 
