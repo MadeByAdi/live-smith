@@ -2170,8 +2170,7 @@ label {
 }
 
 .audio-job > button {
-  min-width: 0;
-  padding: 0 5px;
+  @apply min-w-0 px-[5px] py-0;
 }
 
 .skill-manager {
@@ -2418,10 +2417,7 @@ label {
 }
 
 #modelProfileSettings textarea {
-  height: 100px;
-  resize: vertical;
-  font-family: var(--font-code);
-  font-size: 11px;
+  @apply h-[100px] resize-y text-small font-code;
 }
 
 .toggle-hint {
