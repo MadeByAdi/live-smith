@@ -2318,87 +2318,71 @@ label {
 }
 
 .saved-profile-controls {
-  display: grid;
-  gap: 7px;
+  @apply grid gap-[7px];
 }
 
 .model-config-editor {
-  display: grid;
-  gap: 7px;
+  @apply grid gap-[7px];
 }
 
 .model-load-row {
-  display: grid;
+  @apply grid items-center gap-[7px];
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
 }
 
 .model-load-row button {
-  min-width: 0;
-  height: 30px;
-  padding: 0 10px;
+  @apply h-composer-control min-w-0 px-[10px] py-0;
 }
 
 .model-load-copy {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
+  @apply relative flex min-w-0 items-center gap-[5px];
 }
 
 .manual-model-entry {
-  font-size: 10px;
+  @apply text-compact;
 }
 
 .manual-model-entry[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .manual-model-entry > summary {
-  width: max-content;
-  color: var(--color-quiet);
-  cursor: pointer;
+  @apply w-max text-quiet cursor-pointer;
 }
 
 .manual-model-entry[open] > summary {
-  margin-bottom: 6px;
-  color: var(--color-text);
+  @apply mb-[6px] text-text;
 }
 
 .manual-model-entry-body {
-  display: grid;
+  @apply grid gap-[5px];
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px;
 }
 
 .manual-model-entry-body .field-hint {
-  grid-column: 1 / -1;
-  min-width: 0;
+  @apply col-span-full min-w-0;
   overflow-wrap: anywhere;
 }
 
 .model-config-actions button {
-  min-width: 0;
-  padding: 0 5px;
-  font-size: 10px;
+  @apply min-w-0 px-[5px] py-0 text-compact;
 }
 
 .model-config-default {
-  min-width: 0;
-  color: var(--color-trace);
-  font-size: 10px;
+  @apply min-w-0 text-compact text-trace;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .model-setup-guide[hidden],
 .saved-profile-controls[hidden] {
-  display: none;
+  @apply hidden;
 }
 
-.profile-actions button,
+.profile-actions button {
+  @apply min-w-0 px-[5px] py-0;
+}
+
 .audio-job > button {
   min-width: 0;
   padding: 0 5px;
