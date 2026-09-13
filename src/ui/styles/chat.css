@@ -814,47 +814,38 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .timeline-item.compaction > summary {
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply text-small text-quiet normal-case;
   letter-spacing: normal;
-  text-transform: none;
 }
 
 .timeline-item.reasoning {
-  margin-bottom: 8px;
+  @apply mb-2;
 }
 
 .timeline-item.reasoning > .timeline-label,
 .timeline-item.reasoning > summary {
-  color: var(--color-trace);
+  @apply text-trace;
 }
 
 .timeline-item.reasoning.streaming > .timeline-label,
 .timeline-item.reasoning.streaming > summary {
-  color: var(--color-accent);
+  @apply text-accent;
 }
 
 .timeline-item.reasoning .timeline-content {
-  padding: 8px 10px;
-  color: var(--color-muted);
+  @apply px-[10px] py-2 text-muted;
   background: rgba(120, 185, 232, 0.05);
   border-color: rgba(120, 185, 232, 0.22);
   border-left-width: 2px;
 }
 
 details.timeline-item {
-  margin-bottom: 8px;
+  @apply mb-2;
 }
 
 details.timeline-item > summary {
-  display: block;
-  cursor: pointer;
+  @apply relative block cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap rounded-control;
   padding: 4px 8px 4px 22px;
-  position: relative;
-  border-radius: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 details.timeline-item > summary::-webkit-details-marker {
@@ -884,17 +875,12 @@ details.timeline-item > summary:hover {
 }
 
 .timeline-activity-group {
-  max-width: 100%;
-  margin-bottom: 8px;
+  @apply mb-2 max-w-full;
 }
 
 .timeline-activity-group > summary,
 .timeline-activity-step > summary {
-  position: relative;
-  cursor: pointer;
-  list-style: none;
-  border-radius: 4px;
-  text-transform: none;
+  @apply relative cursor-pointer list-none rounded-control normal-case;
   letter-spacing: normal;
 }
 
@@ -929,22 +915,16 @@ details.timeline-item > summary:hover {
 }
 
 .timeline-activity-group-items {
-  display: grid;
+  @apply grid border-l border-l-border pl-2;
   gap: 1px;
   margin: 2px 0 4px 9px;
-  padding-left: 8px;
-  border-left: 1px solid var(--color-border);
 }
 
 .timeline-activity-group-summary,
 .timeline-activity-step-summary {
-  display: grid;
+  @apply grid min-h-6 items-baseline text-body text-muted;
   grid-template-columns: minmax(105px, max-content) minmax(0, 1fr) auto;
-  align-items: baseline;
   gap: 7px;
-  min-height: 24px;
-  color: var(--color-muted);
-  font-size: 13px;
   line-height: 1.35;
 }
 
@@ -958,35 +938,24 @@ details.timeline-item > summary:hover {
 
 .timeline-activity-title,
 .timeline-activity-excerpt {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .timeline-activity-title {
-  color: var(--color-muted);
-  font-weight: 500;
+  @apply text-muted font-medium;
 }
 
 .timeline-activity-excerpt {
-  color: var(--color-quiet);
+  @apply text-quiet;
 }
 
 .activity-state {
-  display: inline-flex;
-  align-items: center;
-  justify-self: end;
+  @apply inline-flex min-w-0 items-center justify-self-end whitespace-nowrap text-compact text-quiet font-semibold;
   gap: 5px;
-  min-width: 0;
-  color: var(--color-quiet);
-  font-size: 10px;
-  font-weight: 600;
   line-height: 1.2;
-  white-space: nowrap;
 }
 
-.activity-state:empty { display: none; }
+.activity-state:empty { @apply hidden; }
 
 .activity-state::before {
   content: "";
@@ -998,52 +967,41 @@ details.timeline-item > summary:hover {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28);
 }
 
-.activity-state[data-status="pending"] { color: var(--color-trace); }
-.activity-state[data-status="complete"] { color: var(--color-success); }
-.activity-state[data-status="partial"] { color: var(--color-warning); }
-.activity-state[data-status="failed"] { color: var(--color-danger); }
-.activity-state[data-status="stopped"] { color: var(--color-quiet); }
+.activity-state[data-status="pending"] { @apply text-trace; }
+.activity-state[data-status="complete"] { @apply text-success; }
+.activity-state[data-status="partial"] { @apply text-warning; }
+.activity-state[data-status="failed"] { @apply text-danger; }
+.activity-state[data-status="stopped"] { @apply text-quiet; }
 
 .timeline-activity-detail {
-  display: grid;
+  @apply grid rounded-control border border-border bg-surface-subtle;
   gap: 7px;
   margin: 2px 4px 5px 17px;
   padding: 7px 9px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.025);
 }
 
 .timeline-activity-detail-section {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+  @apply grid min-w-0 gap-[2px];
 }
 
 .timeline-activity-detail-label {
-  color: var(--color-quiet);
-  font-size: 12px;
-  font-weight: 600;
+  @apply text-label text-quiet font-semibold;
   letter-spacing: normal;
 }
 
 .timeline-activity-detail-content {
+  @apply whitespace-pre-wrap text-label text-muted font-code;
   overflow-wrap: anywhere;
-  color: var(--color-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
   line-height: 1.45;
-  white-space: pre-wrap;
 }
 
 .timeline-item.web_search .timeline-content {
-  display: grid;
+  @apply grid;
   gap: 9px;
 }
 
 .web-search-section {
-  display: grid;
-  gap: 4px;
+  @apply grid gap-1;
 }
 
 .web-search-section + .web-search-section {
@@ -1052,24 +1010,18 @@ details.timeline-item > summary:hover {
 }
 
 .web-search-section-label {
-  color: var(--color-quiet);
-  font-size: 9px;
+  @apply text-[9px] text-quiet uppercase;
   font-weight: 700;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .web-search-section-heading {
-  display: flex;
-  align-items: center;
+  @apply flex w-fit items-center;
   gap: 5px;
-  width: fit-content;
 }
 
 .web-search-source-empty {
-  margin: 0;
-  color: var(--color-quiet);
-  font-size: 10px;
+  @apply m-0 text-compact text-quiet;
 }
 
 .inline-help {
@@ -1282,43 +1234,34 @@ details.timeline-item > summary:hover {
 
 .web-search-query-list,
 .web-search-source-list {
-  display: grid;
-  gap: 3px;
-  margin: 0;
+  @apply m-0 grid gap-[3px];
 }
 
 .web-search-query-list {
-  padding-left: 18px;
+  @apply pl-[18px] text-compact;
   color: #d9ecfb;
-  font-size: 10px;
 }
 
 .web-search-query-single {
-  margin: 0;
+  @apply m-0 text-compact;
   color: #d9ecfb;
-  font-size: 10px;
   overflow-wrap: anywhere;
 }
 
 .web-search-query-list li {
-  padding-left: 2px;
+  @apply pl-[2px];
   overflow-wrap: anywhere;
 }
 
 .web-search-source-list {
-  padding: 0;
-  list-style: none;
+  @apply list-none p-0;
 }
 
 .web-search-source-list a {
-  display: grid;
+  @apply grid items-baseline gap-2 px-[2px] py-1 no-underline;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 2px;
   color: #d9ecfb;
   border-bottom: 1px solid rgba(120, 185, 232, 0.12);
-  text-decoration: none;
 }
 
 .web-search-source-list li:last-child a {
@@ -1326,7 +1269,7 @@ details.timeline-item > summary:hover {
 }
 
 .web-search-source-list a:hover {
-  color: var(--color-trace);
+  @apply text-trace;
   background: rgba(120, 185, 232, 0.06);
 }
 
@@ -1336,40 +1279,31 @@ details.timeline-item > summary:hover {
 }
 
 .web-search-source-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .web-search-source-domain {
-  max-width: 150px;
-  overflow: hidden;
-  color: var(--color-quiet);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply max-w-[150px] overflow-hidden text-ellipsis whitespace-nowrap text-[9px] text-quiet;
 }
 
 details.timeline-item > .timeline-content {
-  margin-top: 4px;
-  font-size: 12px;
+  @apply mt-1 text-label;
 }
 
 .timeline-item.web_search > summary {
-  color: var(--color-trace);
+  @apply text-trace;
 }
 
 .timeline-item.web_search.live > summary {
-  color: var(--color-accent);
+  @apply text-accent;
 }
 
 .timeline-item.error > summary {
-  color: var(--color-danger);
+  @apply text-danger;
 }
 
 .timeline-item.web_search .timeline-content {
-  padding: 8px 10px;
+  @apply px-[10px] py-2;
   color: #d9ecfb;
   background: rgba(124, 184, 232, 0.08);
   border-color: rgba(124, 184, 232, 0.35);
