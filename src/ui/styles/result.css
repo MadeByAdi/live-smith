@@ -4,67 +4,43 @@
 
 @layer base {
 * {
-  box-sizing: border-box;
+  @apply box-border;
 }
 
 body {
-  margin: 0;
-  min-height: 100vh;
+  @apply m-0 min-h-screen bg-canvas font-ui text-body text-text;
   color-scheme: dark;
-  background: var(--color-canvas);
-  color: var(--color-text);
-  font-family: var(--font-ui);
-  font-size: var(--text-body);
 }
 }
 
 @layer components {
 main {
-  display: grid;
+  @apply grid h-screen gap-3 p-[14px];
   grid-template-rows: auto 1fr auto;
-  gap: 12px;
-  height: 100vh;
-  padding: 14px;
 }
 
 h1 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 650;
+  @apply m-0 text-heading font-control;
 }
 
 pre {
-  margin: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  white-space: pre-wrap;
-  border: 1px solid var(--color-border);
-  background: var(--color-pane-raised);
-  border-radius: var(--radius-panel);
-  padding: 10px;
+  @apply m-0 overflow-auto overscroll-contain whitespace-pre-wrap rounded-panel border border-border bg-pane-raised p-[10px] text-text;
   line-height: 1.45;
-  color: var(--color-text);
   font-family: inherit;
 }
 
 .actions {
-  display: flex;
-  justify-content: flex-end;
+  @apply flex justify-end;
 }
 
 button {
-  border: 0;
-  border-radius: var(--radius-control);
-  padding: 7px 12px;
-  background: var(--color-result-action);
-  color: var(--color-accent-ink);
   font: inherit;
-  font-weight: 650;
-  cursor: pointer;
+  @apply cursor-pointer rounded-control bg-result-action px-3 py-[7px] text-accent-ink font-control;
+  border: 0;
 }
 
 button:hover {
-  background: var(--color-result-action-hover);
+  @apply bg-result-action-hover;
 }
 
 button:focus-visible {
