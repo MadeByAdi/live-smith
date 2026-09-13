@@ -2697,35 +2697,27 @@ label {
 }
 
 .toggle-hint {
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply text-small text-quiet;
 }
 
 .field-error {
-  color: var(--color-danger);
-  font-size: 11px;
+  @apply text-small text-danger;
   line-height: 1.35;
 }
 
 .visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
+  @apply absolute -m-px size-px overflow-hidden whitespace-nowrap border-0 p-0;
   clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 .context {
-  align-content: start;
-  min-height: 0;
-  color: var(--color-muted);
+  @apply min-h-0 content-start text-muted;
 }
 
-.context-settings > .custom-instructions-settings,
+.context-settings > .custom-instructions-settings {
+  @apply mt-3 border-t border-t-divider pt-3;
+}
+
 .context-settings > .skill-manager {
   margin-top: var(--spacing-3);
   padding-top: var(--spacing-3);
@@ -2735,106 +2727,70 @@ label {
 .context-settings > .skill-viewer { margin-top: var(--spacing-6); }
 
 .custom-instructions-settings > .inspector-scope-header {
-  margin-bottom: var(--spacing-2);
+  @apply mb-2;
 }
 
 .custom-instructions-settings textarea {
-  min-height: 96px;
-  height: 96px;
+  @apply h-24 min-h-24;
   resize: vertical;
 }
 
 .custom-instructions-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-2);
+  @apply flex items-center justify-between gap-2;
 }
 
 .custom-instructions-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--spacing-2);
+  @apply mt-2 flex justify-end;
 }
 
 .context-shell {
-  justify-self: center;
-  width: 100%;
+  @apply w-full justify-self-center;
 }
 
 .context-card {
-  width: 100%;
-  min-width: 0;
-  padding: 11px;
-  background: var(--color-field);
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
+  @apply w-full min-w-0 rounded-[5px] border border-border bg-field p-[11px];
 }
 
 .context-title {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 650;
+  @apply m-0 text-body text-text font-control;
   line-height: 1.35;
   overflow-wrap: anywhere;
   text-wrap: pretty;
 }
 
 .context-details {
-  display: grid;
-  gap: 7px;
-  margin-top: 11px;
+  @apply mt-[11px] grid gap-[7px];
 }
 
 .context-properties {
-  display: grid;
+  @apply grid gap-px overflow-hidden rounded-control border border-border bg-border;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  background: var(--color-border);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
 }
 
 .context-property {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 7px 8px;
-  background: var(--color-pane);
+  @apply grid min-w-0 gap-[3px] bg-pane px-2 py-[7px];
 }
 
 .context-property:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
+  @apply col-span-full;
 }
 
 .context-property-label {
-  color: var(--color-quiet);
-  font-size: 9px;
+  @apply text-[9px] text-quiet;
   letter-spacing: 0.05em;
 }
 
 .context-property-value {
-  min-width: 0;
-  color: var(--color-trace);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  @apply min-w-0 text-small text-trace font-code;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .context-detail,
 .context-empty {
-  margin: 0;
-  padding: 7px 8px;
-  color: var(--color-muted);
-  background: var(--color-pane);
-  border-radius: var(--radius-control);
-  font-size: 11px;
+  @apply m-0 whitespace-pre-wrap rounded-control bg-pane px-2 py-[7px] text-small text-muted;
   line-height: 1.4;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
 
 @container composer (max-width: 446px) {
