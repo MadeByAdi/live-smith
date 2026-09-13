@@ -55,8 +55,11 @@ For a production build without starting Live:
 npm run build
 ```
 
-Both build variants type-check the source and verify Extension Host runtime
-compatibility before writing the bundle to `dist/extension.js`.
+Both build variants type-check the source, compile the Tailwind entries under
+`src/ui/styles/` to static CSS, and verify Extension Host runtime compatibility
+before writing the bundle to `dist/extension.js`. The compiled styles are
+embedded into each data-URL dialog; the WebView does not load Tailwind, a CDN,
+or a separate stylesheet at runtime.
 
 ## Verification
 
@@ -94,14 +97,22 @@ focus, host integration, OAuth browser/device login, refresh, cancellation,
 shutdown, and provider requests. Use an authorized test account for provider
 checks; ordinary tests must not read a developer's saved credentials.
 
-The dialog's shared visual tokens live in the template's `:root`: semantic
-surfaces, typography, spacing, control heights, radii and focus color. Reuse
-these tokens and existing control/disclosure styles instead of adding a
-provider-specific theme or a later override layer. Visual verification includes
-Agent and App settings, the collapsed/open Session audio shelf, Inspector
-drawer focus, and long translated labels. The Suno version picker can be tested
-with a read-only catalog load; selecting, saving or discarding a version must
-not generate audio or implicitly enable a connection.
+The dialogs' shared visual tokens live in `src/ui/styles/tokens.css`; authored
+dialog styles live in `chat.css` and `result.css`. Tailwind Preflight is omitted
+deliberately because the WebView already owns its base element contract. Keep
+semantic classes used by the client scripts as behavior hooks, and use the
+shared theme and component roles for presentation instead of adding a
+provider-specific theme or a later override layer. The entries disable source
+scanning because client fragments contain runtime strings and use semantic DOM
+hooks; compose shared rules with complete Tailwind utilities through `@apply`.
+If direct template utilities are introduced later, explicitly register only
+their source files and never construct utility names through interpolation.
+
+Visual verification includes Composer child focus versus its outer focus
+boundary, floating panels, Agent and App settings, the collapsed/open Session
+audio shelf, Inspector drawer focus, and long translated labels. The Suno
+version picker can be tested with a read-only catalog load; selecting, saving or
+discarding a version must not generate audio or implicitly enable a connection.
 
 ## Packaging
 

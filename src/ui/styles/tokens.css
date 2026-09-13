@@ -1,0 +1,63 @@
+@theme static {
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  --spacing: 4px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-control: 32px;
+  --spacing-control-compact: 28px;
+  --spacing-composer-control: 30px;
+  --spacing-composer-icon: 26px;
+
+  --color-canvas: #292929;
+  --color-chrome: #262626;
+  --color-pane: #303030;
+  --color-pane-raised: #393939;
+  --color-field: #202020;
+  --color-border-strong: #1d1d1d;
+  --color-border: #454545;
+  --color-divider: rgba(255, 255, 255, 0.09);
+  --color-text: #f2f2f2;
+  --color-muted: #c6c6c6;
+  --color-quiet: #a9a9a9;
+  --color-accent: #ff9f1a;
+  --color-accent-soft: rgba(255, 159, 26, 0.12);
+  --color-accent-ink: #211503;
+  --color-accent-hover: #ffb733;
+  --color-surface-hover: #454545;
+  --color-border-hover: #686868;
+  --color-composer-control: rgba(255, 255, 255, 0.055);
+  --color-focus: #ff9f1a;
+  --color-focus-soft: rgba(255, 255, 255, 0.07);
+  --color-warning: #ffd166;
+  --color-success: #8fcf73;
+  --color-danger: #ff6e57;
+  --color-trace: #78b9e8;
+  --color-scrollbar-thumb: rgba(198, 198, 198, 0.46);
+  --color-result-action: #8fd36a;
+  --color-result-action-hover: #a5df86;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-weight-control: 650;
+  --text-small: 11px;
+  --text-compact: 10px;
+  --text-label: 12px;
+  --text-body: 13px;
+  --text-heading: 15px;
+  --text-composer-icon: 20px;
+
+  --radius-control: 4px;
+  --radius-panel: 6px;
+  --shadow-popover: 0 12px 28px rgba(0, 0, 0, 0.44);
+  --shadow-popover-compact: 0 10px 24px rgba(0, 0, 0, 0.42);
+  --shadow-menu: 0 8px 18px rgba(0, 0, 0, 0.32);
+  --shadow-inspector: -12px 0 24px rgba(0, 0, 0, 0.32);
+}

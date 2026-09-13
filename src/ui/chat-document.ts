@@ -204,6 +204,7 @@ export function composeChatDocument(
   state: ChatBridgeState,
   bridge: { baseUrl: string; token: string },
   scripts: ChatClientScripts,
+  styles = "",
 ): string {
   const attachmentsScript = injectSessionContract(injectAttachmentContract(scripts.attachments));
   const bridgeClientScript = injectSessionContract(injectEditScopeContract(
@@ -232,6 +233,8 @@ export function composeChatDocument(
     __BOOTSTRAP_SCRIPT__: injectEditScopeContract(scripts.bootstrap),
   };
   // Substitute the authored template once; inserted Session data and scripts are not templates.
-  return template.replace(/__[A-Z0-9_]+__/g, (placeholder) =>
-    Object.hasOwn(substitutions, placeholder) ? substitutions[placeholder]! : placeholder);
+  return template
+    .replace("/*__CHAT_STYLES__*/", () => styles)
+    .replace(/__[A-Z0-9_]+__/g, (placeholder) =>
+      Object.hasOwn(substitutions, placeholder) ? substitutions[placeholder]! : placeholder);
 }

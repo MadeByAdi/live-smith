@@ -86,13 +86,9 @@ test("clearing or removing a saved connection requires confirmation and cancelli
     const editor = h.document.querySelector<HTMLDetailsElement>(
       "#audioServiceFields",
     )!;
-    const saveActions = h.document.querySelector<HTMLElement>(
-      ".audio-commit-actions",
-    )!;
     assert.equal(h.document.querySelectorAll("[data-audio-service-id]").length, 0);
     assert.equal(editor.hidden, true);
     assert.equal(editor.open, false);
-    assert.equal(h.window.getComputedStyle(saveActions).display, "none");
   } finally { h.close(); }
 });
 

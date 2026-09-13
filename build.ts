@@ -7,6 +7,7 @@ import * as vm from "node:vm";
 import ts from "typescript";
 
 import { buildMarkdownRendererScript } from "./scripts/build-markdown-renderer.js";
+import { compileUiStyles } from "./scripts/build-ui-styles.js";
 import { assertPackagedBundleContainsThirdPartyNotices } from "./src/release/package-verification.js";
 
 const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8")) as {
@@ -18,6 +19,8 @@ const networkRuntimeInject = "src/runtime/undici-node-globals.ts";
 
 verifySourceRuntimeBoundaries("src");
 const markdownRendererScript = await buildMarkdownRendererScript(production);
+const chatStyles = await compileUiStyles("src/ui/styles/chat.css", production);
+const resultStyles = await compileUiStyles("src/ui/styles/result.css", production);
 
 const buildResult = await esbuild.build({
   entryPoints: ["src/extension.ts"],
@@ -35,6 +38,8 @@ const buildResult = await esbuild.build({
   loader: { ".html": "text" },
   define: {
     __LIVE_SMITH_MARKDOWN_RENDERER_SCRIPT__: JSON.stringify(markdownRendererScript),
+    __LIVE_SMITH_CHAT_STYLES__: JSON.stringify(chatStyles),
+    __LIVE_SMITH_RESULT_STYLES__: JSON.stringify(resultStyles),
   },
   banner: {
     js: `/*!\n${thirdPartyNotices.replaceAll("*/", "* /")}\n*/`,

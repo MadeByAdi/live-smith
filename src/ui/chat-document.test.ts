@@ -132,16 +132,21 @@ test("chat document injects the canonical recovery ledger bound", () => {
 
 test("template placeholders inside Session content never consume client script slots", () => {
   const state = stateFixture();
-  state.contextSummary = "__I18N_SCRIPT__ __BOOTSTRAP_SCRIPT__ __BRIDGE__ __STATE__";
+  state.contextSummary = "__CHAT_STYLES__ __I18N_SCRIPT__ __BOOTSTRAP_SCRIPT__ __BRIDGE__ __STATE__";
   state.sessions[0]!.title = "__I18N_SCRIPT__";
   const html = composeChatDocument(
-    '<script>window.state = JSON.parse(__STATE__); __I18N_SCRIPT__ __BOOTSTRAP_SCRIPT__</script>',
+    '<style>/*__CHAT_STYLES__*/</style><script>window.state = JSON.parse(__STATE__); __I18N_SCRIPT__ __BOOTSTRAP_SCRIPT__</script>',
     state,
     { baseUrl: "http://127.0.0.1:12345", token: "test-token" },
     { ...scripts, i18n: 'window.translatorLoaded = true;', bootstrap: 'window.clientLoaded = true;' },
+    ".composer-surface { color: var(--color-text); }",
   );
   const dom = new JSDOM(html, { runScripts: "dangerously" });
   try {
+    assert.equal(
+      dom.window.document.querySelector("style")?.textContent,
+      ".composer-surface { color: var(--color-text); }",
+    );
     assert.equal(Reflect.get(dom.window, "translatorLoaded"), true);
     assert.equal(Reflect.get(dom.window, "clientLoaded"), true);
     assert.equal(Reflect.get(dom.window, "state").contextSummary, state.contextSummary);

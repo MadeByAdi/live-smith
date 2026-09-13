@@ -1,0 +1,74 @@
+@layer theme, base, components, utilities;
+@import "./tokens.css";
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@layer base {
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color-scheme: dark;
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+}
+}
+
+@layer components {
+main {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
+  height: 100vh;
+  padding: 14px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+pre {
+  margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  border: 1px solid var(--color-border);
+  background: var(--color-pane-raised);
+  border-radius: var(--radius-panel);
+  padding: 10px;
+  line-height: 1.45;
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+button {
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 7px 12px;
+  background: var(--color-result-action);
+  color: var(--color-accent-ink);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--color-result-action-hover);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+}

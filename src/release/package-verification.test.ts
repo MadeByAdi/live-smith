@@ -49,6 +49,8 @@ test("package verification requires the actual bundled third-party notices", asy
     "`path-expression-matcher` 1.6.2 — Copyright (c) 2024",
     "`strnum` 2.4.1 — Copyright (c) 2021 Natural Intelligence",
     "`xml-naming` 0.3.0 — Copyright (c) 2026 Natural Intelligence",
+    "`tailwindcss` 4.3.3",
+    "Copyright (c) Tailwind Labs, Inc.",
     "`marked` 18.0.9",
     "Copyright (c) 2018+, MarkedJS",
     "Copyright (c) 2011-2018, Christopher Jeffrey",

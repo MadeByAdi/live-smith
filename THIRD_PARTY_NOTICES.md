@@ -35,6 +35,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Interface styles
+
+### `tailwindcss` 4.3.3
+
+Copyright (c) Tailwind Labs, Inc.
+
+Tailwind CSS is distributed under the MIT License reproduced in the Document
+parser section above. Live Smith compiles its generated static CSS into the
+extension bundle; Tailwind does not run in the WebView.
+
 ## Network client
 
 ### `undici` 7.29.0

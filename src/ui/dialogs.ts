@@ -15,10 +15,13 @@ import type { ChatBridgeState } from "./chat-state.js";
 import { composeChatDocument } from "./chat-document.js";
 
 declare const __LIVE_SMITH_MARKDOWN_RENDERER_SCRIPT__: string;
+declare const __LIVE_SMITH_CHAT_STYLES__: string;
+declare const __LIVE_SMITH_RESULT_STYLES__: string;
 
 export function resultUrl(title: string, body: string): string {
   return toDataUrl(
     resultDialog
+      .replace("/*__RESULT_STYLES__*/", () => __LIVE_SMITH_RESULT_STYLES__)
       .replace("__HOST_ADAPTER_SCRIPT__", () => hostAdapterScript)
       .replace("__I18N_SCRIPT__", () => i18nScript.replace("__UI_I18N__", () => serializeUiI18nData()))
       .replace("__TITLE__", () => escapeHtml(title))
@@ -42,7 +45,7 @@ export function chatHtml(
     profileEditor: profileEditorScript,
     sessionTimeline: sessionTimelineScript,
     skillManager: skillManagerScript,
-  });
+  }, __LIVE_SMITH_CHAT_STYLES__);
 }
 
 function toDataUrl(html: string): string {
