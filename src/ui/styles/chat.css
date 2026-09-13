@@ -2304,17 +2304,11 @@ label {
 }
 
 .settings-peer-actions {
-  display: grid;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  gap: var(--spacing-1);
-  min-width: 0;
+  @apply grid min-w-0 auto-cols-fr grid-flow-col gap-1;
 }
 
 .settings-peer-actions > button {
-  width: 100%;
-  min-width: 0;
-  padding-inline: var(--spacing-2);
+  @apply w-full min-w-0 px-2;
 }
 
 .saved-profile-controls {
@@ -2539,66 +2533,46 @@ label {
 }
 
 .draft-status {
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply text-small text-quiet;
 }
 
 .draft-status.dirty {
-  color: var(--color-accent);
+  @apply text-accent;
 }
 
 .settings-actions-status {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
+  @apply grid min-w-0 gap-px;
 }
 
 .settings-actions-owner {
-  color: var(--color-muted);
-  font-size: 9px;
-  font-weight: 650;
+  @apply text-[9px] text-muted font-control uppercase;
   letter-spacing: 0.06em;
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .settings-actions {
-  position: sticky;
-  z-index: 4;
-  bottom: 0;
-  display: grid;
+  @apply sticky bottom-0 z-[4] mt-4 grid items-center gap-2 rounded-none border-0 border-t border-t-divider bg-pane px-0 py-2;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-4);
   margin-bottom: calc(-1 * var(--inspector-padding));
-  padding: var(--spacing-2) 0;
-  border: 0;
-  border-top: 1px solid var(--color-divider);
-  border-radius: 0;
-  background: var(--color-pane);
 }
 
 .settings-actions button,
 .app-confirmation-actions button,
 .audio-settings-actions button,
 .audio-job > button {
-  height: var(--spacing-control);
+  @apply h-control;
 }
 
 .app-confirmation-actions button {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
+  @apply box-border w-full min-w-0;
 }
 
 .advanced-fields {
-  display: grid;
-  gap: var(--spacing-3);
+  @apply grid gap-3;
 }
 
 .capability-settings-section {
-  gap: var(--spacing-2);
+  @apply gap-2;
 }
 
 #audioSettingsSection details > summary {
@@ -2621,69 +2595,46 @@ label {
 }
 
 .advanced-groups {
-  display: grid;
-  gap: var(--spacing-3);
-  padding: var(--spacing-2);
+  @apply grid gap-3 p-2;
 }
 
 .app-confirmation-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  @apply fixed inset-0 z-[100] grid place-items-center p-6;
   background: rgba(15, 15, 15, 0.72);
 }
 
 .app-confirmation-layer[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .app-confirmation-card {
   width: min(360px, 100%);
-  padding: 14px;
-  background: var(--color-pane-raised);
-  border: 1px solid #666;
-  border-radius: 8px;
+  @apply rounded-[8px] border border-[#666] bg-pane-raised p-[14px];
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
 }
 
 .app-confirmation-card h2 {
-  margin: 0 0 7px;
-  color: var(--color-text);
-  font-size: 14px;
+  @apply m-0 text-[14px] text-text;
+  margin-bottom: 7px;
 }
 
 .app-confirmation-card p {
-  margin: 0;
-  color: var(--color-muted);
+  @apply m-0 text-muted;
   line-height: 1.45;
 }
 
 .app-confirmation-actions {
-  display: grid;
+  @apply mt-[14px] grid gap-2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
 }
 
 .advanced-group {
-  display: grid;
-  gap: var(--spacing-3);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  @apply m-0 grid min-w-0 gap-3 border-0 p-0;
 }
 
 .advanced-group legend {
-  padding: 0;
-  color: var(--color-muted);
-  font-size: 10px;
-  font-weight: 700;
+  @apply p-0 text-compact text-muted font-[700] uppercase;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .skill-drop-zone {
@@ -2906,17 +2857,15 @@ label {
 
 @media (max-width: 420px) {
   .settings-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    @apply grid-cols-2;
   }
 
   .settings-actions-status {
-    grid-column: 1 / -1;
+    @apply col-span-full;
   }
 
   .settings-actions button {
-    width: 100%;
-    min-width: 0;
-    padding-inline: 6px;
+    @apply w-full min-w-0 px-[6px];
   }
 }
 
