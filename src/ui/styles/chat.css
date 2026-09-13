@@ -22,81 +22,56 @@
 
 @layer base {
 * {
-  box-sizing: border-box;
+  @apply box-border;
   --scrollbar-thumb-color: transparent;
   transition: --scrollbar-thumb-color 220ms ease-out;
 }
 
 html,
 body {
-  height: 100%;
-  overflow: hidden;
+  @apply h-full overflow-hidden;
 }
 
 body {
-  margin: 0;
-  background: var(--color-chrome);
-  color: var(--color-text);
-  font-family: var(--font-ui);
-  font-size: var(--text-body);
+  @apply m-0 bg-chrome font-ui text-body text-text;
 }
 }
 
 @layer components {
 .app {
-  display: grid;
+  @apply grid h-full bg-canvas;
   grid-template-rows: 44px 1fr;
-  height: 100%;
-  background: var(--color-canvas);
 }
 
 header {
-  display: grid;
+  @apply grid items-center gap-3 border-b border-b-border-strong bg-chrome px-3 py-1.5;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--color-border-strong);
-  background: var(--color-chrome);
 }
 
 h1 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  @apply m-0 text-heading font-semibold;
   letter-spacing: 0.01em;
 }
 
 .header-actions {
-  display: flex;
-  align-items: center;
+  @apply flex min-w-0 items-center;
   gap: 7px;
-  min-width: 0;
 }
 
 .header-tool-button svg {
-  display: block;
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
+  @apply block size-[15px] fill-none stroke-current;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.7;
 }
 
 .header-tool-button[aria-expanded="true"] {
-  color: var(--color-accent);
-  border-color: var(--color-border-hover);
-  background: var(--color-surface-hover);
+  @apply border-border-hover bg-surface-hover text-accent;
 }
 
 main {
-  position: relative;
-  display: grid;
+  @apply relative grid min-h-0 overflow-hidden;
   grid-template-columns: var(--sessions-pane-width) minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
 }
 
 .app.sessions-collapsed main {
@@ -106,29 +81,22 @@ main {
 .sessions-pane,
 .chat-pane,
 .inspector-pane {
-  min-height: 0;
-  border-right: 1px solid var(--color-border-strong);
-  background: var(--color-pane);
+  @apply min-h-0 border-r border-r-border-strong bg-pane;
 }
 
 .sessions-pane {
-  display: grid;
+  @apply grid overflow-hidden;
   grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
 }
 
 .sessions-pane[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .inspector-pane {
-  position: absolute;
-  z-index: 30;
-  inset: 0 0 0 auto;
+  @apply absolute inset-y-0 right-0 z-30 border-l border-l-border-strong shadow-inspector;
   width: min(var(--inspector-pane-width), calc(100% - var(--sessions-pane-width)));
-  border-left: 1px solid var(--color-border-strong);
   border-right: 0;
-  box-shadow: var(--shadow-inspector);
 }
 
 .app.sessions-collapsed .inspector-pane {
@@ -136,49 +104,28 @@ main {
 }
 
 .pane-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 40px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-muted);
-  font-size: var(--text-label);
-  font-weight: 600;
+  @apply flex h-10 items-center justify-between gap-2 border-b border-b-border px-3 text-label text-muted font-semibold;
 }
 
 .session-actions {
-  display: flex;
+  @apply flex;
   gap: 5px;
 }
 
 .session-heading {
-  display: flex;
-  align-items: baseline;
+  @apply flex min-w-0 items-baseline;
   gap: 5px;
-  min-width: 0;
 }
 
 .session-selection-count {
-  color: var(--color-trace);
-  font-size: 9px;
-  font-weight: 600;
+  @apply whitespace-nowrap text-[9px] text-trace font-semibold normal-case;
   letter-spacing: 0;
-  text-transform: none;
-  white-space: nowrap;
 }
 
 /* Keep real scrollbar lanes on Sessions, Timeline and Inspector panels.
    WebKit's stable gutter uses the wider native size when content fits. */
 .sessions {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-height: 0;
-  overflow-x: auto;
-  overflow-y: scroll;
-  overscroll-behavior: contain;
+  @apply grid min-h-0 content-start gap-1 overflow-x-auto overflow-y-scroll overscroll-contain;
   padding: var(--sessions-padding);
   padding-inline-end: calc(var(--sessions-padding) - var(--scrollbar-size));
 }
