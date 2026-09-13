@@ -1424,21 +1424,16 @@ details.timeline-item > .timeline-content {
 }
 
 .composer {
-  position: relative;
-  display: grid;
+  @apply relative grid min-w-0 gap-0;
   grid-template-columns: minmax(0, 1fr);
   container: composer / inline-size;
-  gap: 0;
-  min-width: 0;
   padding: 9px 12px 10px;
 }
 
 .composer-surface {
   --composer-border: var(--color-border);
-  display: grid;
+  @apply grid min-w-0 bg-field;
   grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
-  background: var(--color-field);
   border: 1px solid var(--composer-border);
   border-radius: 9px;
 }
@@ -1453,65 +1448,43 @@ details.timeline-item > .timeline-content {
 }
 
 .pending-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  margin-bottom: 7px;
+  @apply flex min-w-0 flex-wrap gap-[6px] mb-[7px];
 }
 
 .pending-attachments[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .attachment-chip {
-  display: inline-grid;
+  @apply inline-grid items-center rounded-control border border-border bg-pane-raised text-text;
   grid-template-columns: minmax(0, auto) auto;
-  align-items: center;
   max-width: min(100%, 360px);
-  color: var(--color-text);
-  background: var(--color-pane-raised);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
 }
 
 .attachment-chip-label {
-  min-width: 0;
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
   padding: 5px 7px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .attachment-remove {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--color-muted);
-  background: transparent;
+  @apply size-control-compact min-w-[28px] bg-transparent p-0 text-[17px] text-muted;
   border: 0;
   border-left: 1px solid var(--color-border);
   border-radius: 0 4px 4px 0;
-  font-size: 17px;
   line-height: 1;
 }
 
 .attachment-remove:hover:not(:disabled),
 .attachment-remove:focus-visible {
-  color: var(--color-danger);
+  @apply text-danger;
   background: rgba(255, 110, 87, 0.1);
 }
 
 .composer-surface > textarea {
-  height: auto;
-  min-height: 38px;
+  @apply h-auto min-h-[38px] overflow-y-auto bg-field px-[10px] py-2;
   max-height: min(160px, 24vh);
-  padding: 8px 10px;
-  overflow-y: auto;
   border: 0;
   border-radius: 9px 9px 0 0;
-  background: var(--color-field);
 }
 
 .composer-surface:has(.live-context-summary:not([hidden])) > textarea {
@@ -1519,18 +1492,11 @@ details.timeline-item > .timeline-content {
 }
 
 .composer-toolbar {
-  position: relative;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
+  @apply relative flex min-h-[42px] min-w-0 flex-nowrap items-center bg-field px-[7px] py-[5px];
   column-gap: 8px;
   row-gap: 6px;
-  min-width: 0;
-  min-height: 42px;
-  padding: 5px 7px;
   border: 0;
   border-radius: 0 0 9px 9px;
-  background: var(--color-field);
 }
 
 /* The composer's joined context/input/toolbar border is its focus frame. */
@@ -1542,36 +1508,25 @@ details.timeline-item > .timeline-content {
 
 .composer-live-controls,
 .composer-runtime-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  @apply flex min-w-0 items-center gap-[6px];
 }
 
 .composer-live-controls {
   flex: 0 1 auto;
-  flex-wrap: nowrap;
-  max-width: 100%;
-  order: 0;
+  @apply order-0 max-w-full flex-nowrap;
 }
 
 .composer-runtime-controls {
   flex: 0 1 auto;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  order: 1;
-  width: auto;
-  max-width: 100%;
-  margin-left: auto;
+  @apply order-1 ml-auto w-auto max-w-full flex-nowrap justify-end;
 }
 
 .composer-runtime-field {
-  display: block;
-  min-width: 0;
+  @apply block min-w-0;
 }
 
 .composer-runtime-field[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .composer-runtime-field.model {
@@ -1585,35 +1540,24 @@ details.timeline-item > .timeline-content {
 }
 
 #composerModel {
-  max-width: 220px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  @apply max-w-[220px] font-code;
 }
 
 #composerReasoning {
-  max-width: 120px;
+  @apply max-w-[120px];
   color: #c59cff;
 }
 
 .context-usage {
-  position: relative;
-  display: grid;
-  place-items: center;
+  @apply relative grid size-6 place-items-center text-[7px] text-trace;
   flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  color: var(--color-trace);
-  font-size: 7px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .context-usage svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+  @apply absolute inset-0 size-full overflow-visible;
 }
 
 .context-usage-track,
@@ -1634,11 +1578,11 @@ details.timeline-item > .timeline-content {
 }
 
 .context-usage[data-state="unavailable"] {
-  color: var(--color-quiet);
+  @apply text-quiet;
 }
 
 .context-usage[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .context-usage[data-state="unavailable"] .context-usage-meter {
@@ -1648,50 +1592,35 @@ details.timeline-item > .timeline-content {
 }
 
 .context-usage-value {
-  position: relative;
-  z-index: 1;
-  white-space: nowrap;
+  @apply relative z-[1] whitespace-nowrap;
 }
 
 .primary.composer-send {
-  display: grid;
-  place-items: center;
+  @apply grid size-[30px] min-w-[30px] place-items-center self-center rounded-full p-0;
   flex: 0 0 30px;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 50%;
-  align-self: center;
 }
 
 .send-button-icon {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
+  @apply size-4 fill-none stroke-current;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
 }
 
 .send-button-stop-icon {
-  display: none;
-  fill: currentColor;
-  stroke: none;
+  @apply hidden fill-current stroke-none;
 }
 
 .composer-send.stop .send-button-send-icon {
-  display: none;
+  @apply hidden;
 }
 
 .composer-send.stop .send-button-stop-icon {
-  display: block;
+  @apply block;
 }
 
 .attachment-menu-shell {
-  position: relative;
-  flex: 0 0 auto;
+  @apply relative flex-none;
 }
 
 .attachment-menu-button {
@@ -1700,109 +1629,67 @@ details.timeline-item > .timeline-content {
 }
 
 .attachment-menu {
-  position: absolute;
-  z-index: 12;
+  @apply absolute left-0 z-[12] grid gap-1 p-[5px];
   bottom: calc(100% + 8px);
-  left: 0;
-  display: grid;
-  gap: 4px;
   width: min(292px, calc(100vw - 36px));
-  padding: 5px;
 }
 
 .attachment-menu[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .attachment-drop-hint {
-  display: grid;
-  gap: 2px;
-  width: 100%;
-  min-height: 48px;
+  @apply grid min-h-12 w-full gap-[2px] text-left;
   padding: 7px 9px;
-  text-align: left;
   border-radius: 5px;
 }
 
 .attachment-drop-hint {
-  color: var(--color-text);
-  background: rgba(255, 255, 255, 0.035);
+  @apply bg-surface-hover-soft text-text;
   border: 1px dashed #626262;
 }
 
 .attachment-drop-hint strong {
-  font-size: 12px;
-  font-weight: 650;
+  @apply text-label font-control;
 }
 
 .attachment-drop-hint span,
 .attachment-capability-hint {
-  color: var(--color-quiet);
-  font-size: 10px;
+  @apply text-compact text-quiet;
   line-height: 1.35;
 }
 
 .attachment-capability-hint {
-  padding: 3px 9px;
-  color: var(--color-warning);
+  @apply px-[9px] py-[3px] text-warning;
 }
 
 .composer-autocomplete {
-  @apply shadow-menu;
-  display: grid;
+  @apply mb-[6px] grid overflow-x-hidden overflow-y-auto p-[3px] shadow-menu;
   width: min(440px, 100%);
   max-height: min(128px, 32vh);
-  margin-bottom: 6px;
-  overflow-x: hidden;
-  overflow-y: auto;
   grid-template-columns: minmax(0, 1fr);
-  padding: 3px;
 }
 
 .composer-autocomplete[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .composer-suggestion {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  min-height: 28px;
-  overflow: hidden;
-  padding: 4px 7px;
-  color: var(--color-text);
-  font-size: 11px;
+  @apply flex min-h-control-compact w-full min-w-0 items-center gap-2 overflow-hidden rounded-control bg-transparent px-[7px] py-1 text-left text-small text-text;
   line-height: 1.2;
-  text-align: left;
-  background: transparent;
-  border-radius: 4px;
 }
 
 .composer-suggestion strong {
-  flex: 0 0 auto;
-  max-width: 48%;
-  overflow: hidden;
-  font-size: 11px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply max-w-[48%] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-small font-control;
 }
 
 .composer-suggestion span {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-quiet);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply min-w-0 flex-auto overflow-hidden text-ellipsis whitespace-nowrap text-compact text-quiet;
 }
 
 .composer-suggestion[aria-selected="true"],
 .composer-suggestion:hover {
-  background: var(--color-accent-soft);
+  @apply bg-accent-soft;
 }
 
 .tab-panel:focus {
