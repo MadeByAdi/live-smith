@@ -1064,7 +1064,7 @@ details.timeline-item > summary:hover {
 }
 
 .network-proxy-url-field input {
-  @apply text-[10.5px] font-code;
+  @apply text-body font-code;
 }
 
 .network-proxy-url-hint {
@@ -1689,21 +1689,6 @@ details.timeline-item > .timeline-content {
 .audio-model-options > summary:hover { @apply bg-surface-hover-soft text-text; }
 .settings-disclosure > .field, .audio-model-options > .field { margin-block: var(--spacing-2); }
 .audio-key-auth-panel .field { @apply m-0; }
-.suno-auth-panel {
-  container-name: sunoAuth;
-  container-type: inline-size;
-}
-
-@container sunoAuth (max-width: 290px) {
-  .suno-auth-panel .connection-auth-actions.settings-peer-actions {
-    @apply grid-flow-row grid-cols-2;
-  }
-
-  .suno-auth-panel .connection-auth-quiet-action {
-    @apply col-span-full;
-  }
-}
-
 .field-with-action { @apply grid items-start gap-2; grid-template-columns: minmax(0, 1fr) auto; }
 .field-with-action button { @apply px-2; }
 #audioServiceModel { @apply font-code; }
@@ -1815,7 +1800,7 @@ label {
 }
 
 .subscription-auth-open-link {
-  @apply flex min-h-composer-control items-center justify-between gap-2 rounded-control border px-[9px] py-0 text-compact text-trace font-semibold no-underline;
+  @apply flex min-h-control items-center justify-between gap-2 rounded-control border px-[9px] py-0 text-label text-trace font-semibold no-underline;
   background: rgba(120, 185, 232, 0.07);
   border: 1px solid rgba(120, 185, 232, 0.34);
 }
@@ -2052,15 +2037,11 @@ label {
 }
 
 .model-load-row button {
-  @apply h-composer-control min-w-0 px-[10px] py-0;
+  @apply min-w-0;
 }
 
 .model-load-copy {
   @apply relative flex min-w-0 items-center gap-[5px];
-}
-
-.manual-model-entry {
-  @apply text-compact;
 }
 
 .manual-model-entry[hidden] {
@@ -2068,7 +2049,7 @@ label {
 }
 
 .manual-model-entry > summary {
-  @apply w-max text-quiet cursor-pointer;
+  @apply w-max text-compact text-quiet cursor-pointer;
 }
 
 .manual-model-entry[open] > summary {
@@ -2086,7 +2067,7 @@ label {
 }
 
 .model-config-actions button {
-  @apply min-w-0 px-[5px] py-0 text-compact;
+  @apply min-w-0 px-[5px] py-0;
 }
 
 .model-config-default {
@@ -2256,21 +2237,13 @@ label {
   @apply gap-2;
 }
 
-#audioSettingsSection details > summary {
-  @apply min-h-control-compact px-2 py-1;
-}
-
-#audioSettingsSection details > .field {
+.audio-settings-details > .field {
   @apply mx-2 my-1;
 }
 
-#audioSettingsSection details > .field-hint,
-#audioSettingsSection details > .audio-settings-actions {
+.audio-settings-details > .field-hint,
+.audio-settings-details > .audio-settings-actions {
   @apply mx-2 mb-0 mt-1;
-}
-
-#audioSettingsSection .settings-actions {
-  @apply mt-0 px-0 py-1;
 }
 
 .advanced-groups {
@@ -2351,7 +2324,7 @@ label {
   resize: vertical;
 }
 
-#modelProfileSettings textarea {
+.model-extra-body-editor {
   @apply h-[100px] resize-y text-small font-code;
 }
 

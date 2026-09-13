@@ -428,7 +428,7 @@
                     <fieldset class="advanced-group">
                       <legend data-i18n="Raw request JSON">Raw request JSON</legend>
                       <span class="field-hint" data-i18n="Cannot override protected request fields.">Cannot override protected request fields.</span>
-                      <div class="field"><label for="extraBody" data-i18n="Extra Body JSON">Extra Body JSON</label><textarea id="extraBody" name="extraBody" autocomplete="off" spellcheck="false" placeholder="{}" oninput="LiveSmithUI.markDraftDirty(this)"></textarea></div>
+                      <div class="field"><label for="extraBody" data-i18n="Extra Body JSON">Extra Body JSON</label><textarea id="extraBody" class="model-extra-body-editor" name="extraBody" autocomplete="off" spellcheck="false" placeholder="{}" oninput="LiveSmithUI.markDraftDirty(this)"></textarea></div>
                     </fieldset>
                   </div>
                 </details>
@@ -549,9 +549,8 @@
                     <div class="connection-auth-actions settings-peer-actions">
                       <button id="openSunoWebsiteButton" class="secondary" type="button" title="Open Suno in default browser" aria-label="Open Suno in default browser" aria-describedby="sunoAuthState" data-i18n-title="Open Suno in default browser" data-i18n-aria-label="Open Suno in default browser" data-i18n="Open Suno">Open Suno</button>
                       <button id="refreshSunoLoginButton" class="secondary" type="button" aria-describedby="sunoAuthState" data-i18n="Refresh connection" disabled>Refresh connection</button>
-                      <button id="logoutSunoButton" class="connection-auth-quiet-action" type="button" aria-describedby="sunoAuthState" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
                     </div>
-                    <details id="sunoCookieEditor" class="connection-auth-credential-details settings-disclosure">
+                    <details id="sunoCookieEditor" class="connection-auth-credential-details settings-disclosure audio-settings-details">
                     <summary data-i18n="Connect or replace Cookie">Connect or replace Cookie</summary>
                     <div class="field">
                       <div class="field-label-row">
@@ -561,6 +560,7 @@
                       <input id="sunoSessionValue" name="sunoSessionCookie" type="password" maxlength="16384" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceDisclosure" />
                     </div>
                     <div class="audio-settings-actions">
+                      <button id="logoutSunoButton" class="connection-auth-quiet-action" type="button" aria-describedby="sunoAuthState" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
                       <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
                     </div>
                     </details>
@@ -575,7 +575,7 @@
                         <span id="sunoModelStatus" class="field-hint" role="status" aria-live="polite"></span>
                       </div>
                   </div>
-                  <details class="audio-model-options settings-disclosure" id="audioServiceModelField">
+                  <details class="audio-model-options settings-disclosure audio-settings-details" id="audioServiceModelField">
                     <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
                     <div class="field">
                       <label for="audioServiceModel" data-i18n="Music model (optional)">Music model (optional)</label>
@@ -604,7 +604,7 @@
                     </div>
                   </section>
                   <p id="audioServiceConflict" class="field-hint" role="status" hidden data-i18n="Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.">Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.</p>
-                  <details id="audioServiceMaintenance" class="settings-disclosure" hidden>
+                  <details id="audioServiceMaintenance" class="settings-disclosure audio-settings-details" hidden>
                     <summary data-i18n="Connection maintenance">Connection maintenance</summary>
                     <p id="audioServiceMaintenanceHint" class="field-hint"></p>
                     <div class="audio-settings-actions settings-peer-actions">

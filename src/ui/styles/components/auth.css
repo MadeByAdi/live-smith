@@ -40,6 +40,14 @@
     line-height: 1.25;
   }
 
+  .connection-auth-panel .field {
+    @apply text-body;
+  }
+
+  .connection-auth-panel button {
+    @apply h-control text-label;
+  }
+
   .connection-auth-state-badge {
     @apply max-w-[120px] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent p-0 text-[8px] font-control uppercase;
     color: var(--connection-auth-state);
@@ -65,21 +73,21 @@
   }
 
   .connection-auth-actions button {
-    @apply h-composer-control w-full min-w-0 self-stretch px-[9px] py-0 text-compact;
+    @apply w-full min-w-0 self-stretch px-[9px] py-0;
   }
 
-  .connection-auth-actions .connection-auth-quiet-action {
-    @apply border-transparent bg-transparent text-quiet;
+  .connection-auth-panel .connection-auth-quiet-action {
+    @apply border-transparent bg-transparent px-[9px] py-0 text-quiet;
   }
 
-  .connection-auth-actions .connection-auth-quiet-action:not(:disabled):hover,
-  .connection-auth-actions .connection-auth-quiet-action:not(:disabled):focus-visible {
+  .connection-auth-panel .connection-auth-quiet-action:not(:disabled):hover,
+  .connection-auth-panel .connection-auth-quiet-action:not(:disabled):focus-visible {
     color: #ff9e8f;
     background: rgba(255, 110, 87, 0.09);
     border-color: rgba(255, 110, 87, 0.22);
   }
 
-  .connection-auth-actions button[hidden] {
+  .connection-auth-panel button[hidden] {
     @apply hidden;
   }
 

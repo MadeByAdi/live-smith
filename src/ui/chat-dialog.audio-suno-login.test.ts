@@ -29,7 +29,9 @@ test("Suno uses the shared account surface and keeps model settings separate", a
     assert.equal(panel.querySelector(".connection-auth-state-badge")?.textContent, "Connected");
     assert.equal(panel.querySelector(".connection-auth-state-title")?.id, "sunoLoginStatus");
     assert.equal(panel.querySelector(".connection-auth-state-detail")?.id, "sunoAccountName");
-    assert.equal(panel.contains(harness.document.querySelector("#logoutSunoButton")), true);
+    const clearCookie = harness.document.querySelector("#logoutSunoButton")!;
+    assert.equal(panel.querySelector("#sunoCookieEditor")?.contains(clearCookie), true);
+    assert.equal(panel.querySelector(".connection-auth-actions")?.contains(clearCookie), false);
     assert.equal(panel.contains(harness.document.querySelector("#sunoModelSelection")), false);
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
