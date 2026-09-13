@@ -220,16 +220,16 @@
                   <input id="baseUrl" name="baseUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1" oninput="LiveSmithUI.markDraftDirty(this)" />
                 </div>
                 </div>
-                <section id="oauthAuthPanel" class="subscription-auth-panel" data-auth-state="unchecked" aria-labelledby="oauthAuthHeading" hidden>
-                  <div class="subscription-auth-header">
-                    <h4 id="oauthAuthHeading"><span data-i18n="Account">Account</span> <span class="subscription-auth-experimental" data-i18n="Experimental">Experimental</span></h4>
-                    <span id="oauthAuthStateBadge" class="subscription-auth-state-badge" data-i18n="Not checked">Not checked</span>
+                <section id="oauthAuthPanel" class="connection-auth-panel subscription-auth-panel" data-auth-state="unchecked" aria-labelledby="oauthAuthHeading" hidden>
+                  <div class="connection-auth-header subscription-auth-header">
+                    <h4 id="oauthAuthHeading"><span data-i18n="Account">Account</span> <span class="connection-auth-experimental subscription-auth-experimental" data-i18n="Experimental">Experimental</span></h4>
+                    <span id="oauthAuthStateBadge" class="connection-auth-state-badge subscription-auth-state-badge" data-i18n="Not checked">Not checked</span>
                   </div>
                   <p id="oauthAuthNote" class="subscription-auth-note" hidden></p>
-                  <div id="oauthAuthStatus" class="subscription-auth-status">
-                    <div id="oauthAuthState" class="subscription-auth-state" role="status" aria-live="polite" aria-atomic="true">
-                      <strong id="oauthAuthStateLabel" class="subscription-auth-state-title" data-i18n="Account not checked">Account not checked</strong>
-                      <span id="oauthAuthStateDetail" class="subscription-auth-state-detail" hidden></span>
+                  <div id="oauthAuthStatus" class="connection-auth-status subscription-auth-status">
+                    <div id="oauthAuthState" class="connection-auth-state subscription-auth-state" role="status" aria-live="polite" aria-atomic="true">
+                      <strong id="oauthAuthStateLabel" class="connection-auth-state-title subscription-auth-state-title" data-i18n="Account not checked">Account not checked</strong>
+                      <span id="oauthAuthStateDetail" class="connection-auth-state-detail subscription-auth-state-detail" hidden></span>
                     </div>
                     <div id="oauthDeviceCodeTicket" class="subscription-auth-device-ticket" aria-label="Account authorization" hidden data-i18n-aria-label="Account authorization">
                       <a id="oauthVerificationLink" class="subscription-auth-open-link" target="_blank" rel="noopener noreferrer" hidden onclick="return LiveSmithUI.openOAuthVerification(event)">
@@ -244,10 +244,10 @@
                       <p class="subscription-auth-device-guidance" data-i18n="Keep this window open while sign-in completes.">Keep this window open while sign-in completes.</p>
                     </div>
                   </div>
-                  <div class="subscription-auth-actions settings-peer-actions">
+                  <div class="connection-auth-actions subscription-auth-actions settings-peer-actions">
                     <button id="oauthSignInButton" class="primary" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign in" data-i18n-data-idle-label="Sign in" onclick="LiveSmithUI.startOAuthLogin()" data-i18n="Sign in">Sign in</button>
                     <button id="oauthCheckAccountButton" class="secondary" type="button" aria-describedby="oauthAuthState" data-idle-label="Check existing session" data-i18n-data-idle-label="Check existing session" onclick="LiveSmithUI.refreshOAuthAccount()" data-i18n="Check existing session">Check existing session</button>
-                    <button id="oauthLogoutButton" class="subscription-auth-quiet-action" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign out" data-i18n-data-idle-label="Sign out" onclick="LiveSmithUI.logoutOAuth()" hidden data-i18n="Sign out">Sign out</button>
+                    <button id="oauthLogoutButton" class="connection-auth-quiet-action" type="button" aria-describedby="oauthAuthState" data-idle-label="Sign out" data-i18n-data-idle-label="Sign out" onclick="LiveSmithUI.logoutOAuth()" hidden data-i18n="Sign out">Sign out</button>
                   </div>
                   <details class="subscription-auth-details">
                     <summary data-i18n="Requirements">Requirements</summary>
@@ -532,18 +532,26 @@
                     <span id="audioServiceCallbackHint" class="field-hint" data-i18n="Required to enable SunoAPI.org. Use any HTTP or HTTPS callback accepted by the provider, including a custom port or query token. SunoAPI.org sends notifications here; Live Smith polls for results and does not contact or test this URL.">Required to enable SunoAPI.org. Use any HTTP or HTTPS callback accepted by the provider, including a custom port or query token. SunoAPI.org sends notifications here; Live Smith polls for results and does not contact or test this URL.</span>
                   </div>
                   <p class="field-hint" id="audioServiceDisclosure"></p>
-                  <section id="sunoLoginControls" class="audio-provider-panel" hidden>
-                    <div class="field-label-row settings-subheading-row">
-                      <h4 id="sunoConnectionHeading" class="settings-subheading" data-i18n="Suno.com connection">Suno.com connection</h4>
-                      <span id="sunoFeatureHelp" class="inline-help" tabindex="0" role="note" aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno.">?</span>
+                  <section id="sunoLoginControls" class="connection-auth-panel suno-auth-panel" data-auth-state="unchecked" aria-labelledby="sunoConnectionHeading" hidden>
+                    <div class="connection-auth-header">
+                      <div class="connection-auth-heading field-label-row">
+                        <h4 id="sunoConnectionHeading"><span data-i18n="Suno.com account">Suno.com account</span> <span class="connection-auth-experimental" data-i18n="Experimental">Experimental</span></h4>
+                        <span id="sunoFeatureHelp" class="inline-help" tabindex="0" role="note" aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-aria-label="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno." data-i18n-data-tooltip="This Suno.com connection uses an experimental website protocol. Suno features not currently mapped here: Sounds (One Shot/Loop/BPM/Key), uploads or recording, Cover/Remaster, Replace Section or Add Vocals/Instrumental, Suno stems, Voice enrollment, custom-model training, Inspo/My Taste, and Suno Studio workspace editing or publishing. These are adapter gaps, not restrictions on Live Smith. Ableton editing, LALAL.AI stems, and ElevenLabs sound effects remain available and can be combined. Complete security challenges on Suno.">?</span>
+                      </div>
+                      <span id="sunoAuthStateBadge" class="connection-auth-state-badge" data-i18n="Not checked">Not checked</span>
                     </div>
-                    <p id="sunoLoginStatus" class="connection-state" role="status" aria-live="polite"></p>
-                    <p id="sunoAccountName" class="field-hint" hidden></p>
-                    <div class="audio-settings-actions">
-                      <button id="openSunoWebsiteButton" class="secondary" type="button" title="Open Suno in default browser" aria-label="Open Suno in default browser" data-i18n-title="Open Suno in default browser" data-i18n-aria-label="Open Suno in default browser" data-i18n="Open Suno">Open Suno</button>
-                      <button id="refreshSunoLoginButton" class="secondary" type="button" data-i18n="Refresh connection" disabled>Refresh connection</button>
+                    <div class="connection-auth-status">
+                      <div id="sunoAuthState" class="connection-auth-state" role="status" aria-live="polite" aria-atomic="true">
+                        <strong id="sunoLoginStatus" class="connection-auth-state-title"></strong>
+                        <span id="sunoAccountName" class="connection-auth-state-detail" hidden></span>
+                      </div>
                     </div>
-                    <details id="sunoCookieEditor" class="settings-disclosure">
+                    <div class="connection-auth-actions settings-peer-actions">
+                      <button id="openSunoWebsiteButton" class="secondary" type="button" title="Open Suno in default browser" aria-label="Open Suno in default browser" aria-describedby="sunoAuthState" data-i18n-title="Open Suno in default browser" data-i18n-aria-label="Open Suno in default browser" data-i18n="Open Suno">Open Suno</button>
+                      <button id="refreshSunoLoginButton" class="secondary" type="button" aria-describedby="sunoAuthState" data-i18n="Refresh connection" disabled>Refresh connection</button>
+                      <button id="logoutSunoButton" class="connection-auth-quiet-action" type="button" aria-describedby="sunoAuthState" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
+                    </div>
+                    <details id="sunoCookieEditor" class="connection-auth-credential-details settings-disclosure">
                     <summary data-i18n="Connect or replace Cookie">Connect or replace Cookie</summary>
                     <div class="field">
                       <div class="field-label-row">
@@ -556,7 +564,8 @@
                       <button id="connectSunoButton" class="primary" type="button" disabled>Connect</button>
                     </div>
                     </details>
-                    <div id="sunoModelSelection">
+                  </section>
+                  <div id="sunoModelSelection" hidden>
                       <div class="field">
                         <label for="sunoModelPicker" data-i18n="Music version">Music version</label>
                         <div class="field-with-action">
@@ -565,8 +574,7 @@
                         </div>
                         <span id="sunoModelStatus" class="field-hint" role="status" aria-live="polite"></span>
                       </div>
-                    </div>
-                  </section>
+                  </div>
                   <details class="audio-model-options settings-disclosure" id="audioServiceModelField">
                     <summary id="audioServiceModelSummary" data-i18n="Model override (optional)">Model override (optional)</summary>
                     <div class="field">
@@ -576,21 +584,30 @@
                       <span id="audioServiceModelHint" class="field-hint"></span>
                     </div>
                   </details>
-                  <div class="field" id="audioServiceKeyField">
-                    <label for="audioServiceApiKey" data-i18n="API key">API key</label>
-                    <input id="audioServiceApiKey" name="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
-                    <span id="audioServiceKeyStatus" class="field-hint" role="status" aria-live="polite"></span>
-                    <span id="audioServiceKeyHint" class="field-hint" data-i18n="Leave blank to keep this connection's saved key. Clear key disables only this connection.">Leave blank to keep this connection's saved key. Clear key disables only this connection.</span>
-                    <div id="sunoPlatformActions" class="audio-settings-actions" hidden>
+                  <section id="audioServiceKeyField" class="audio-key-auth-panel connection-auth-panel" data-auth-state="signed-out" aria-labelledby="audioServiceKeyHeading">
+                    <div class="connection-auth-header">
+                      <h4 id="audioServiceKeyHeading" data-i18n="API access">API access</h4>
+                      <span id="audioServiceKeyBadge" class="connection-auth-state-badge" data-i18n="Needs setup">Needs setup</span>
+                    </div>
+                    <div class="connection-auth-status">
+                      <div id="audioServiceKeyState" class="connection-auth-state" role="status" aria-live="polite" aria-atomic="true">
+                        <strong id="audioServiceKeyStatus" class="connection-auth-state-title"></strong>
+                        <span id="audioServiceKeyHint" class="connection-auth-state-detail" data-i18n="Leave blank to keep this connection's saved key. Clear key disables only this connection.">Leave blank to keep this connection's saved key. Clear key disables only this connection.</span>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label for="audioServiceApiKey" data-i18n="API key">API key</label>
+                      <input id="audioServiceApiKey" name="audioServiceApiKey" type="password" maxlength="4096" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="audioServiceKeyStatus audioServiceKeyHint" oninput="LiveSmithUI.handleAudioSettingsInput()" />
+                    </div>
+                    <div id="sunoPlatformActions" class="connection-auth-actions settings-peer-actions" hidden>
                       <button id="openSunoPlatformButton" class="secondary" type="button" data-i18n="Open Suno Platform">Open Suno Platform</button>
                     </div>
-                  </div>
+                  </section>
                   <p id="audioServiceConflict" class="field-hint" role="status" hidden data-i18n="Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.">Audio connections changed since this draft opened. Your fields are retained; reload the saved connection before editing.</p>
                   <details id="audioServiceMaintenance" class="settings-disclosure" hidden>
                     <summary data-i18n="Connection maintenance">Connection maintenance</summary>
                     <p id="audioServiceMaintenanceHint" class="field-hint"></p>
                     <div class="audio-settings-actions settings-peer-actions">
-                      <button id="logoutSunoButton" class="secondary danger-action" type="button" data-i18n="Clear local Cookie" hidden disabled>Clear local Cookie</button>
                       <button id="clearAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.saveAudioServiceSettings(true)" data-i18n="Clear key" hidden disabled>Clear key</button>
                       <button id="removeAudioServiceButton" class="secondary danger-action" type="button" onclick="LiveSmithUI.removeAudioService()" data-i18n="Remove service" disabled>Remove service</button>
                     </div>

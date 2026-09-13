@@ -5907,11 +5907,23 @@
           selectedAudioServiceId === service.id && confirmedAudioServices?.revision === revision;
       }
 
+      function sunoAccountPresentation(serviceId) {
+        const account = confirmedSunoAccounts.find((entry) => entry.serviceId === serviceId);
+        const detail = ["signed_in", "saved"].includes(account?.status) && account.accountName
+          ? t("Suno account: {accountName}", { accountName: account.accountName })
+          : "";
+        const presentation = {
+          signed_in: { state: "signed-in", badge: "Connected", title: "Connected to Suno.com" },
+          saved: { state: "pending", badge: "Waiting", title: "Cookie saved; refresh to verify" },
+          expired: { state: "unavailable", badge: "Needs setup", title: "Cookie expired; import a fresh Suno Cookie" },
+          unavailable: { state: "unavailable", badge: "Unavailable", title: "Suno verification unavailable; try again later" },
+          signed_out: { state: "signed-out", badge: "Signed out", title: "Not connected" },
+        }[account?.status] || { state: "unchecked", badge: "Not checked", title: "No verified Suno connection" };
+        return { account, state: presentation.state, badge: t(presentation.badge), title: t(presentation.title), detail };
+      }
+
       function sunoAccountStatus(serviceId) {
-        const status = confirmedSunoAccounts.find((account) => account.serviceId === serviceId)?.status;
-        return t({ signed_out: "Not connected", saved: "Cookie saved; refresh to verify",
-          signed_in: "Connected to Suno.com", expired: "Cookie expired; import a fresh Suno Cookie",
-          unavailable: "Suno verification unavailable; try again later" }[status] || "No verified Suno connection");
+        return sunoAccountPresentation(serviceId).title;
       }
 
       function audioConnectionPresentation(value, configured, draft) {
@@ -6187,7 +6199,8 @@
           document.getElementById("audioServiceModelField").hidden = !audioServiceCapabilities[service.provider].modelConfigurable;
           document.getElementById("audioServiceCallbackField").hidden = service.provider !== "sunoapi";
           document.getElementById("audioServiceEnabledField").hidden = !supported.length;
-          document.getElementById("audioServiceKeyField").hidden = sessionImport;
+          const keyPanel = document.getElementById("audioServiceKeyField");
+          keyPanel.hidden = sessionImport;
           if (sessionImport) { key.value = ""; key.disabled = true; }
           const platformActions = document.getElementById("sunoPlatformActions");
           platformActions.hidden = service.provider !== "suno-platform";
@@ -6196,14 +6209,24 @@
           openPlatform.onclick = () => runCommand("open_suno_platform", undefined, { onOutcome: (outcome) => {
             if (outcome.known && outcome.succeeded) showStatus(t("Suno Platform opened in your default browser. Create or manage an official API key there."));
           } });
-          document.getElementById("sunoLoginControls").hidden = !sessionImport;
+          const sunoPanel = document.getElementById("sunoLoginControls");
+          sunoPanel.hidden = !sessionImport;
+          document.getElementById("sunoModelSelection").hidden = !sessionImport;
           const savedSuno = sessionImport && saved?.provider === "suno";
-          document.getElementById("sunoLoginStatus").textContent = savedSuno
-            ? sunoAccountStatus(service.id) : t("Connect will save this connection before importing its Suno Cookie.");
-          const account = savedSuno && confirmedSunoAccounts.find((entry) => entry.serviceId === service.id);
+          const savedSunoPresentation = sunoAccountPresentation(service.id);
+          const sunoPresentation = savedSuno ? savedSunoPresentation : {
+            account: undefined,
+            state: "signed-out",
+            badge: t("Needs setup"),
+            title: t("Connect will save this connection before importing its Suno Cookie."),
+            detail: "",
+          };
+          sunoPanel.dataset.authState = sunoPresentation.state;
+          document.getElementById("sunoAuthStateBadge").textContent = sunoPresentation.badge;
+          document.getElementById("sunoLoginStatus").textContent = sunoPresentation.title;
+          const account = savedSuno && savedSunoPresentation.account;
           const accountName = document.getElementById("sunoAccountName");
-          accountName.textContent = ["signed_in", "saved"].includes(account?.status) && account.accountName
-            ? t("Suno account: {accountName}", { accountName: account.accountName }) : "";
+          accountName.textContent = sunoPresentation.detail;
           accountName.hidden = !accountName.textContent;
           cookie.disabled = busy || Boolean(draft?.conflict) || !sessionImport;
           const connect = document.getElementById("connectSunoButton");
@@ -6217,6 +6240,12 @@
           const refreshLabel = account?.status === "unavailable" ? "Retry verification" : "Refresh connection";
           refresh.dataset.i18n = refreshLabel;
           refresh.textContent = t(refreshLabel);
+          const refreshPrimary = ["saved", "expired", "unavailable"].includes(account?.status);
+          const openPrimary = !savedSuno || !account || account.status === "signed_out";
+          openWebsite.classList.toggle("primary", openPrimary);
+          openWebsite.classList.toggle("secondary", !openPrimary);
+          refresh.classList.toggle("primary", refreshPrimary);
+          refresh.classList.toggle("secondary", !refreshPrimary);
           for (const [id, kind] of [
             ["refreshSunoLoginButton", "refresh_suno_login"],
             ["logoutSunoButton", "logout_suno"],
@@ -6248,9 +6277,12 @@
             : supported.includes("separate_stems")
             ? t("Selected audio is sent to this external service. Stem separation uses processing minutes for each requested stem.")
             : t("Generation sends your prompt to this external service and may incur separate API charges. A website subscription may not include API access.");
+          const keyConfigured = saved?.provider === service.provider && saved.apiKeyConfigured;
+          keyPanel.dataset.authState = keyConfigured ? "signed-in" : "signed-out";
+          document.getElementById("audioServiceKeyBadge").textContent = t(keyConfigured ? "Ready" : "Needs setup");
           document.getElementById("audioServiceKeyStatus").textContent =
-            saved?.provider === service.provider && saved.apiKeyConfigured ? t("API key configured") : t("No API key configured");
-          key.placeholder = saved?.provider === service.provider && saved.apiKeyConfigured ? t("Leave blank to keep the saved key") : "";
+            keyConfigured ? t("API key configured") : t("No API key configured");
+          key.placeholder = keyConfigured ? t("Leave blank to keep the saved key") : "";
         }
         const conflict = Boolean(draft?.conflict);
         document.getElementById("audioServiceConflict").hidden = !conflict;
@@ -6276,7 +6308,7 @@
         }
         maintenance.hidden = !saved;
         document.getElementById("audioServiceMaintenanceHint").textContent = service && audioServiceCapabilities[service.provider].sessionImport
-          ? t("Clearing removes only this connection's local Cookie. It does not sign you out of Suno in your browser or close browser windows.")
+          ? t("Remove this connection. Downloaded audio stays available.")
           : t("Clear the saved API key or remove this connection. Downloaded audio stays available.");
         renderAudioJobs();
       }

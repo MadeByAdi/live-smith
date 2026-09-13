@@ -3,6 +3,7 @@
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 @import "./components/controls.css";
 @import "./components/disclosures.css";
+@import "./components/auth.css";
 
 :root {
   color-scheme: dark;
@@ -1687,11 +1688,22 @@ details.timeline-item > .timeline-content {
 .audio-model-options > summary { @apply rounded-control text-small text-muted cursor-pointer; }
 .audio-model-options > summary:hover { @apply bg-surface-hover-soft text-text; }
 .settings-disclosure > .field, .audio-model-options > .field { margin-block: var(--spacing-2); }
-.settings-subheading { @apply m-0 mb-2 text-label font-semibold; }
-.settings-subheading-row .settings-subheading { @apply m-0; }
-.connection-state { @apply m-0 mb-1 text-label text-muted; }
-.audio-provider-panel { @apply grid gap-1 rounded-none border-0 bg-transparent p-0; }
-.audio-provider-panel > * { margin-block: 0; }
+.audio-key-auth-panel .field { @apply m-0; }
+.suno-auth-panel {
+  container-name: sunoAuth;
+  container-type: inline-size;
+}
+
+@container sunoAuth (max-width: 290px) {
+  .suno-auth-panel .connection-auth-actions.settings-peer-actions {
+    @apply grid-flow-row grid-cols-2;
+  }
+
+  .suno-auth-panel .connection-auth-quiet-action {
+    @apply col-span-full;
+  }
+}
+
 .field-with-action { @apply grid items-start gap-2; grid-template-columns: minmax(0, 1fr) auto; }
 .field-with-action button { @apply px-2; }
 #audioServiceModel { @apply font-code; }
@@ -1777,73 +1789,15 @@ label {
   grid-template-columns: 1fr auto;
 }
 
-.subscription-auth-panel {
-  --subscription-state: var(--color-quiet);
-  @apply grid min-w-0 gap-2 rounded-panel border-0 p-3 text-compact text-muted;
-  background: rgba(255, 255, 255, 0.025);
-  line-height: 1.4;
-}
-
-.subscription-auth-panel[data-auth-state="pending"] {
-  --subscription-state: var(--color-warning);
-}
-
-.subscription-auth-panel[data-auth-state="signed-in"] {
-  --subscription-state: #83d6a1;
-}
-
-.subscription-auth-panel[data-auth-state="ineligible"],
-.subscription-auth-panel[data-auth-state="unavailable"] {
-  --subscription-state: var(--color-danger);
-}
-
 .subscription-auth-panel[hidden],
 .direct-api-fields[hidden],
 .field[hidden] {
   @apply hidden;
 }
 
-.subscription-auth-header {
-  @apply flex items-center justify-between gap-2;
-}
-
-.subscription-auth-experimental {
-  @apply ml-1 text-[8px] text-quiet font-control uppercase;
-  letter-spacing: 0.09em;
-}
-
-.subscription-auth-panel h4 {
-  @apply m-0 text-label text-text font-control;
-  line-height: 1.25;
-}
-
-.subscription-auth-state-badge {
-  @apply max-w-[120px] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent p-0 text-[8px] font-control uppercase;
-  color: var(--subscription-state);
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-}
-
 .subscription-auth-note {
   @apply m-0 -mt-[2px] text-quiet;
   line-height: 1.45;
-}
-
-.subscription-auth-status {
-  @apply grid gap-2;
-}
-
-.subscription-auth-state {
-  @apply grid min-w-0 gap-[2px] border-0 bg-transparent p-0;
-}
-
-.subscription-auth-state-title {
-  @apply text-small text-text font-control;
-}
-
-.subscription-auth-state-detail {
-  @apply text-muted;
-  overflow-wrap: anywhere;
 }
 
 .subscription-auth-device-ticket {
@@ -1923,25 +1877,6 @@ label {
 
 .subscription-auth-device-guidance {
   @apply m-0 text-quiet;
-}
-
-.subscription-auth-actions button {
-  @apply h-composer-control w-full min-w-0 self-stretch px-[9px] py-0 text-compact;
-}
-
-.subscription-auth-actions .subscription-auth-quiet-action {
-  @apply border-transparent bg-transparent text-quiet;
-}
-
-.subscription-auth-actions .subscription-auth-quiet-action:not(:disabled):hover,
-.subscription-auth-actions .subscription-auth-quiet-action:not(:disabled):focus-visible {
-  color: #ff9e8f;
-  background: rgba(255, 110, 87, 0.09);
-  border-color: rgba(255, 110, 87, 0.22);
-}
-
-.subscription-auth-actions button[hidden] {
-  @apply hidden;
 }
 
 .subscription-auth-details {

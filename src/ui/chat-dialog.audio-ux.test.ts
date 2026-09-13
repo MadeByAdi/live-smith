@@ -23,6 +23,46 @@ test("audio connections are visible with status, and editing expands only on exp
   } finally { h.close(); }
 });
 
+test("API-key audio services use the shared authentication surface", async () => {
+  const services = [
+    service,
+    musicService,
+    sunoService,
+    {
+      id: "audio-suno-platform",
+      name: "Official Suno API",
+      provider: "suno-platform" as const,
+      enabled: true,
+      apiKeyConfigured: true,
+    },
+  ];
+  const h = await createDialogHarness(audioState(services));
+  try {
+    for (const audioService of services) {
+      selectAudioService(h, audioService.id);
+      const panel = h.document.querySelector<HTMLElement>("#audioServiceKeyField")!;
+      assert.equal(panel.classList.contains("connection-auth-panel"), true, audioService.provider);
+      assert.equal(panel.dataset.authState, "signed-in", audioService.provider);
+      assert.equal(panel.querySelector(".connection-auth-state-badge")?.textContent, "Ready");
+      assert.equal(panel.querySelector(".connection-auth-state-title")?.id, "audioServiceKeyStatus");
+    }
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
+test("an unconfigured API-key audio service exposes the shared setup state", async () => {
+  const unconfigured = { ...service, id: "audio-unconfigured", enabled: false, apiKeyConfigured: false };
+  const h = await createDialogHarness(audioState([unconfigured]));
+  try {
+    selectAudioService(h, unconfigured.id);
+    const panel = h.document.querySelector<HTMLElement>("#audioServiceKeyField")!;
+    assert.equal(panel.dataset.authState, "signed-out");
+    assert.equal(panel.querySelector(".connection-auth-state-badge")?.textContent, "Needs setup");
+    assert.equal(panel.querySelector("#audioServiceKeyStatus")?.textContent, "No API key configured");
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
 test("new connection opens its editor and optional model controls do not dominate the form", async () => {
   const h = await createDialogHarness(audioState());
   try {

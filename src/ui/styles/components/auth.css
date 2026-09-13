@@ -1,0 +1,102 @@
+@layer components {
+  .connection-auth-panel {
+    --connection-auth-state: var(--color-quiet);
+    @apply grid min-w-0 gap-2 rounded-panel border-0 bg-surface-subtle p-3 text-compact text-muted;
+    line-height: 1.4;
+  }
+
+  .connection-auth-panel[data-auth-state="pending"] {
+    --connection-auth-state: var(--color-warning);
+  }
+
+  .connection-auth-panel[data-auth-state="signed-in"] {
+    --connection-auth-state: var(--color-auth-ready);
+  }
+
+  .connection-auth-panel[data-auth-state="ineligible"],
+  .connection-auth-panel[data-auth-state="unavailable"] {
+    --connection-auth-state: var(--color-danger);
+  }
+
+  .connection-auth-panel[hidden] {
+    @apply hidden;
+  }
+
+  .connection-auth-header {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .connection-auth-heading {
+    @apply flex min-w-0 items-center gap-[5px];
+  }
+
+  .connection-auth-experimental {
+    @apply ml-1 text-[8px] text-quiet font-control uppercase;
+    letter-spacing: 0.09em;
+  }
+
+  .connection-auth-panel h4 {
+    @apply m-0 text-label text-text font-control;
+    line-height: 1.25;
+  }
+
+  .connection-auth-state-badge {
+    @apply max-w-[120px] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent p-0 text-[8px] font-control uppercase;
+    color: var(--connection-auth-state);
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+  }
+
+  .connection-auth-status {
+    @apply grid gap-2;
+  }
+
+  .connection-auth-state {
+    @apply grid min-w-0 gap-[2px] border-0 bg-transparent p-0;
+  }
+
+  .connection-auth-state-title {
+    @apply text-small text-text font-control;
+  }
+
+  .connection-auth-state-detail {
+    @apply text-muted;
+    overflow-wrap: anywhere;
+  }
+
+  .connection-auth-actions button {
+    @apply h-composer-control w-full min-w-0 self-stretch px-[9px] py-0 text-compact;
+  }
+
+  .connection-auth-actions .connection-auth-quiet-action {
+    @apply border-transparent bg-transparent text-quiet;
+  }
+
+  .connection-auth-actions .connection-auth-quiet-action:not(:disabled):hover,
+  .connection-auth-actions .connection-auth-quiet-action:not(:disabled):focus-visible {
+    color: #ff9e8f;
+    background: rgba(255, 110, 87, 0.09);
+    border-color: rgba(255, 110, 87, 0.22);
+  }
+
+  .connection-auth-actions button[hidden] {
+    @apply hidden;
+  }
+
+  .connection-auth-credential-details {
+    @apply min-w-0 pt-px text-quiet;
+  }
+
+  .connection-auth-credential-details > summary,
+  .connection-auth-credential-details[open] > summary {
+    @apply min-h-0 w-fit bg-transparent p-0 text-[9px] text-quiet;
+  }
+
+  .connection-auth-credential-details[open] > summary {
+    @apply text-muted;
+  }
+
+  .connection-auth-credential-details > .field {
+    @apply mt-2;
+  }
+}

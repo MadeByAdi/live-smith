@@ -20,6 +20,21 @@ type Harness = Awaited<ReturnType<typeof createDialogHarness>>;
 const text = (harness: Harness, selector: string) => harness.document.querySelector(selector)!.textContent!;
 const disabled = (harness: Harness, selector: string) => harness.document.querySelector<HTMLButtonElement>(selector)!.disabled;
 
+test("Suno uses the shared account surface and keeps model settings separate", async () => {
+  const harness = await createDialogHarness(websiteState("signed_in"));
+  try {
+    const panel = harness.document.querySelector<HTMLElement>("#sunoLoginControls")!;
+    assert.equal(panel.classList.contains("connection-auth-panel"), true);
+    assert.equal(panel.dataset.authState, "signed-in");
+    assert.equal(panel.querySelector(".connection-auth-state-badge")?.textContent, "Connected");
+    assert.equal(panel.querySelector(".connection-auth-state-title")?.id, "sunoLoginStatus");
+    assert.equal(panel.querySelector(".connection-auth-state-detail")?.id, "sunoAccountName");
+    assert.equal(panel.contains(harness.document.querySelector("#logoutSunoButton")), true);
+    assert.equal(panel.contains(harness.document.querySelector("#sunoModelSelection")), false);
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
 test("refresh permits saved or unavailable sessions while only authoritative status establishes connection", async () => {
   for (const status of ["signed_out", "saved", "signed_in", "expired", "unavailable"] as const) {
     const harness = await createDialogHarness(websiteState(status));
@@ -27,6 +42,18 @@ test("refresh permits saved or unavailable sessions while only authoritative sta
       const canRefresh = ["saved", "signed_in", "expired", "unavailable"].includes(status);
       assert.equal(disabled(harness, "#refreshSunoLoginButton"), !canRefresh, status);
       assert.equal(harness.document.querySelector<HTMLElement>("#refreshSunoLoginButton")!.hidden, !canRefresh, status);
+      assert.equal(harness.document.querySelector<HTMLElement>("#sunoLoginControls")!.dataset.authState, {
+        signed_out: "signed-out", saved: "pending", signed_in: "signed-in",
+        expired: "unavailable", unavailable: "unavailable",
+      }[status], status);
+      assert.equal(text(harness, "#sunoAuthStateBadge"), {
+        signed_out: "Signed out", saved: "Waiting", signed_in: "Connected",
+        expired: "Needs setup", unavailable: "Unavailable",
+      }[status], status);
+      assert.equal(harness.document.querySelector("#openSunoWebsiteButton")!.classList.contains("primary"),
+        status === "signed_out", status);
+      assert.equal(harness.document.querySelector("#refreshSunoLoginButton")!.classList.contains("primary"),
+        ["saved", "expired", "unavailable"].includes(status), status);
       assert.equal(text(harness, "#sunoAccountName"), ["saved", "signed_in"].includes(status)
         ? "Suno account: Personal musician" : "");
       assert.doesNotMatch(text(harness, "body"), /user_personal/);
