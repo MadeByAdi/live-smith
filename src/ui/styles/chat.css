@@ -1316,74 +1316,47 @@ details.timeline-item > .timeline-content {
 }
 
 .confirm-card {
-  max-width: 100%;
-  margin-bottom: 14px;
-  padding: 12px;
+  @apply mb-[14px] max-w-full rounded-panel bg-accent-soft p-3;
   border: 1px solid rgba(255, 165, 0, 0.55);
-  border-radius: 6px;
-  background: var(--color-accent-soft);
 }
 
 .confirm-title {
-  font-weight: 600;
-  margin-bottom: 6px;
+  @apply mb-[6px] font-semibold;
 }
 
 .confirm-message {
+  @apply whitespace-pre-wrap text-muted;
   margin: 0 0 8px;
-  color: var(--color-muted);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.45;
 }
 
 .confirm-group-title {
+  @apply text-small text-quiet uppercase;
   margin: 8px 0 4px;
-  color: var(--color-quiet);
-  font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .confirm-rows {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @apply m-0 grid list-none gap-1 p-0;
 }
 
 .confirm-rows li {
-  padding: 5px 8px;
-  background: var(--color-field);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  font-size: 12px;
+  @apply rounded-control border border-border bg-field px-2 py-[5px] text-label;
   overflow-wrap: anywhere;
   line-height: 1.35;
 }
 
 .confirm-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
+  @apply mt-[10px] flex justify-end gap-2;
 }
 
 .confirm-buttons button {
-  height: 30px;
-  min-width: 78px;
-  padding: 0 12px;
+  @apply h-composer-control min-w-[78px] px-3 py-0;
 }
 
 .empty {
-  max-width: 360px;
-  margin: 0;
-  padding: 10px 12px;
-  color: var(--color-quiet);
-  border: 1px dashed var(--color-border);
-  border-radius: 6px;
-  background: var(--color-pane);
+  @apply m-0 max-w-[360px] rounded-panel border border-dashed border-border bg-pane px-3 py-[10px] text-quiet;
 }
 
 .live-context-summary {
@@ -1423,41 +1396,31 @@ details.timeline-item > .timeline-content {
 }
 
 .action-preview {
-  padding: 12px;
-  margin: 12px 0;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-pane);
+  @apply my-3 rounded-panel border border-border bg-pane p-3;
 }
-.action-preview h3, .action-preview h4 { margin: 0 0 6px; font-size: 12px; }
+.action-preview h3, .action-preview h4 { @apply text-label; margin: 0 0 6px; }
 .action-preview p { margin: 4px 0 8px; overflow-wrap: anywhere; }
-.midi-preview-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.midi-preview-side svg { display: block; width: 100%; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 4px; }
+.midi-preview-sides { @apply grid gap-3; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.midi-preview-side svg { @apply block w-full rounded-control border border-border bg-canvas; }
 .midi-preview-grid { stroke: var(--color-border); stroke-width: 1; }
 .midi-preview-note { fill: var(--color-accent); }
 .midi-preview-side[data-side="before"] .midi-preview-note { fill: var(--color-muted); }
-.preview-coordinate, .preview-limits { color: var(--color-muted); font-size: 11px; }
+.preview-coordinate, .preview-limits { @apply text-small text-muted; }
 .parameter-preview-values { font-variant-numeric: tabular-nums; }
 @media (max-width: 680px) { .midi-preview-sides { grid-template-columns: 1fr; } }
 
 .status {
-  max-height: 70px;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 4px 18px;
-  color: var(--color-muted);
+  @apply max-h-[70px] min-h-0 overflow-auto overscroll-contain whitespace-pre-wrap px-[18px] py-1 text-muted;
   line-height: 1.35;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .status.error {
-  color: var(--color-danger);
+  @apply text-danger;
 }
 
 .status:empty {
-  padding: 0;
+  @apply p-0;
 }
 
 .composer {
