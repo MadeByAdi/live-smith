@@ -131,32 +131,21 @@ main {
 }
 
 .session-row {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  min-height: 52px;
-  padding: var(--spacing-2) var(--spacing-3);
-  text-align: left;
-  color: var(--color-text);
-  background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
+  @apply grid min-h-[52px] w-full gap-[3px] rounded-control border border-border bg-transparent px-3 py-2 text-left text-text;
 }
 
 .session-entry {
-  position: relative;
-  min-width: 0;
+  @apply relative min-w-0;
 }
 
 .session-row[hidden],
 .session-menu-button[hidden],
 .session-continue-button[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .session-row[aria-pressed="true"] {
-  border-color: var(--color-border-hover);
-  background: var(--color-pane-raised);
+  @apply border-border-hover bg-pane-raised;
 }
 
 .session-row[data-switching] {
@@ -165,92 +154,74 @@ main {
 }
 
 .session-entry[data-selected] > .session-row {
-  border-color: var(--color-border-hover);
-  background: var(--color-pane-raised);
+  @apply border-border-hover bg-pane-raised;
 }
 
 .sessions-pane.command-busy .session-row:disabled {
-  opacity: 1;
+  @apply opacity-100;
 }
 
 .sessions-pane.command-busy .session-menu-button:disabled {
-  opacity: 0.62;
+  @apply opacity-[0.62];
 }
 
 .sessions-pane.command-busy .session-continue-button:disabled {
-  opacity: 0.72;
+  @apply opacity-[0.72];
 }
 
 .session-entry:not([data-selected]) >
 button.session-row:not([aria-pressed="true"]):not(:disabled):hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-surface-hover);
+  @apply border-border-hover bg-surface-hover;
 }
 
 .session-entry[data-selected] >
 button.session-row:not(:disabled):hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-surface-hover);
+  @apply border-border-hover bg-surface-hover;
 }
 
 .session-entry:not([data-selected]) >
 button.session-row[aria-pressed="true"]:not(:disabled):hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-surface-hover);
+  @apply border-border-hover bg-surface-hover;
 }
 
 .history-session-row,
 .archived-session-row {
-  background: transparent;
+  @apply bg-transparent;
 }
 
 .archived-session-row {
-  color: var(--color-muted);
-  background: transparent;
+  @apply bg-transparent text-muted;
 }
 
 .session-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .session-title-line {
-  display: flex;
-  align-items: center;
+  @apply flex min-w-0 items-center;
   gap: 7px;
-  min-width: 0;
   padding-right: 23px;
 }
 
 .session-unread-dot {
-  flex: 0 0 auto;
+  @apply flex-none rounded-full bg-accent;
   width: var(--session-unread-dot-size);
   height: var(--session-unread-dot-size);
-  border-radius: 50%;
-  background: var(--color-accent);
   box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
 .session-unread-dot.failed {
-  background: var(--color-danger);
+  @apply bg-danger;
   box-shadow: 0 0 0 2px rgba(255, 110, 87, 0.14);
 }
 
 .session-meta {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply block min-w-0 overflow-hidden whitespace-nowrap text-small text-quiet;
   line-height: 1.35;
-  white-space: nowrap;
 }
 
 .session-meta-content {
-  display: inline-block;
-  min-width: max-content;
+  @apply inline-block min-w-max;
 }
 
 .session-entry:hover .session-meta.is-overflowing .session-meta-content,
@@ -275,103 +246,54 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .session-continue-button {
-  position: absolute;
-  z-index: 2;
+  @apply absolute z-[2] h-[18px] w-14 border-0 bg-transparent p-0 text-right text-compact text-accent font-semibold;
   right: 7px;
   bottom: 7px;
-  width: 56px;
-  height: 18px;
-  padding: 0;
-  color: var(--color-accent);
-  background: transparent;
-  border: 0;
-  font-size: 10px;
-  font-weight: 600;
-  text-align: right;
 }
 
 .session-continue-button:not(:disabled):hover {
   color: #ffc04d;
-  text-decoration: underline;
+  @apply underline;
 }
 
 .session-continue-button:not(:disabled):focus-visible {
-  color: var(--color-text);
-  text-decoration: underline;
+  @apply text-text underline;
 }
 
 .session-empty {
-  padding: 12px 8px;
-  color: var(--color-quiet);
-  font-size: 12px;
-  text-align: center;
+  @apply px-2 py-3 text-center text-label text-quiet;
   line-height: 1.4;
 }
 
 .session-section-label {
-  margin-top: 8px;
-  padding: 8px 2px 2px;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-quiet);
-  font-size: 10px;
-  font-weight: 600;
+  @apply mt-2 border-t border-t-border px-[2px] pb-[2px] pt-2 text-compact text-quiet font-semibold uppercase;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .session-menu-button {
-  position: absolute;
-  z-index: 2;
+  @apply absolute z-[2] grid size-[22px] place-items-center border-0 bg-transparent p-0 text-[16px] text-quiet opacity-[0.62];
   top: 7px;
   right: 7px;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  color: var(--color-quiet);
-  background: transparent;
-  border: 0;
-  font-size: 16px;
   line-height: 1;
-  opacity: 0.62;
 }
 
 .session-menu-button:not(:disabled):hover,
 .session-menu-button[aria-expanded="true"],
 .session-menu-button:focus-visible {
-  color: var(--color-text);
-  background: rgba(255, 255, 255, 0.07);
-  opacity: 1;
+  @apply bg-focus-soft text-text opacity-100;
 }
 
 .session-action-menu {
-  position: fixed;
-  z-index: 80;
-  top: 0;
-  left: 0;
-  display: grid;
-  min-width: 116px;
-  padding: 4px;
-  background: #292929;
-  border: 0;
-  border-radius: 4px;
+  @apply fixed left-0 top-0 z-[80] grid min-w-[116px] rounded-control border-0 bg-canvas p-1;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.38);
 }
 
 .session-action-menu[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .session-action-menu button {
-  width: 100%;
-  min-height: 28px;
-  padding: 0 8px;
-  color: var(--color-text);
-  text-align: left;
-  background: transparent;
-  border-radius: 3px;
-  font-size: 12px;
+  @apply min-h-control-compact w-full rounded-[3px] bg-transparent px-2 py-0 text-left text-label text-text;
 }
 
 .session-action-menu button:hover,
@@ -384,51 +306,36 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .session-delete-confirm {
-  display: grid;
-  gap: 2px;
-  padding: 0;
-  color: var(--color-text);
-  font-size: 11px;
+  @apply grid gap-[2px] p-0 text-small text-text;
 }
 
 .session-action-menu.delete-confirm-mode {
-  width: 176px;
-  min-width: 0;
+  @apply w-44 min-w-0 p-1;
   max-width: calc(100vw - 12px);
-  padding: 4px;
 }
 
 .session-delete-question {
-  display: block;
-  padding: 6px 8px 4px;
-  color: var(--color-muted);
+  @apply block whitespace-normal px-2 pb-1 pt-1.5 text-muted;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  white-space: normal;
 }
 
 .session-delete-controls {
-  display: grid;
+  @apply grid gap-[2px];
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
 }
 
 .session-delete-controls button {
-  height: 28px;
-  padding: 0 8px;
-  font-size: 11px;
+  @apply h-control-compact px-2 py-0 text-small;
 }
 
 .session-delete-controls .secondary {
-  color: var(--color-text);
-  background: transparent;
-  border: 0;
+  @apply border-0 bg-transparent text-text;
 }
 
 .session-delete-controls .danger {
   color: #ff8d7a;
-  background: transparent;
-  font-weight: 600;
+  @apply bg-transparent font-semibold;
 }
 
 .session-delete-controls .danger:hover,
@@ -438,10 +345,7 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .session-rename-input {
-  width: 100%;
-  height: 52px;
-  padding: 0 9px;
-  font-size: 13px;
+  @apply h-[52px] w-full px-[9px] py-0 text-body;
 }
 
 .chat-pane {
