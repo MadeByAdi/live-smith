@@ -97,14 +97,15 @@ focus, host integration, OAuth browser/device login, refresh, cancellation,
 shutdown, and provider requests. Use an authorized test account for provider
 checks; ordinary tests must not read a developer's saved credentials.
 
-The dialogs' shared visual tokens live in `src/ui/styles/tokens.css`; authored
-dialog styles live in `chat.css` and `result.css`. Tailwind Preflight is omitted
-deliberately because the WebView already owns its base element contract. Keep
-semantic classes used by the client scripts as behavior hooks, and use the
-shared theme and component roles for presentation instead of adding a
-provider-specific theme or a later override layer. The entries disable source
-scanning because client fragments contain runtime strings and use semantic DOM
-hooks; compose shared rules with complete Tailwind utilities through `@apply`.
+The dialogs' shared visual tokens live in `src/ui/styles/tokens.css`; reusable
+control and disclosure roles live under `src/ui/styles/components/`;
+dialog-specific composition lives in `chat.css` and `result.css`. Tailwind
+Preflight is omitted deliberately because the WebView already owns its base
+element contract. Keep semantic classes used by the client scripts as behavior
+hooks, and use the shared theme and component roles for presentation instead of
+adding a provider-specific theme or a later override layer. The entries disable
+source scanning because client fragments contain runtime strings and use semantic
+DOM hooks; compose shared rules with complete Tailwind utilities through `@apply`.
 If direct template utilities are introduced later, explicitly register only
 their source files and never construct utility names through interpolation.
 

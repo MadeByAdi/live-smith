@@ -1,0 +1,72 @@
+@layer components {
+  .settings-disclosure {
+    @apply m-0 min-w-0 border-0 bg-transparent;
+  }
+
+  .settings-disclosure > summary {
+    @apply m-0 grid min-h-control cursor-pointer list-none items-center gap-2 rounded-control p-2 text-small text-muted font-medium;
+    grid-template-columns: minmax(0, 1fr) auto;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .settings-disclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .settings-disclosure > summary:hover {
+    background: var(--color-surface-hover-soft);
+    color: var(--color-text);
+  }
+
+  .settings-disclosure[open] > summary {
+    background: var(--color-surface-subtle);
+    color: var(--color-text);
+  }
+
+  .settings-disclosure > summary:not(:has(.settings-disclosure-chevron))::after {
+    content: "›";
+    font-size: var(--text-heading);
+  }
+
+  .settings-disclosure[open] > summary:not(:has(.settings-disclosure-chevron))::after {
+    transform: rotate(90deg);
+  }
+
+  .settings-disclosure-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .settings-disclosure-title {
+    @apply text-label font-semibold;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .settings-disclosure-chevron {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    color: var(--color-muted);
+    border: 0;
+    font-size: 18px;
+    line-height: 1;
+    transform: rotate(0deg);
+    transition: color 120ms ease, transform 120ms ease;
+  }
+
+  .settings-disclosure > summary:hover .settings-disclosure-chevron,
+  .settings-disclosure[open] .settings-disclosure-chevron {
+    color: var(--color-accent);
+  }
+
+  .settings-disclosure[open] .settings-disclosure-chevron {
+    transform: rotate(90deg);
+  }
+
+  .settings-disclosure > .advanced-fields {
+    padding: var(--spacing-2);
+  }
+}

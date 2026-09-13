@@ -25,6 +25,7 @@
   --color-border: #454545;
   --color-divider: rgba(255, 255, 255, 0.09);
   --color-text: #f2f2f2;
+  --color-white: #fff;
   --color-muted: #c6c6c6;
   --color-quiet: #a9a9a9;
   --color-accent: #ff9f1a;
@@ -32,6 +33,8 @@
   --color-accent-ink: #211503;
   --color-accent-hover: #ffb733;
   --color-surface-hover: #454545;
+  --color-surface-subtle: rgba(255, 255, 255, 0.025);
+  --color-surface-hover-soft: rgba(255, 255, 255, 0.035);
   --color-border-hover: #686868;
   --color-composer-control: rgba(255, 255, 255, 0.055);
   --color-focus: #ff9f1a;
@@ -39,6 +42,7 @@
   --color-warning: #ffd166;
   --color-success: #8fcf73;
   --color-danger: #ff6e57;
+  --color-danger-hover: #ff8570;
   --color-trace: #78b9e8;
   --color-scrollbar-thumb: rgba(198, 198, 198, 0.46);
   --color-result-action: #8fd36a;
@@ -47,6 +51,8 @@
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-weight-control: 650;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
   --text-small: 11px;
   --text-compact: 10px;
   --text-label: 12px;
