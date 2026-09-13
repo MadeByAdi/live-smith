@@ -349,171 +349,105 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .chat-pane {
-  display: grid;
+  @apply grid min-w-0 overflow-hidden bg-canvas;
   grid-template-rows: minmax(0, 1fr) auto auto auto;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--color-canvas);
 }
 
 .approval-mode-label {
-  display: flex;
-  align-items: center;
+  @apply flex flex-none items-center gap-[6px] text-small text-text normal-case;
   flex: 0 0 auto;
-  gap: 6px;
-  color: var(--color-text);
-  font-size: 11px;
-  text-transform: none;
 }
 
 .approval-mode-select {
-  max-width: 170px;
+  @apply max-w-[170px];
 }
 
 .approval-mode-select.is-everything {
-  color: var(--color-danger);
+  @apply text-danger;
 }
 
 .edit-scope-shell {
-  position: relative;
+  @apply relative min-w-0 max-w-[170px];
   flex: 0 1 auto;
-  min-width: 0;
-  max-width: 170px;
 }
 
 .composer-select.edit-scope-button {
-  width: auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply w-auto min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .edit-scope-panel {
-  @apply bg-chrome shadow-popover-compact;
-  position: absolute;
-  z-index: 13;
+  @apply absolute left-0 z-[13] border border-divider bg-chrome p-2 shadow-popover-compact;
   bottom: calc(100% + 6px);
-  left: 0;
   width: min(188px, calc(100vw - 24px));
-  padding: 8px;
-  border: 1px solid var(--color-divider);
 }
 
 .edit-scope-panel[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .edit-scope-panel fieldset {
-  margin: 6px 0 0;
-  padding: 6px 0 0;
-  border: 0;
-  border-top: 1px solid var(--color-divider);
+  @apply m-0 mt-[6px] border-0 border-t border-t-divider p-0 pt-[6px];
 }
 
 .permissions-save-status {
-  color: var(--color-quiet);
-  font-size: 10px;
+  @apply text-compact text-quiet;
 }
 
 .permission-field-heading {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  margin-bottom: 0;
-  color: var(--color-muted);
-  font-size: 11px;
+  @apply relative mb-0 flex min-h-6 items-center gap-[6px] text-small text-muted;
 }
 
 .permission-field-heading > label {
-  margin: 0;
+  @apply m-0 normal-case;
   font-size: inherit;
-  text-transform: none;
   letter-spacing: normal;
 }
 
 .permission-field-heading h2 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 11px;
-  font-weight: 650;
+  @apply m-0 text-small text-text font-control;
 }
 
 .permission-field-heading .edit-scope-all {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  margin-left: auto;
-  padding: 0 5px;
-  color: var(--color-text);
-  border-radius: var(--radius-control);
-  cursor: pointer;
+  @apply ml-auto flex min-h-6 items-center gap-[5px] rounded-control px-[5px] py-0 text-text cursor-pointer;
 }
 
 .permission-field-heading .edit-scope-all:hover,
 .permission-field-heading .edit-scope-all:has(input:focus-visible) {
-  background: var(--color-composer-control);
+  @apply bg-composer-control;
 }
 
 .edit-scope-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  min-height: 24px;
-  padding: 0 5px;
-  border-radius: var(--radius-control);
+  @apply relative flex min-h-6 items-center justify-between gap-1 rounded-control px-[5px] py-0;
 }
 
 .edit-scope-option:hover,
 .edit-scope-option:has(input:focus-visible) {
-  background: var(--color-composer-control);
+  @apply bg-composer-control;
 }
 
 .edit-scope-option label {
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  cursor: pointer;
+  @apply flex min-w-0 flex-1 self-stretch items-center cursor-pointer;
 }
 
 .edit-scope-panel .inline-help::after {
-  box-sizing: border-box;
+  @apply left-0 right-auto w-full box-border;
   top: auto;
   bottom: calc(100% + 7px);
-  left: 0;
-  right: auto;
-  width: 100%;
 }
 
 .edit-scope-options {
-  display: grid;
-  gap: 2px;
+  @apply grid gap-[2px];
 }
 
 .edit-scope-options label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-text);
-  font-size: 11px;
-  text-transform: none;
+  @apply flex items-center gap-[6px] text-small text-text normal-case;
   letter-spacing: normal;
 }
 
 .edit-scope-options input,
 .edit-scope-all input {
   flex: 0 0 14px;
-  width: 14px;
-  height: 14px;
-  margin: 0;
+  @apply m-0 size-[14px];
   accent-color: var(--color-accent);
 }
 
@@ -1288,39 +1222,25 @@ details.timeline-item > .timeline-content {
 }
 
 .live-context-summary {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 5px 10px 0;
-  text-align: left;
-  background: var(--color-field);
-  border: 0;
+  @apply m-0 flex w-full min-w-0 items-baseline gap-2 border-0 bg-field px-[10px] pb-0 pt-[5px] text-left text-small;
   border-radius: 9px 9px 0 0;
-  font-size: 11px;
   line-height: 16px;
 }
 
-.live-context-summary[hidden] { display: none; }
-.live-context-summary .context-caption { flex-shrink: 0; color: var(--color-quiet); }
-.live-context-summary .context-title { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.live-context-summary .context-location { margin-left: auto; color: var(--color-muted); }
-.live-context-summary .context-location:empty { display: none; }
+.live-context-summary[hidden] { @apply hidden; }
+.live-context-summary .context-caption { @apply shrink-0 text-quiet; }
+.live-context-summary .context-title { @apply m-0 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap; }
+.live-context-summary .context-location { @apply ml-auto text-muted; }
+.live-context-summary .context-location:empty { @apply hidden; }
 .live-context-summary:focus-visible {
   outline: 0;
-  background: var(--color-composer-control);
+  @apply bg-composer-control;
 }
 #editScopeReadOnlyButton {
-  height: 28px;
-  margin-top: 8px;
-  padding: 0 10px;
-  font-size: 11px;
+  @apply mt-2 h-control-compact px-[10px] py-0 text-small;
 }
 #editScopeReadOnlyButton[aria-disabled="true"] {
-  color: var(--color-quiet);
-  cursor: default;
+  @apply text-quiet cursor-default;
 }
 
 .action-preview {
@@ -2601,7 +2521,7 @@ label {
 
 @container composer (max-width: 446px) {
   .edit-scope-shell {
-    display: none;
+    @apply hidden;
   }
 }
 
