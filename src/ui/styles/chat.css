@@ -518,12 +518,7 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .timeline {
-  min-height: 0;
-  overflow-x: auto;
-  overflow-y: scroll;
-  overscroll-behavior: contain;
-  padding: var(--spacing-4);
-  background: var(--color-canvas);
+  @apply min-h-0 overflow-x-auto overflow-y-scroll overscroll-contain bg-canvas p-4;
 }
 
 .is-scrolling {
@@ -560,106 +555,76 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .timeline-item {
-  display: grid;
-  gap: 6px;
-  max-width: 100%;
+  @apply grid max-w-full gap-[6px];
   margin-bottom: 14px;
 }
 
 .timeline-item.user {
-  width: fit-content;
-  max-width: 82%;
-  margin-left: auto;
+  @apply ml-auto w-fit max-w-[82%];
 }
 
 .timeline-message-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 24px;
+  @apply flex min-h-6 min-w-0 items-center gap-2;
 }
 
 .timeline-message-header .timeline-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply min-w-0 flex-auto overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .timeline-item.user .timeline-label {
-  text-align: right;
+  @apply text-right;
 }
 
 .timeline-item.user .timeline-message-header {
-  flex-direction: row-reverse;
+  @apply flex-row-reverse;
 }
 
 .message-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  pointer-events: none;
+  @apply flex flex-none items-center gap-[2px] opacity-0 pointer-events-none;
   transition: opacity 120ms ease-out;
 }
 
 .timeline-item:hover .message-actions,
 .timeline-item:focus-within .message-actions,
 .timeline-item.message-recovery .message-actions {
-  opacity: 1;
-  pointer-events: auto;
+  @apply opacity-100 pointer-events-auto;
 }
 
 .message-action {
-  display: grid;
-  place-items: center;
+  @apply grid size-6 place-items-center rounded-control bg-transparent p-0 text-quiet;
   flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--color-quiet);
-  background: transparent;
-  border-radius: 4px;
   line-height: 1;
 }
 
 .message-action svg {
-  display: block;
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
+  @apply block size-[14px] fill-none stroke-current;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.7;
 }
 
 .message-action:not(:disabled):hover {
-  color: var(--color-text);
-  background: var(--color-focus-soft);
+  @apply bg-focus-soft text-text;
 }
 
 .message-action:focus-visible {
+  @apply bg-focus-soft;
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
-  background: var(--color-focus-soft);
 }
 
 .message-action[data-copy-state="copying"] {
-  color: var(--color-muted);
+  @apply text-muted;
 }
 
 .message-action[data-copy-state="copied"],
 .message-action[data-copy-state="copied"]:hover {
-  color: var(--color-accent);
+  @apply text-accent;
 }
 
 .message-action[data-copy-state="failed"],
 .message-action[data-copy-state="failed"]:hover {
-  color: var(--color-danger);
+  @apply text-danger;
 }
 
 .timeline-item.message-enter {
@@ -679,7 +644,7 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .timeline-item.queued-follow-up {
-  opacity: 0.88;
+  @apply opacity-[0.88];
 }
 
 .timeline-item.user.queued-follow-up .timeline-content {
@@ -689,64 +654,48 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .timeline-label {
-  color: var(--color-quiet);
-  font-size: var(--text-small);
+  @apply text-small text-quiet;
 }
 
 .timeline-content {
-  white-space: pre-wrap;
+  @apply whitespace-pre-wrap rounded-panel border border-border bg-pane-raised p-3;
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.5;
-  padding: var(--spacing-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-panel);
-  background: var(--color-pane-raised);
 }
 
 .timeline-item.user .timeline-content {
-  justify-self: end;
-  min-width: 0;
-  max-width: 100%;
-  color: var(--color-text);
-  background: var(--color-pane-raised);
-  border-color: var(--color-border);
+  @apply min-w-0 max-w-full justify-self-end border-border bg-pane-raised text-text;
 }
 
 .timeline-attachments {
-  display: flex;
-  flex-wrap: wrap;
+  @apply mt-2 flex flex-wrap;
   gap: 5px;
-  margin-top: 8px;
 }
 
 .timeline-attachment-chip {
-  display: inline-flex;
-  max-width: 100%;
-  padding: 3px 6px;
+  @apply inline-flex max-w-full rounded-control px-[6px] py-[3px] text-small;
   overflow-wrap: anywhere;
   color: var(--color-accent-ink);
-  font-size: 11px;
   background: rgba(255, 255, 255, 0.28);
   border: 1px solid rgba(33, 21, 3, 0.24);
-  border-radius: 4px;
 }
 
 .markdown-body {
-  white-space: normal;
+  @apply whitespace-normal;
 }
 
 .markdown-body > :first-child {
-  margin-top: 0;
+  @apply mt-0;
 }
 
 .markdown-body > :last-child {
-  margin-bottom: 0;
+  @apply mb-0;
 }
 
 .markdown-body p {
+  @apply whitespace-pre-wrap;
   margin: 0 0 0.72em;
-  white-space: pre-wrap;
 }
 
 .markdown-body h1,
@@ -755,8 +704,8 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 .markdown-body h4,
 .markdown-body h5,
 .markdown-body h6 {
+  @apply text-text;
   margin: 1em 0 0.42em;
-  color: var(--color-text);
   font-size: 1em;
   line-height: 1.3;
 }
@@ -786,12 +735,9 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .markdown-body blockquote {
+  @apply rounded-control border border-border bg-surface-subtle text-muted;
   margin: 0.55em 0 0.75em;
   padding: 0.5em 0.7em;
-  color: var(--color-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: rgba(255, 255, 255, 0.025);
 }
 
 .timeline-item.user .markdown-body blockquote {
@@ -800,23 +746,20 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .markdown-body code {
+  @apply rounded-control font-code;
   padding: 0.08em 0.34em;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
   background: rgba(0, 0, 0, 0.22);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
 }
 
 .markdown-body pre {
-  max-width: 100%;
+  @apply max-w-full overflow-auto whitespace-pre;
   margin: 0.55em 0 0.78em;
   padding: 9px 10px;
-  overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: 5px;
   background: rgba(0, 0, 0, 0.28);
-  white-space: pre;
 }
 
 .markdown-body pre code {
@@ -827,8 +770,8 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .markdown-body a {
+  @apply underline;
   color: #8fc9f4;
-  text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
@@ -843,18 +786,12 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 }
 
 .markdown-table-scroll {
-  max-width: 100%;
+  @apply max-w-full overflow-x-auto;
   margin: 0.55em 0 0.78em;
-  overflow-x: auto;
 }
 
 .markdown-body table {
-  display: table;
-  width: 100%;
-  min-width: 360px;
-  margin: 0;
-  border-collapse: collapse;
-  font-size: 0.92em;
+  @apply m-0 table w-full min-w-[360px] border-collapse text-[0.92em];
   /* Prose permits arbitrary breaks; table columns need natural intrinsic widths. */
   overflow-wrap: normal;
   word-break: normal;
@@ -862,23 +799,18 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 
 .markdown-body th,
 .markdown-body td {
-  padding: 5px 8px;
-  border: 1px solid var(--color-border);
-  text-align: left;
-  vertical-align: top;
+  @apply border border-border px-2 py-[5px] text-left align-top;
 }
 
 .markdown-body th {
-  white-space: nowrap;
+  @apply whitespace-nowrap font-semibold;
   background: rgba(255, 255, 255, 0.05);
-  font-weight: 600;
 }
 
 .markdown-body hr {
-  height: 1px;
+  @apply h-px bg-border;
   margin: 0.8em 0;
   border: 0;
-  background: var(--color-border);
 }
 
 .timeline-item.compaction > summary {
