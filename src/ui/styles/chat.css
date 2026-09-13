@@ -2383,130 +2383,89 @@ label {
 }
 
 .skill-manager {
-  display: grid;
-  gap: var(--spacing-4);
+  @apply grid gap-4;
 }
 
 .skill-manager > .inspector-scope-header {
-  margin-bottom: 0;
+  @apply mb-0;
 }
 
 .skill-manager[hidden],
 .skill-viewer[hidden] {
-  display: none;
+  @apply hidden;
 }
 
 .skill-group {
-  display: grid;
-  gap: var(--spacing-2);
+  @apply grid gap-2;
 }
 
 .skill-group h3 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 12px;
-  font-weight: 650;
+  @apply m-0 text-label text-text font-control normal-case;
   letter-spacing: 0;
-  text-transform: none;
 }
 
 .skill-list {
-  display: grid;
-  gap: 5px;
+  @apply grid gap-[5px];
 }
 
 .skill-list:empty {
-  display: none;
+  @apply hidden;
 }
 
 .skill-row {
-  display: grid;
+  @apply grid items-center gap-[6px] rounded-[5px] border border-border bg-field p-[7px];
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  padding: 7px;
-  background: var(--color-field);
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
 }
 
 .skill-toggle {
-  display: grid;
+  @apply grid min-w-0 items-start gap-[7px] text-text normal-case cursor-pointer;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 7px;
-  min-width: 0;
-  color: var(--color-text);
-  cursor: pointer;
-  text-transform: none;
 }
 
 .skill-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 2px 0 0;
+  @apply m-0 mt-[2px] size-4;
   accent-color: var(--color-accent);
 }
 
 .skill-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
+  @apply grid min-w-0 gap-[2px];
 }
 
 .skill-copy strong,
 .skill-copy span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @apply overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .skill-copy span,
 .skill-empty {
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply text-small text-quiet;
   line-height: 1.35;
 }
 
 .skill-empty {
-  margin: 0;
+  @apply m-0;
 }
 
 .skill-delete,
 .skill-view {
-  height: 26px;
-  padding: 0 7px;
-  font-size: 11px;
+  @apply h-[26px] px-[7px] py-0 text-small;
 }
 
 .skill-viewer {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
+  @apply grid min-w-0 gap-3;
 }
 
 .skill-viewer-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 0;
-  background: var(--color-pane);
+  @apply sticky top-0 z-[1] flex items-center justify-between gap-2 bg-pane px-0 py-1;
 }
 
 .skill-viewer-header button {
-  height: 28px;
-  padding: 0 8px;
-  font-size: 11px;
+  @apply h-control-compact px-2 py-0 text-small;
 }
 
 .skill-viewer-header span,
 .skill-viewer-id {
-  color: var(--color-quiet);
-  font-size: 11px;
+  @apply text-small text-quiet;
 }
 
 .skill-viewer-id {
@@ -2514,22 +2473,18 @@ label {
 }
 
 .skill-viewer-description {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 12px;
+  @apply m-0 text-label text-muted;
   line-height: 1.5;
 }
 
 .skill-viewer-body {
-  min-width: 0;
-  font-size: 12px;
+  @apply min-w-0 whitespace-pre-wrap text-label;
   line-height: 1.6;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
 
 .skill-viewer-body.markdown-body {
-  white-space: normal;
+  @apply whitespace-normal;
 }
 
 .draft-status {
@@ -2638,55 +2593,38 @@ label {
 }
 
 .skill-drop-zone {
-  display: grid;
-  gap: 3px;
-  min-height: 70px;
-  padding: 12px;
-  color: var(--color-muted);
-  text-align: center;
+  @apply grid min-h-[70px] gap-[3px] rounded-panel border border-dashed border-[#626262] p-3 text-center text-muted;
   background: rgba(255, 255, 255, 0.025);
-  border: 1px dashed #626262;
-  border-radius: 6px;
 }
 
 .skill-drop-zone.drop-target {
-  color: var(--color-text);
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  @apply border-accent bg-accent-soft text-text;
 }
 
 .skill-drop-zone strong {
-  color: var(--color-text);
-  font-size: 12px;
+  @apply text-label text-text;
 }
 
 .skill-paste > summary {
-  color: var(--color-muted);
-  cursor: pointer;
-  font-size: 12px;
+  @apply text-label text-muted cursor-pointer;
 }
 
 .skill-paste-fields {
-  display: grid;
-  gap: var(--spacing-2);
+  @apply grid gap-2;
 }
 
 .skill-paste-fields > button {
+  @apply min-w-[82px];
   justify-self: end;
-  min-width: 82px;
 }
 
 .skill-import-body {
-  display: grid;
-  gap: var(--spacing-2);
-  padding-top: var(--spacing-2);
+  @apply grid gap-2 pt-2;
 }
 
 .skill-paste textarea {
-  height: 150px;
+  @apply h-[150px] text-small font-code;
   resize: vertical;
-  font-family: var(--font-code);
-  font-size: 11px;
 }
 
 #modelProfileSettings textarea {
@@ -2719,12 +2657,10 @@ label {
 }
 
 .context-settings > .skill-manager {
-  margin-top: var(--spacing-3);
-  padding-top: var(--spacing-3);
-  border-top: 1px solid var(--color-divider);
+  @apply mt-3 border-t border-t-divider pt-3;
 }
 
-.context-settings > .skill-viewer { margin-top: var(--spacing-6); }
+.context-settings > .skill-viewer { @apply mt-6; }
 
 .custom-instructions-settings > .inspector-scope-header {
   @apply mb-2;
@@ -2801,8 +2737,7 @@ label {
 
 @media (max-width: 520px) {
   .skill-row[data-skill-source="user"] {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
+    @apply grid-cols-1 items-stretch;
   }
 
   .skill-row[data-skill-source="user"] .skill-delete {
