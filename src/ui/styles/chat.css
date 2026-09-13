@@ -2247,25 +2247,16 @@ label {
 }
 
 .citation-sources {
-  display: grid;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-3);
+  @apply mt-3 grid gap-2;
 }
 
 .citation-sources-label {
-  color: var(--color-quiet);
-  font-size: 9px;
-  font-weight: 700;
+  @apply text-[9px] text-quiet font-[700] uppercase;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .citation-source-list {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @apply m-0 grid list-none gap-1 p-0;
   counter-reset: citation-source;
 }
 
@@ -2274,19 +2265,10 @@ label {
 }
 
 .citation-source-list a {
-  display: block;
-  max-width: 100%;
-  padding: 5px 7px;
-  overflow: hidden;
-  color: var(--color-trace);
+  @apply block max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-control border px-[7px] py-[5px] text-compact text-trace no-underline;
   background: rgba(120, 185, 232, 0.06);
   border: 1px solid rgba(120, 185, 232, 0.28);
-  border-radius: 4px;
-  font-size: 10px;
   line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-decoration: none;
 }
 
 .citation-source-list a:hover {
@@ -2300,7 +2282,7 @@ label {
 
 .citation-source-list a::before {
   content: counter(citation-source) ". ";
-  color: var(--color-quiet);
+  @apply text-quiet;
 }
 
 .settings-peer-actions {
