@@ -642,6 +642,56 @@ Stopping an incomplete response does not confirm service-side cancellation or a
 refund. A lost response is never regenerated automatically; a complete local
 file that outlives a job-record failure can be recovered without another request.
 
+### Mureka official API
+
+**Mureka** is an official API-key connection using the server and Bearer
+authentication documented in its
+[Quickstart](https://platform.mureka.ai/docs/en/quickstart.html). It is separate
+from chat-model Profiles and sends authenticated metadata requests only to
+`https://api.mureka.ai`.
+
+The connection exposes prompt-based `generate_music`. Vocal music uses the
+official [Prompt to song](https://platform.mureka.ai/docs/api/operations/post-v1-song-easy-generate.html)
+endpoint; instrumental music uses the separate
+[Generate instrumental](https://platform.mureka.ai/docs/api/operations/post-v1-instrumental-generate.html)
+endpoint. Live Smith requests one non-streaming choice and applies a common
+1,024-Unicode-code-point prompt limit, matching the narrower instrumental
+contract. Requesting one choice avoids silently purchasing the provider's
+documented default of two when the user asked for one result. It does not expose
+custom lyrics, styles, reference audio, vocal cloning, streaming playback, an
+explicit duration, or other Mureka operations through this tool.
+
+The optional model field suggests `auto`, `mureka-7.6`, `mureka-o2`,
+`mureka-8`, `mureka-9`, and `mureka-9.5`, following the current official
+generation schemas. Blank uses `auto`. Because the official instrumental
+schema does not include `mureka-o2`, Live Smith rejects that combination before
+creating an audio job or sending a paid request; the same saved model remains
+usable for prompt-to-song generation.
+
+An accepted task is persisted before polling the matching song or instrumental
+[query endpoint](https://platform.mureka.ai/docs/api/operations/get-v1-song-query-%7Btask_id%7D.html).
+The documented preparing, queued, running, and streaming states remain pending;
+succeeded results bind one stable music role to the returned choice ID. Failed,
+timed-out, and cancelled task states are terminal.
+Provider failure text is not returned to the model, Session history, or dialog.
+
+Completed HTTPS output URLs are temporary provider locators. Downloads accept
+provider-returned HTTPS hosts without treating example CDN names as a stable
+protocol contract, send no API key, Cookie, or referrer, and do not follow
+redirects. Each downloaded WAV or MP3 is inspected and stored as an immutable
+Session asset before it becomes available for playback, model listening, or a
+separate scoped Live import.
+Changed result identities are rejected on Resume, while refreshed URLs for the
+same identities are accepted. The published API reference documents polling but
+no cancellation request, so Stop ends the local wait without claiming remote
+cancellation or a refund. Resume queries the original task and never resubmits
+generation automatically.
+
+Synthetic request-capture tests cover the documented request, polling, response,
+download, cancellation, storage, and recovery boundaries. They do not establish
+that a real Mureka account has access to a selected model, sufficient credits,
+or current regional availability.
+
 ### Suno Platform official API
 
 **Suno Platform (official API)** is a first-party API-key connection. Open

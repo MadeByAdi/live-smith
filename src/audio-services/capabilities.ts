@@ -4,6 +4,10 @@ export const SUNOAPI_MUSIC_MODELS = [
   "V6", "V6_WILD", "V6_MINI", "V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4",
 ] as const;
 export const DEFAULT_SUNOAPI_MUSIC_MODEL = "V6";
+export const MUREKA_MUSIC_MODELS = [
+  "auto", "mureka-7.6", "mureka-o2", "mureka-8", "mureka-9", "mureka-9.5",
+] as const;
+export const DEFAULT_MUREKA_MUSIC_MODEL = "auto";
 
 /** Protocol capabilities, not chat-model name heuristics or user claims. */
 export const AUDIO_SERVICE_CAPABILITIES: Record<AudioProvider, {
@@ -21,11 +25,16 @@ export const AUDIO_SERVICE_CAPABILITIES: Record<AudioProvider, {
   modelConfigurable?: boolean;
   modelIds?: readonly string[];
   defaultModelId?: string;
+  instrumentalUnsupportedModelIds?: readonly string[];
 }> = {
   lalal: { label: "LALAL.AI", operations: ["separate_stems"], generationOutputCount: 0, musicPromptCharacters: 0 },
   elevenlabs: { label: "ElevenLabs", operations: ["generate_music", "generate_sound_effect"],
     musicDuration: { minimumSeconds: 3, maximumSeconds: 600 },
     generationOutputCount: 1, musicPromptCharacters: 4100, modelConfigurable: true },
+  mureka: { label: "Mureka", operations: ["generate_music"], generationOutputCount: 1,
+    musicPromptCharacters: 1024, modelIds: MUREKA_MUSIC_MODELS,
+    defaultModelId: DEFAULT_MUREKA_MUSIC_MODEL, modelConfigurable: true,
+    instrumentalUnsupportedModelIds: ["mureka-o2"] },
   "suno-platform": { label: "Suno Platform (official API)", operations: ["generate_music"],
     generationOutputCount: 1, musicPromptCharacters: 5000, customMusic: true,
     customMusicOptions: ["title", "styles", "personaId"], requiredCustomMusicOptions: ["styles"] },

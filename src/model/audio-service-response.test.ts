@@ -11,6 +11,7 @@ import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 import { MAX_AUDIO_ASSET_BYTES } from "../audio-services/contracts.js";
 import { createElevenLabsAudioAdapter } from "../audio-services/elevenlabs.js";
 import { createLalalAudioAdapter } from "../audio-services/lalal.js";
+import { createMurekaAudioAdapter } from "../audio-services/mureka.js";
 import { createSunoPlatformAudioAdapter } from "../audio-services/suno-platform.js";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
 import { createHostAbortController } from "../runtime/host.js";
@@ -26,6 +27,7 @@ MP3.set([0xff, 0xfb, 0x90, 0], 417);
 const LALAL_OUTPUT = { key: "stem:vocals", role: "vocals", url: "https://d.lalal.ai/fixture/vocals" } as const;
 const SUNO_OUTPUT = { key: "track1", role: "music", url: "https://file.aiquickdraw.com/fixture.mp3" } as const;
 const PLATFORM_OUTPUT = { key: TASK, role: "music", url: "https://audiopipe.suno.ai/fixture.mp3" } as const;
+const MUREKA_OUTPUT = { key: "song-a", role: "music", url: "https://cdn.mureka.ai/fixture.mp3" } as const;
 
 const operations = {
   "sunoapi receipt": {
@@ -61,6 +63,23 @@ const operations = {
     bytes: MP3, mime: "audio/mpeg", expected: MP3,
     run: (fetchImpl: typeof fetch, signal: AbortSignal) =>
       createSunoPlatformAudioAdapter(KEY, { fetchImpl }).download!(PLATFORM_OUTPUT, signal),
+  },
+  "mureka receipt": {
+    bytes: Buffer.from(JSON.stringify({ id: TASK, status: "preparing", model: "mureka-9.5" })),
+    mime: "application/json", expected: { kind: "task", taskId: `song:${TASK}` },
+    run: (fetchImpl: typeof fetch, signal: AbortSignal) =>
+      createMurekaAudioAdapter(KEY, { fetchImpl }).submit({ ...MUSIC, instrumental: false }, signal),
+  },
+  "mureka poll": {
+    bytes: Buffer.from(JSON.stringify({ id: TASK, status: "queued", detail: "waiting ".repeat(100) })),
+    mime: "application/json", expected: { status: "running" },
+    run: (fetchImpl: typeof fetch, signal: AbortSignal) =>
+      createMurekaAudioAdapter(KEY, { fetchImpl }).inspect!(`song:${TASK}`, signal),
+  },
+  "mureka download": {
+    bytes: MP3, mime: "audio/mpeg", expected: MP3,
+    run: (fetchImpl: typeof fetch, signal: AbortSignal) =>
+      createMurekaAudioAdapter(KEY, { fetchImpl }).download!(MUREKA_OUTPUT, signal),
   },
   "elevenlabs audio": {
     bytes: MP3, mime: "audio/mpeg", expected: { kind: "audio", outputs: [{ role: "music", bytes: MP3 }] },
@@ -152,7 +171,7 @@ for (const [name, operation] of Object.entries(operations)) {
 }
 
 test("compressed JSON expansion is bounded before parsing a paid receipt", { timeout: 5000 }, async (t) => {
-  for (const name of ["sunoapi receipt", "suno platform receipt", "lalal receipt"] as const) {
+  for (const name of ["sunoapi receipt", "suno platform receipt", "mureka receipt", "lalal receipt"] as const) {
     const operation = operations[name];
     const bytes = Buffer.from(JSON.stringify({ padding: "x".repeat(65536) }));
     const wire = gzipSync(bytes);
@@ -165,7 +184,7 @@ test("compressed JSON expansion is bounded before parsing a paid receipt", { tim
 });
 
 test("encoded response headers never remove the decoded audio byte cap or reader cleanup", async () => {
-  for (const name of ["sunoapi download", "suno platform download", "elevenlabs audio", "lalal download"] as const) {
+  for (const name of ["sunoapi download", "suno platform download", "mureka download", "elevenlabs audio", "lalal download"] as const) {
     const operation = operations[name];
     let reads = 0; let cancels = 0; let releases = 0;
     const chunk = Buffer.alloc(8 * 1024 * 1024);

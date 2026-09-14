@@ -168,14 +168,19 @@ metadata. `live-smith-settings.json` contains Direct API keys as plain text;
 Audio-service connection keys also live in private settings. Audio-processing
 jobs and input/output assets are stored under `live-smith-audio/<sessionId>/`.
 Processing tests use injected services and local audio fixtures; they do not
-upload user audio or consume generation credits or processing minutes. Real-service validation requires
-an explicitly configured account. Verify separated-stem timing, Warp settings,
-playback, Stop, and import behavior separately in the Ableton host.
+upload user audio or consume generation credits or processing minutes.
+Real-service validation requires an explicitly configured account. Verify
+separated-stem timing, Warp settings, playback, Stop, and import behavior
+separately in the Ableton host.
 Suno Platform tests use synthetic API keys and captured `/v0/audio` requests;
-they do not establish live Platform access. Suno.com Cookie tests use synthetic credentials, captured HTTP requests and injected
-default-browser handlers. They do not read browser profiles or log into real
-accounts. The runtime opens the website through the OS default handler, without
-browser discovery, extensions, automation flags or bundled browser dependencies.
+they do not establish live Platform access. Mureka tests likewise use synthetic
+keys and captured song/instrumental task requests; they do not establish live
+account access, model entitlement, credits, regional availability, or provider
+media delivery. Suno.com Cookie tests use synthetic credentials, captured HTTP
+requests, and injected default-browser handlers. They do not read browser
+profiles or log into real accounts. The runtime opens the website through the OS
+default handler, without browser discovery, extensions, automation flags or
+bundled browser dependencies.
 Explicitly imported Cookies are reduced to required Suno/Clerk fields and stored
 in private `suno-session-<serviceId>.json`
 files in the extension storage directory, separately per audio connection, and must

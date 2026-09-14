@@ -11,6 +11,7 @@ import { AUDIO_SERVICE_CAPABILITIES } from "../audio-services/capabilities.js";
 import { exceedsAudioPromptLimit } from "../audio-services/prompt.js";
 import { AttachmentProcessingError } from "../attachments/contracts.js";
 import { createElevenLabsAudioAdapter } from "../audio-services/elevenlabs.js";
+import { createMurekaAudioAdapter } from "../audio-services/mureka.js";
 import { createSunoPlatformAudioAdapter } from "../audio-services/suno-platform.js";
 import { createSunoApiAudioAdapter } from "../audio-services/sunoapi.js";
 import { createSunoAudioAdapter } from "../audio-services/suno.js";
@@ -32,6 +33,12 @@ function generationAdapter(
   }
   if (settings.provider === "elevenlabs") {
     return createElevenLabsAudioAdapter(settings.apiKey, {
+      fetchImpl: providerFetchForStorage(context.storageDirectory),
+      ...(settings.modelId ? { modelId: settings.modelId } : {}),
+    });
+  }
+  if (settings.provider === "mureka") {
+    return createMurekaAudioAdapter(settings.apiKey, {
       fetchImpl: providerFetchForStorage(context.storageDirectory),
       ...(settings.modelId ? { modelId: settings.modelId } : {}),
     });
@@ -78,6 +85,10 @@ export async function generateAudio(
   }
   if (request.operation === "generate_music" && exceedsAudioPromptLimit(request.prompt, AUDIO_SERVICE_CAPABILITIES[settings.provider].musicPromptCharacters)) {
     throw new Error("The music prompt exceeds this service's supported limit.");
+  }
+  if (request.operation === "generate_music" && request.instrumental && settings.modelId &&
+    AUDIO_SERVICE_CAPABILITIES[settings.provider].instrumentalUnsupportedModelIds?.includes(settings.modelId)) {
+    throw new Error("The selected model does not support instrumental generation.");
   }
   if (request.operation === "generate_music" && request.durationSeconds !== undefined) {
     const range = AUDIO_SERVICE_CAPABILITIES[settings.provider].musicDuration;

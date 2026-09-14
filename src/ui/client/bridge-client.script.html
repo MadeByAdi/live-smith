@@ -6180,14 +6180,14 @@
           provider.value = service.provider;
           const modelInput = document.getElementById("audioServiceModel");
           modelInput.value = service.modelId || "";
-          const modelSuggestions = document.getElementById("sunoApiModelOptions");
-          const suggestedModels = audioServiceCapabilities.sunoapi.modelIds || [];
+          const modelSuggestions = document.getElementById("audioServiceModelOptions");
+          const suggestedModels = audioServiceCapabilities[service.provider].modelIds || [];
           const suggestionKey = JSON.stringify(suggestedModels);
           if (modelSuggestions.dataset.models !== suggestionKey) {
             modelSuggestions.dataset.models = suggestionKey;
             modelSuggestions.replaceChildren(...suggestedModels.map((id) => new Option(id, id)));
           }
-          if (service.provider === "sunoapi") modelInput.setAttribute("list", modelSuggestions.id);
+          if (suggestedModels.length) modelInput.setAttribute("list", modelSuggestions.id);
           else modelInput.removeAttribute("list");
           const callback = document.getElementById("audioServiceCallback");
           callback.value = service.callbackUrl || "";
@@ -6256,9 +6256,9 @@
             button.disabled = busy || Boolean(draft) || saved?.provider !== "suno" || !sessionImport || !canMaintain;
             button.onclick = () => runSunoLoginCommand(kind);
           }
-          document.getElementById("audioServiceModelHint").textContent = service.provider === "sunoapi"
+          document.getElementById("audioServiceModelHint").textContent = audioServiceCapabilities[service.provider].defaultModelId
             ? t("Leave blank to use {model}. This integration uses prompt-based generation without custom mode or a duration setting.",
-              { model: audioServiceCapabilities.sunoapi.defaultModelId })
+              { model: audioServiceCapabilities[service.provider].defaultModelId })
             : sessionImport ? t("Normally choose Music version above. Only enter an exact model ID for an explicit override; leave blank for the account default.")
             : t("Leave blank to use the integration default. Sound effects use a dedicated model.");
           document.getElementById("audioServiceModelSummary").textContent = t(sessionImport ? "Advanced model ID" : "Model override (optional)");

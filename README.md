@@ -76,6 +76,11 @@ names, and raw provider/SDK output stay in their original language.
   **Inspector → App → Audio tools**, then describe the music or sound you want.
   Multiple named audio connections, including separate accounts at the same
   provider, can be enabled together.
+- **Generate songs or instrumentals with Mureka.** Add a **Mureka** connection
+  with an API key from [Mureka API Platform](https://platform.mureka.ai/), then
+  use prompt-based music generation. Live Smith polls the accepted task, saves
+  the returned track locally, and can resume a missing download without
+  submitting the generation again.
 - **Generate through the official Suno Platform API.** Add a separate
   **Suno Platform (official API)** connection and use an API key managed at
   [platform.suno.com](https://platform.suno.com/). Platform access and usage
@@ -123,6 +128,8 @@ Try requests such as:
 > “Separate this Clip into vocals and drums, then place the results on new audio tracks.”
 >
 > “Use my ElevenLabs connection to generate ten seconds of instrumental ambient piano.”
+>
+> “Use my Mureka connection to generate an instrumental synthwave idea.”
 
 Audio processing is disabled by default. Each connection has its own saved key
 and uses that provider's allowance, separately from chat-model usage. Generation

@@ -39,7 +39,7 @@ test("settings and job model IDs reject the same empty, oversized, whitespace, c
   assert.equal(Object.hasOwn(await loadAudioJob(h.storage, h.session.id, job.id), "modelId"), false);
 });
 
-test("native Suno and SunoAPI keep separate owners and two-track contracts", async (t) => {
+test("Mureka, native Suno and SunoAPI keep their provider-specific output contracts", async (t) => {
   const h = await audioStorageHarness(t);
   const native = await createAudioJob(h.storage, h.session.id, { ...music, provider: "suno" });
   assert.equal((await loadAudioJob(h.storage, h.session.id, native.id)).provider, "suno");
@@ -51,4 +51,12 @@ test("native Suno and SunoAPI keep separate owners and two-track contracts", asy
   await updateAudioJob(h.storage, h.session.id, official.id, { expectedOutputRoles: ["music"] });
   await assert.rejects(updateAudioJob(h.storage, h.session.id, official.id,
     { expectedOutputRoles: ["music", "music_alternative"] }), AudioStorageError);
+  const mureka = await createAudioJob(h.storage, h.session.id, { ...music, provider: "mureka", modelId: "mureka-9.5" });
+  await updateAudioJob(h.storage, h.session.id, mureka.id, {
+    remoteTaskId: "song:task-1", expectedOutputs: [{ key: "song-a", role: "music" }],
+  });
+  assert.equal((await loadAudioJob(h.storage, h.session.id, mureka.id)).provider, "mureka");
+  await assert.rejects(updateAudioJob(h.storage, h.session.id, mureka.id, { expectedOutputs: [
+    { key: "song-a", role: "music" }, { key: "song-b", role: "music_alternative" },
+  ] }), AudioStorageError);
 });

@@ -70,6 +70,25 @@ test("third-party Suno music declares its prompt limit and does not silently dis
   assert.throws(() => validateAudioServiceRequest({ kind: "generate_music", serviceId: services[0]!.id, prompt: "a".repeat(3001), instrumental: false }, services));
 });
 
+test("Mureka exposes only bounded prompt-based music generation", () => {
+  const services = [{ id: "mureka-studio", name: "Mureka studio", provider: "mureka" as const }];
+  const tools = audioProcessingTools(services);
+  const music = tools.find((tool) => tool.function.name === "generate_music")!;
+  const schema = JSON.stringify(music.function.parameters);
+  assert.match(schema, /mureka-studio/);
+  assert.match(schema, /1024/);
+  assert.doesNotMatch(schema, /durationSeconds|options/);
+  assert.ok(!tools.some((tool) => tool.function.name === "generate_sound_effect"));
+  const parsed = parseAudioToolRequest("generate_music", JSON.stringify({
+    serviceId: services[0]!.id, prompt: "Ambient piano", instrumental: false,
+  }));
+  assert.equal(parsed.kind, "generate_music");
+  if (parsed.kind !== "generate_music") assert.fail("expected music generation");
+  validateAudioServiceRequest(parsed, services);
+  assert.throws(() => validateAudioServiceRequest({ ...parsed, prompt: "🎵".repeat(1025) }, services));
+  assert.throws(() => validateAudioServiceRequest({ ...parsed, durationSeconds: 30 }, services));
+});
+
 test("official Suno Platform exposes only its supported custom fields", () => {
   const services = [{ id: "official-suno", name: "Official Suno", provider: "suno-platform" as const }];
   const tool = audioProcessingTools(services).find((entry) => entry.function.name === "generate_music")!;

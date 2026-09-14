@@ -32,6 +32,7 @@ export const mainMessages: Record<string, string> = {
   "Processing audio…": "正在处理音频…",
   "Suno.com subscription (experimental)": "Suno.com 订阅（实验性）",
   "Suno Platform (official API)": "Suno Platform（官方 API）",
+  "Mureka": "Mureka",
   "Extend song": "续写歌曲",
   "Get Whole Song": "获取整曲",
   "Existing Suno songs": "已有 Suno 歌曲",

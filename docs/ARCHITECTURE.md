@@ -97,6 +97,10 @@ src/
     elevenlabs.ts, elevenlabs-http.ts
       Official music and sound-effect requests, bounded MP3 responses, and
       cancellation without automatic regeneration.
+    mureka.ts, mureka-http.ts
+      Official prompt-to-song and instrumental task submission, typed polling,
+      stable output collection, and validated credential-free provider media
+      downloads.
     suno-platform.ts, suno-platform-http.ts
       First-party Suno Platform API-key generation, task polling, and bounded
       credential-free media collection through api.suno.com.

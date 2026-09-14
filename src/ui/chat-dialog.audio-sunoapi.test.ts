@@ -21,8 +21,8 @@ test("Add SunoAPI requires a user callback to enable, keeps other services, and 
     assert.match(harness.document.querySelector("#audioServiceDisclosure")!.textContent!, /third-party API service/);
     assert.match(harness.document.querySelector("#audioServiceCallbackHint")!.textContent!, /notifications here.*polls for results/);
     assert.match(harness.document.querySelector("#audioServiceModelHint")!.textContent!, /V6/);
-    assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceModel")!.getAttribute("list"), "sunoApiModelOptions");
-    assert.deepEqual(Array.from(harness.document.querySelectorAll<HTMLOptionElement>("#sunoApiModelOptions option"))
+    assert.equal(harness.document.querySelector<HTMLInputElement>("#audioServiceModel")!.getAttribute("list"), "audioServiceModelOptions");
+    assert.deepEqual(Array.from(harness.document.querySelectorAll<HTMLOptionElement>("#audioServiceModelOptions option"))
       .map((option) => option.value), ["V6", "V6_WILD", "V6_MINI", "V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4"]);
     harness.input("#audioServiceApiKey", "fixture-suno-ui");
     toggle(harness, true);
