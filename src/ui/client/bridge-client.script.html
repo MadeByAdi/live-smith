@@ -5001,9 +5001,12 @@
           if (running) {
             if (
               prompt.getAttribute("aria-keyshortcuts") !==
-                "Meta+Enter Control+Enter"
+                "Enter Meta+Enter Control+Enter"
             ) {
-              prompt.setAttribute("aria-keyshortcuts", "Meta+Enter Control+Enter");
+              prompt.setAttribute(
+                "aria-keyshortcuts",
+                "Enter Meta+Enter Control+Enter",
+              );
             }
             describedBy.add("followUpShortcutHint");
           } else {
@@ -5024,8 +5027,8 @@
         const shortcutHint = document.getElementById("followUpShortcutHint");
         if (shortcutHint) {
           const shortcutText = behavior === "steer"
-            ? t("Cmd/Ctrl+Enter · Steer current response")
-            : t("Cmd/Ctrl+Enter · Queue follow-up");
+            ? t("Enter · Steer current response")
+            : t("Enter · Queue follow-up");
           if (shortcutHint.textContent !== shortcutText) {
             shortcutHint.textContent = shortcutText;
           }

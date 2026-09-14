@@ -790,8 +790,11 @@ test("active Queue exposes a non-layout shortcut hint and Close counts discarded
     assert.equal(hint?.tagName, "SPAN");
     assert.equal(hint?.hidden, false);
     assert.equal(hint?.classList.contains("visually-hidden"), true);
-    assert.match(hint?.textContent ?? "", /Cmd\/Ctrl\+Enter.*Queue/i);
-    assert.match(prompt?.getAttribute("aria-keyshortcuts") ?? "", /Meta\+Enter/);
+    assert.equal(hint?.textContent, "Enter · Queue follow-up");
+    assert.equal(
+      prompt?.getAttribute("aria-keyshortcuts"),
+      "Enter Meta+Enter Control+Enter",
+    );
     assert.match(prompt?.getAttribute("aria-describedby") ?? "", /followUpShortcutHint/);
     assert.equal(harness.document.querySelector("#queueButton"), null);
     assert.equal(harness.document.querySelector("#steerButton"), null);

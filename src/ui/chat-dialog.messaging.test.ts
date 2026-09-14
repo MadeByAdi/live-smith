@@ -8,7 +8,228 @@ import {
   createDialogHarness,
   jsonCalls,
   stateFixture,
+  waitForCondition,
 } from "./chat-dialog.test-harness.js";
+
+function pressComposerEnter(
+  harness: Awaited<ReturnType<typeof createDialogHarness>>,
+  options: KeyboardEventInit = {},
+): KeyboardEvent {
+  const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+  assert.ok(prompt);
+  const event = new harness.window.KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    key: "Enter",
+    ...options,
+  });
+  prompt.dispatchEvent(event);
+  return event;
+}
+
+test("Enter sends the composer message through the existing Send pathway", async () => {
+  const harness = await createDialogHarness();
+  try {
+    const sendButton = harness.document.querySelector<HTMLButtonElement>("#sendButton");
+    assert.equal(sendButton?.title, "Send (Enter)");
+    assert.equal(
+      sendButton?.getAttribute("aria-keyshortcuts"),
+      "Enter Meta+Enter Control+Enter",
+    );
+    harness.input("#prompt", "Make the drums wider");
+    const event = pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(jsonCalls(harness, "/send").map((call) => call.body), [{
+      prompt: "Make the drums wider", sessionId: "session-1",
+    }]);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Shift+Enter keeps the composer ready for a newline without sending", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "First line");
+    const event = pressComposerEnter(harness, { shiftKey: true });
+    if (!event.defaultPrevented) harness.input("#prompt", "First line\n");
+    await harness.settle();
+
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(harness.document.querySelector<HTMLTextAreaElement>("#prompt")?.value, "First line\n");
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Shift or Alt keeps newline behavior when combined with a send modifier", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "Keep editing");
+    for (const [label, options] of [
+      ["Cmd+Shift+Enter", { metaKey: true, shiftKey: true }],
+      ["Ctrl+Alt+Enter", { ctrlKey: true, altKey: true }],
+    ] as const) {
+      const event = pressComposerEnter(harness, options);
+      assert.equal(event.defaultPrevented, false, label);
+    }
+    await harness.settle();
+
+    assert.equal(
+      harness.document.querySelector<HTMLTextAreaElement>("#prompt")?.value,
+      "Keep editing",
+    );
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Enter leaves an empty composer unsent", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "   ");
+    pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Enter does not send while composer text composition is active", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "Composing text");
+    const event = pressComposerEnter(harness, { isComposing: true });
+    await harness.settle();
+
+    assert.equal(event.defaultPrevented, false);
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("autocomplete preserves Shift+Enter and composing Enter behavior", async () => {
+  const state = stateFixture();
+  state.availableSkills = [
+    { id: "midi-editor", description: "Edit notes", source: "user" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+    const listbox = harness.document.querySelector<HTMLElement>("#composerAutocomplete");
+    assert.ok(prompt && listbox);
+    prompt.focus();
+    harness.input("#prompt", "$mi");
+    assert.equal(listbox.hidden, false);
+
+    for (const [label, options] of [
+      ["Shift+Enter", { shiftKey: true }],
+      ["composing Enter", { isComposing: true }],
+    ] as const) {
+      const event = pressComposerEnter(harness, options);
+      assert.equal(event.defaultPrevented, false, label);
+      assert.equal(prompt.value, "$mi", label);
+      assert.equal(listbox.hidden, false, label);
+    }
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("holding Enter accepts autocomplete without submitting the completed value", async () => {
+  const state = stateFixture();
+  state.availableSkills = [
+    { id: "midi-editor", description: "Edit notes", source: "user" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+    assert.ok(prompt);
+    prompt.focus();
+    harness.input("#prompt", "$mi");
+
+    pressComposerEnter(harness);
+    assert.equal(prompt.value, "$midi-editor ");
+    const repeated = pressComposerEnter(harness, { repeat: true });
+    await harness.settle();
+
+    assert.equal(repeated.defaultPrevented, true);
+    assert.equal(prompt.value, "$midi-editor ");
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Enter does not bypass a disabled composer", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "Do not bypass disabled Send");
+    const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+    assert.ok(prompt);
+    prompt.disabled = true;
+    pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("Enter does not send while a non-send operation is loading", async () => {
+  const harness = await createDialogHarness();
+  let command: Promise<boolean> | undefined;
+  try {
+    harness.holdNextCommand();
+    const ui = (harness.window as unknown as {
+      LiveSmithUI: { runCommand(kind: string, extra?: Record<string, unknown>): Promise<boolean> };
+    }).LiveSmithUI;
+    command = ui.runCommand("rename_session", { sessionId: "session-2", title: "Renamed" });
+    await waitForCondition(
+      () => harness.calls.some((call) => call.path === "/command"),
+      "Expected a command to be active.",
+    );
+    harness.input("#prompt", "Do not send while loading");
+    pressComposerEnter(harness);
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.releaseHeldCommand();
+    await command;
+    harness.close();
+  }
+});
+
+test("one Enter produces exactly one Send", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "Send once");
+    pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.equal(jsonCalls(harness, "/send").length, 1);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
 
 test("Send posts only the prompt and active session ID", async () => {
   const harness = await createDialogHarness();

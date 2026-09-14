@@ -35,7 +35,7 @@ export const templateMessages: Record<string, string> = {
   "Context usage unavailable for the active Session.": "当前会话的上下文用量不可用。",
   "Model for the active Session": "当前会话的模型",
   "Reasoning effort for the active Session": "当前会话的推理强度",
-  "Send (Cmd/Ctrl+Enter)": "发送 (Cmd/Ctrl+Enter)",
+  "Send (Enter)": "发送 (Enter)",
   "Send message": "发送消息",
   "Send": "发送",
   "Inspector Views": "检查器视图",

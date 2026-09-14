@@ -1591,7 +1591,7 @@ test("the circular transport button preserves Send and Stop semantics", async ()
     assert.equal(button?.getAttribute("aria-label"), "Send message");
     assert.equal(button?.querySelectorAll("svg[aria-hidden='true']").length, 2);
     assert.ok(button?.querySelector(".send-button-label.visually-hidden"));
-    assert.match(button?.getAttribute("title") ?? "", /Cmd\/Ctrl\+Enter/);
+    assert.equal(button?.getAttribute("title"), "Send (Enter)");
 
     harness.holdNextSend();
     harness.input("#prompt", "Hold this response");

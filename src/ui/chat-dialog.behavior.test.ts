@@ -245,7 +245,7 @@ test("the compact composer uses one attachment menu and no unsupported file pick
     );
     assert.match(
       harness.document.querySelector("#sendButton")?.getAttribute("aria-keyshortcuts") ?? "",
-      /Meta\+Enter.*Control\+Enter/,
+      /^Enter Meta\+Enter Control\+Enter$/,
     );
 
     const menuButton = harness.document.querySelector<HTMLButtonElement>(

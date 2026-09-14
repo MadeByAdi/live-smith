@@ -2624,7 +2624,7 @@ test("clean subscription Profiles enable Send for an eligible signed-in account"
     );
     const send = harness.document.querySelector<HTMLButtonElement>("#sendButton");
     assert.equal(send?.disabled, false);
-    assert.equal(send?.title, "Send (Cmd/Ctrl+Enter)");
+    assert.equal(send?.title, "Send (Enter)");
     harness.input("#prompt", "Send through the eligible subscription");
     submitFromComposer(harness);
     await harness.settle();
