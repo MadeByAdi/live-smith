@@ -936,7 +936,7 @@ details.timeline-item > summary:hover {
 }
 
 .web-search-section {
-  @apply grid gap-1;
+  @apply relative grid gap-1;
 }
 
 .web-search-section + .web-search-section {
@@ -970,7 +970,7 @@ details.timeline-item > summary:hover {
 
 .inline-help::after {
   content: attr(data-tooltip);
-  @apply invisible pointer-events-none absolute right-0 z-20 box-border text-left text-compact text-text normal-case opacity-0;
+  @apply invisible pointer-events-none absolute left-0 z-20 box-border text-left text-compact text-text normal-case opacity-0;
   top: calc(100% + 7px);
   width: min(250px, 100%);
   max-width: calc(100vw - 32px);
