@@ -4,6 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { platform } from "node:process";
+import { types as utilTypes } from "node:util";
 
 import { persistTransientSessionInTransaction } from "./sessions.js";
 import {
@@ -200,7 +201,7 @@ export async function saveSessionAttachment(
   options: AttachmentSaveOptions,
 ): Promise<StoredSessionAttachment> {
   requireSafeStorageId(sessionId, "Session ID");
-  if (!(input.bytes instanceof Uint8Array)) {
+  if (!isUint8Array(input.bytes)) {
     throw new TypeError("Attachment bytes must be binary data.");
   }
   if (input.bytes.byteLength > MAX_DOCUMENT_ATTACHMENT_BYTES) {
@@ -1299,6 +1300,10 @@ async function withAttachmentStorageBoundary<T>(
   }
 }
 
+function isUint8Array(value: unknown): value is Uint8Array {
+  return utilTypes.isUint8Array(value);
+}
+
 async function prepareAttachmentSessionDirectory(
   storageDirectory: string,
   sessionId: string,
@@ -1416,12 +1421,22 @@ async function openRegularPrivateFile(target: string): Promise<fs.FileHandle> {
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new AttachmentStorageCorruptionError();
-    if (platform !== "win32") await handle.chmod(0o600);
+    if (platform !== "win32" && !hasExactPrivateFileMode(info.mode)) {
+      await handle.chmod(0o600);
+      const tightened = await handle.stat();
+      if (!tightened.isFile() || !hasExactPrivateFileMode(tightened.mode)) {
+        throw new AttachmentStorageAccessError();
+      }
+    }
     return handle;
   } catch (error) {
     await handle.close();
     throw error;
   }
+}
+
+function hasExactPrivateFileMode(mode: number): boolean {
+  return (mode & 0o7777) === 0o600;
 }
 
 function isSymbolicLinkOpenError(error: unknown): boolean {
