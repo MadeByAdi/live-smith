@@ -134,6 +134,9 @@ for supported inputs, limits, and recovery.
 
 Composer commands are recognized only at the start of a message:
 
+Press Enter to submit the composer. Shift+Enter inserts a line break, and the
+existing Cmd/Ctrl+Enter shortcut remains available.
+
 - `/compact [instructions]` compacts the current Session now and can name what
   the checkpoint should preserve. The Session must have no active request and
   new conversation activity since its latest checkpoint. While manual

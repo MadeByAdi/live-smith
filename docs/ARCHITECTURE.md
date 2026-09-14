@@ -1724,12 +1724,14 @@ existing `new_session` command, so the previous Session is retained and an old
 background send remains bound to it. `/compact [instructions]` invokes the strict
 `compact_session` Session command and never creates a user event. Skill and Slash
 completion share one accessible listbox, while `$skill` mentions remain ordinary
-prompt content. The active-send button remains Stop; Cmd/Ctrl+Enter submits
-follow-ups and control commands. A running manual compaction also owns the Stop
-control. Stop is correlated to the exact command ID and requests cancellation;
-it cannot abort a different or later command. The bridge retains a bounded set
-of recently admitted or pre-stopped command IDs and rejects reuse, so a delayed
-Stop cannot cross command generations.
+prompt content. The active-send button remains Stop; Enter submits follow-ups and
+control commands, while Cmd/Ctrl+Enter remains an alias. Shift- or Alt-modified
+Enter stays a line break even when combined with a send modifier. Repeated keydown
+events cannot submit a completed suggestion or resubmit a composer draft. A
+running manual compaction also owns the Stop control. Stop is correlated to the
+exact command ID and requests cancellation; it cannot abort a different or later
+command. The bridge retains a bounded set of recently admitted or pre-stopped
+command IDs and rejects reuse, so a delayed Stop cannot cross command generations.
 
 The composer has one follow-up dispatcher and one running control, Stop. Its
 persisted global default is Queue. A Queue submission is captured in a

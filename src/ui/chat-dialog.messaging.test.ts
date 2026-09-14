@@ -30,6 +30,12 @@ function pressComposerEnter(
 test("Enter sends the composer message through the existing Send pathway", async () => {
   const harness = await createDialogHarness();
   try {
+    const sendButton = harness.document.querySelector<HTMLButtonElement>("#sendButton");
+    assert.equal(sendButton?.title, "Send (Enter)");
+    assert.equal(
+      sendButton?.getAttribute("aria-keyshortcuts"),
+      "Enter Meta+Enter Control+Enter",
+    );
     harness.input("#prompt", "Make the drums wider");
     const event = pressComposerEnter(harness);
     await harness.settle();
@@ -61,6 +67,30 @@ test("Shift+Enter keeps the composer ready for a newline without sending", async
   }
 });
 
+test("Shift or Alt keeps newline behavior when combined with a send modifier", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.input("#prompt", "Keep editing");
+    for (const [label, options] of [
+      ["Cmd+Shift+Enter", { metaKey: true, shiftKey: true }],
+      ["Ctrl+Alt+Enter", { ctrlKey: true, altKey: true }],
+    ] as const) {
+      const event = pressComposerEnter(harness, options);
+      assert.equal(event.defaultPrevented, false, label);
+    }
+    await harness.settle();
+
+    assert.equal(
+      harness.document.querySelector<HTMLTextAreaElement>("#prompt")?.value,
+      "Keep editing",
+    );
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
 test("Enter leaves an empty composer unsent", async () => {
   const harness = await createDialogHarness();
   try {
@@ -83,6 +113,62 @@ test("Enter does not send while composer text composition is active", async () =
     await harness.settle();
 
     assert.equal(event.defaultPrevented, false);
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("autocomplete preserves Shift+Enter and composing Enter behavior", async () => {
+  const state = stateFixture();
+  state.availableSkills = [
+    { id: "midi-editor", description: "Edit notes", source: "user" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+    const listbox = harness.document.querySelector<HTMLElement>("#composerAutocomplete");
+    assert.ok(prompt && listbox);
+    prompt.focus();
+    harness.input("#prompt", "$mi");
+    assert.equal(listbox.hidden, false);
+
+    for (const [label, options] of [
+      ["Shift+Enter", { shiftKey: true }],
+      ["composing Enter", { isComposing: true }],
+    ] as const) {
+      const event = pressComposerEnter(harness, options);
+      assert.equal(event.defaultPrevented, false, label);
+      assert.equal(prompt.value, "$mi", label);
+      assert.equal(listbox.hidden, false, label);
+    }
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("holding Enter accepts autocomplete without submitting the completed value", async () => {
+  const state = stateFixture();
+  state.availableSkills = [
+    { id: "midi-editor", description: "Edit notes", source: "user" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const prompt = harness.document.querySelector<HTMLTextAreaElement>("#prompt");
+    assert.ok(prompt);
+    prompt.focus();
+    harness.input("#prompt", "$mi");
+
+    pressComposerEnter(harness);
+    assert.equal(prompt.value, "$midi-editor ");
+    const repeated = pressComposerEnter(harness, { repeat: true });
+    await harness.settle();
+
+    assert.equal(repeated.defaultPrevented, true);
+    assert.equal(prompt.value, "$midi-editor ");
     assert.deepEqual(jsonCalls(harness, "/send"), []);
     assert.deepEqual(harness.errors, []);
   } finally {
