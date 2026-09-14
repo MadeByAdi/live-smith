@@ -4,6 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { platform } from "node:process";
+import { types as utilTypes } from "node:util";
 
 import { persistTransientSessionInTransaction } from "./sessions.js";
 import {
@@ -1300,8 +1301,7 @@ async function withAttachmentStorageBoundary<T>(
 }
 
 function isUint8Array(value: unknown): value is Uint8Array {
-  return ArrayBuffer.isView(value) &&
-    Object.prototype.toString.call(value) === "[object Uint8Array]";
+  return utilTypes.isUint8Array(value);
 }
 
 async function prepareAttachmentSessionDirectory(
@@ -1436,7 +1436,7 @@ async function openRegularPrivateFile(target: string): Promise<fs.FileHandle> {
 }
 
 function hasExactPrivateFileMode(mode: number): boolean {
-  return (mode & 0o777) === 0o600;
+  return (mode & 0o7777) === 0o600;
 }
 
 function isSymbolicLinkOpenError(error: unknown): boolean {

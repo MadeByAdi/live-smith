@@ -150,25 +150,17 @@ async function permissionTestAttachment(t: test.TestContext, sessionId: string) 
   };
 }
 
-async function rejectFileHandleChmod(t: test.TestContext, target: string): Promise<void> {
+async function mockFileHandleChmod(
+  t: test.TestContext,
+  target: string,
+  implementation: (mode: number) => Promise<void>,
+): Promise<void> {
   const handle = await fs.open(target, "r");
   const prototype = Object.getPrototypeOf(handle) as {
     chmod: (mode: number) => Promise<void>;
   };
   await handle.close();
-  const original = prototype.chmod;
-  Object.defineProperty(prototype, "chmod", {
-    configurable: true,
-    value: async () => { throw new Error("chmod unavailable"); },
-    writable: true,
-  });
-  t.after(() => {
-    Object.defineProperty(prototype, "chmod", {
-      configurable: true,
-      value: original,
-      writable: true,
-    });
-  });
+  t.mock.method(prototype, "chmod", implementation);
 }
 
 test("pending metadata at 0600 reads without FileHandle chmod", {
@@ -177,7 +169,9 @@ test("pending metadata at 0600 reads without FileHandle chmod", {
   const sessionId = "session-private-metadata";
   const fixture = await permissionTestAttachment(t, sessionId);
   await fs.chmod(fixture.metadataPath, 0o600);
-  await rejectFileHandleChmod(t, fixture.metadataPath);
+  await mockFileHandleChmod(t, fixture.metadataPath, async () => {
+    throw new Error("chmod unavailable");
+  });
 
   assert.equal(
     (await listPendingSessionAttachments(fixture.directory, sessionId, [])).length,
@@ -205,7 +199,9 @@ test("pending metadata fails closed when permissive permissions cannot tighten",
   const sessionId = "session-permissive-chmod-failure";
   const fixture = await permissionTestAttachment(t, sessionId);
   await fs.chmod(fixture.metadataPath, 0o644);
-  await rejectFileHandleChmod(t, fixture.metadataPath);
+  await mockFileHandleChmod(t, fixture.metadataPath, async () => {
+    throw new Error("chmod unavailable");
+  });
 
   await assert.rejects(
     listPendingSessionAttachments(fixture.directory, sessionId, []),
@@ -213,30 +209,96 @@ test("pending metadata fails closed when permissive permissions cannot tighten",
   );
 });
 
-test("session attachment accepts a cross-realm Uint8Array and rejects other values", async () => {
+test("pending metadata rejects a chmod that reports success without tightening", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const sessionId = "session-permissive-chmod-noop";
+  const fixture = await permissionTestAttachment(t, sessionId);
+  await fs.chmod(fixture.metadataPath, 0o644);
+  await mockFileHandleChmod(t, fixture.metadataPath, async () => undefined);
+
+  await assert.rejects(
+    listPendingSessionAttachments(fixture.directory, sessionId, []),
+    (error: unknown) => error instanceof AttachmentStorageAccessError,
+  );
+  assert.equal((await fs.stat(fixture.metadataPath)).mode & 0o7777, 0o644);
+});
+
+test("pending metadata removes special permission bits", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const sessionId = "session-special-metadata-mode";
+  const fixture = await permissionTestAttachment(t, sessionId);
+  for (const mode of [0o1600, 0o2600, 0o4600]) {
+    await fs.chmod(fixture.metadataPath, mode);
+    assert.equal((await fs.stat(fixture.metadataPath)).mode & 0o7777, mode);
+    assert.equal(
+      (await listPendingSessionAttachments(fixture.directory, sessionId, [])).length,
+      1,
+    );
+    assert.equal((await fs.stat(fixture.metadataPath)).mode & 0o7777, 0o600);
+  }
+});
+
+test("session attachment uses the intrinsic Uint8Array brand across realms", async () => {
+  const sessionId = `memory-cross-realm-${Date.now()}`;
   const foreignBytes = vm.runInNewContext(
     "new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1])",
   ) as Uint8Array;
   assert.equal(foreignBytes instanceof Uint8Array, false);
+  class CustomTaggedBytes extends Uint8Array {}
+  const customTagBytes = new CustomTaggedBytes(pngBytes);
+  Object.defineProperty(customTagBytes, Symbol.toStringTag, { value: "CustomBytes" });
+  let tagGetterCalls = 0;
+  const throwingTagBytes = new Uint8Array(pngBytes);
+  Object.defineProperty(throwingTagBytes, Symbol.toStringTag, {
+    get() { tagGetterCalls++; throw new Error("tag getter must not run"); },
+  });
+  const spoofedClamped = new Uint8ClampedArray(pngBytes);
+  Object.defineProperty(spoofedClamped, Symbol.toStringTag, { value: "Uint8Array" });
+  const spoofedDataView = new DataView(new ArrayBuffer(1));
+  Object.defineProperty(spoofedDataView, "length", { value: pngBytes.byteLength });
+  pngBytes.forEach((byte, index) => {
+    Object.defineProperty(spoofedDataView, String(index), { value: byte });
+  });
+  Object.defineProperty(spoofedDataView, Symbol.toStringTag, { value: "Uint8Array" });
+  const throwingSpoof = new Uint8ClampedArray(pngBytes);
+  Object.defineProperty(throwingSpoof, Symbol.toStringTag, {
+    get() { tagGetterCalls++; throw new Error("tag getter must not run"); },
+  });
 
-  const stored = await saveSessionAttachment(undefined, `memory-cross-realm-${Date.now()}`, {
-    fileName: "foreign.png",
-    bytes: foreignBytes,
-  }, noPendingAttachmentRefs);
-  assert.equal(stored.kind, "image");
-
-  for (const bytes of [
-    new DataView(new ArrayBuffer(1)),
-    new Uint8ClampedArray(1),
-    {},
-  ]) {
-    await assert.rejects(
-      saveSessionAttachment(undefined, `memory-invalid-bytes-${Date.now()}`, {
-        fileName: "invalid.png",
-        bytes: bytes as Uint8Array,
-      }, noPendingAttachmentRefs),
-      /Attachment bytes must be binary data/,
-    );
+  try {
+    for (const bytes of [
+      foreignBytes,
+      Buffer.from(pngBytes),
+      customTagBytes,
+      throwingTagBytes,
+    ]) {
+      const stored = await saveSessionAttachment(undefined, sessionId, {
+        fileName: "valid.png",
+        bytes,
+      }, noPendingAttachmentRefs);
+      assert.equal(stored.kind, "image");
+    }
+    for (const bytes of [
+      new DataView(new ArrayBuffer(1)),
+      new Uint8ClampedArray(1),
+      spoofedClamped,
+      spoofedDataView,
+      throwingSpoof,
+      {},
+    ]) {
+      await assert.rejects(
+        saveSessionAttachment(undefined, sessionId, {
+          fileName: "invalid.png",
+          bytes: bytes as Uint8Array,
+        }, noPendingAttachmentRefs),
+        /Attachment bytes must be binary data/,
+      );
+    }
+    assert.equal(tagGetterCalls, 0);
+  } finally {
+    await deleteSessionAttachments(undefined, sessionId);
   }
 });
 
