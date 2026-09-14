@@ -327,6 +327,8 @@ export interface AgentFlowDependencies {
     | "invalidateOAuth"
     | "close"
   >;
+  /** Test-only shared-manager acquisition; production uses the process-wide registry. */
+  acquireSharedModelBackendManager?: typeof acquireSharedModelBackendManager;
   /** Process-wide in production; injectable only for isolated tests. */
   modelAuthSendFence?: ModelAuthSendFence;
   /** Production host capability; injectable only for isolated tests. */
@@ -427,7 +429,10 @@ export async function runAgentFlow(
     }
     if (sharedBackendManagerLeasePromise === undefined) {
       sharedBackendManagerAcquisitionController = createHostAbortController();
-      sharedBackendManagerLeasePromise = acquireSharedModelBackendManager(
+      const acquireSharedManager =
+        dependencies.acquireSharedModelBackendManager ??
+        acquireSharedModelBackendManager;
+      sharedBackendManagerLeasePromise = acquireSharedManager(
         storageDirectory,
         { fetchImpl: providerFetch },
         sharedBackendManagerAcquisitionController.signal,

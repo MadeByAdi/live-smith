@@ -62,6 +62,10 @@ import {
 import { getOrCreateDefaultSession } from "./session-context.js";
 import { liveContextPresentationFixture } from "./live-context.test-harness.js";
 
+// These isolated fixtures assert lock liveness, not nested tsx startup speed.
+// Keep the process bounded without treating ordinary suite scheduling as failure.
+const isolatedProcessDeadlockWatchdogMs = 15_000;
+
 let bridgeRequestSequence = 0;
 
 function bridgeJsonHeaders(): Record<string, string> {
@@ -1601,7 +1605,7 @@ test("a held Session state build never acquires the dialog's different active Se
       ],
       {
         cwd: path.dirname(path.dirname(path.dirname(testFile))),
-        timeoutMs: 4_000,
+        timeoutMs: isolatedProcessDeadlockWatchdogMs,
         environment: { LIVE_SMITH_CROSS_SESSION_STATE_FIXTURE: "1" },
       },
     );
@@ -1716,7 +1720,7 @@ test("pending attachment cleanup cannot re-enter a held Session lease", {
       ],
       {
         cwd: path.dirname(path.dirname(path.dirname(testFile))),
-        timeoutMs: 4_000,
+        timeoutMs: isolatedProcessDeadlockWatchdogMs,
         environment: { LIVE_SMITH_PENDING_CLEANUP_FIXTURE: "1" },
       },
     );

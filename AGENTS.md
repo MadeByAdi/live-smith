@@ -146,12 +146,9 @@ logs, screenshots, or documentation.
 Run before handing off a change:
 
 ```sh
-npm test
-npm run build
-npm --cache /private/tmp/live-smith-npm-cache audit --json
+npm run verify
 ```
 
-After editing dialog client fragments, also run the composed-client syntax check
-in [Development verification](docs/DEVELOPMENT.md#verification). Report what was
-actually checked; automated tests do not establish visual or live-provider
-behavior in the Ableton host.
+This runs the complete test suite, production build, composed-dialog client
+syntax check, and dependency audit. Report what was actually checked; automated
+tests do not establish visual or live-provider behavior in the Ableton host.

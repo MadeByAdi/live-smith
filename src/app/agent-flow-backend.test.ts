@@ -1317,25 +1317,6 @@ test("closing a modal cancels a state read waiting for a prior shared close", {
   );
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   await saveSavedProfile(directory, subscriptionProfile);
-  const closeStarted = deferred<void>();
-  const releaseClose = deferred<void>();
-  const oldBackend: OAuthSubscriptionBackend = {
-    kind: "oauth-subscription",
-    ...oauthLifecycleDefaults(),
-    async listModels() { return []; },
-    async createToolTurn() { return { content: null, toolCalls: [] }; },
-    async close() {
-      closeStarted.resolve();
-      await releaseClose.promise;
-    },
-  };
-  const oldLease = await acquireSharedModelBackendManager(directory, {
-    startOAuthBackend: async () => oldBackend,
-  });
-  await oldLease.manager.oauth(subscriptionProfile.id, "openai");
-  const oldClosing = oldLease.release();
-  await closeStarted.promise;
-
   const interaction: LiveInteractionContext = {
     presentation: liveContextPresentationFixture("Lead"),
     summary: "Track: Lead",
@@ -1343,8 +1324,17 @@ test("closing a modal cancels a state read waiting for a prior shared close", {
     scope: { kind: "track", identity: "track-1", label: "Lead" },
   };
   interaction.selectionContext = { refresh: () => interaction };
-  const stateReadStarted = deferred<void>();
+  const acquisitionWaitingForPriorClose = deferred<void>();
+  const releasePriorClose = deferred<void>();
   let stateRequest: Promise<"response" | "error"> | undefined;
+  const releaseBlockedWork = () => {
+    acquisitionWaitingForPriorClose.resolve();
+    releasePriorClose.resolve();
+  };
+  t.signal.addEventListener("abort", releaseBlockedWork, { once: true });
+  t.after(() => {
+    t.signal.removeEventListener("abort", releaseBlockedWork);
+  });
   const context = {
     application: { song: { handle: { id: 1n } } },
     environment: { storageDirectory: directory },
@@ -1354,32 +1344,29 @@ test("closing a modal cancels a state read waiting for a prior shared close", {
           () => "response" as const,
           () => "error" as const,
         );
-        stateReadStarted.resolve();
-        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+        await acquisitionWaitingForPriorClose.promise;
       },
     },
   };
   const flow = runAgentFlow(context as never, interaction, {
     renderHtml: () => "<html></html>",
+    acquireSharedModelBackendManager: async (_storage, _options, signal) => {
+      const waitingForPriorClose = waitForPromiseWithSignal(
+        releasePriorClose.promise,
+        signal,
+      );
+      acquisitionWaitingForPriorClose.resolve();
+      await waitingForPriorClose;
+      throw new Error("The prior shared close unexpectedly completed.");
+    },
   });
 
   try {
-    await stateReadStarted.promise;
-    const closeOutcome = await Promise.race([
-      flow.then(() => "closed" as const),
-      new Promise<"waiting">((resolve) => {
-        setTimeout(() => resolve("waiting"), 100);
-      }),
-    ]);
-    assert.equal(
-      closeOutcome,
-      "closed",
-      "modal close must not wait for another modal's shared backend close",
-    );
+    await flow;
     assert.equal(await stateRequest, "error");
   } finally {
-    releaseClose.resolve();
-    await Promise.allSettled([oldClosing, flow]);
+    releasePriorClose.resolve();
+    await Promise.allSettled([flow]);
   }
 });
 

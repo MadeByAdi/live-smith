@@ -74,22 +74,22 @@ and interpolation fields for every registered non-English locale.
 Run the required checks before handing off changes:
 
 ```sh
-npm test
-npm run build
-npm --cache /private/tmp/live-smith-npm-cache audit --json
+npm run verify
 ```
 
-The test suite includes structural limits, core behavior, real-dialog DOM
-interaction tests, and direct plus CONNECT-proxy requests through an Extension
-Host-equivalent restricted VM. It uses fixtures and does not require provider
-credentials or call a model provider. Focused suites are available as
-`npm run test:core`, `npm run test:ui`, and `npm run test:structure`.
+The verification command runs structural limits, core behavior, real-dialog DOM
+interaction tests, direct plus CONNECT-proxy requests through an Extension
+Host-equivalent restricted VM, the production build, the composed dialog-client
+syntax check, and `npm audit --json`. It uses fixtures and does not require
+provider credentials or call a model provider. Focused checks remain available
+as `npm run test:core`, `npm run test:ui`, `npm run test:structure`, and
+`npm run verify:client`.
 
-After editing dialog client fragments, also check the composed JavaScript:
-
-```sh
-node -e "const fs=require('fs');const files=['host-adapter','i18n','profile-editor','attachments','composer-input','skill-manager','bridge-client','session-timeline','action-preview','bootstrap'];new Function(files.map((name)=>fs.readFileSync('src/ui/client/'+name+'.script.html','utf8')).join('\\n'));"
-```
+External pull-request automation must not expose the private Ableton SDK
+archives through repository secrets, shared caches, or a privileged workflow
+that executes untrusted fork code. Until the full gate can run without giving
+fork code access to those archives, maintainers run `npm run verify` against the
+exact merge result before accepting a contribution.
 
 DOM tests prove interaction and state behavior, not rendered geometry or live
 provider behavior. In the target Live build, separately check dialog layout and
