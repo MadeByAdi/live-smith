@@ -50,6 +50,52 @@ test("Enter sends the composer message through the existing Send pathway", async
   }
 });
 
+test("composer owns Enter before the event leaves its surface", async () => {
+  const harness = await createDialogHarness();
+  try {
+    const composer = harness.document.querySelector<HTMLElement>(".composer");
+    assert.ok(composer);
+    composer.addEventListener("keydown", (event) => event.stopPropagation());
+
+    harness.input("#prompt", "Keep composer input handling local");
+    const event = pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(jsonCalls(harness, "/send").map((call) => call.body), [{
+      prompt: "Keep composer input handling local",
+      sessionId: "session-1",
+    }]);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("a previously prevented Enter remains unsent", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.document.addEventListener(
+      "keydown",
+      (event) => event.preventDefault(),
+      { capture: true, once: true },
+    );
+    harness.input("#prompt", "Keep this draft");
+    const event = pressComposerEnter(harness);
+    await harness.settle();
+
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(jsonCalls(harness, "/send"), []);
+    assert.equal(
+      harness.document.querySelector<HTMLTextAreaElement>("#prompt")?.value,
+      "Keep this draft",
+    );
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
 test("Shift+Enter keeps the composer ready for a newline without sending", async () => {
   const harness = await createDialogHarness();
   try {

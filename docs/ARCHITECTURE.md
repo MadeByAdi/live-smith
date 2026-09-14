@@ -259,9 +259,10 @@ src/
       Chat layout and styles.
     client/*.script.html
       Shared WebView host adapter plus Profile/model settings, bridge lifecycle,
-      attachment, local Skill, composer command/completion, and session/timeline
-      factories. Bootstrap owns final composer/status presentation and explicit
-      dependency wiring.
+      attachment, local Skill, composer input, and session/timeline factories.
+      The composer-input factory owns prompt commands, completion, and keyboard
+      semantics; Bootstrap owns final composer/status presentation and explicit
+      dependency and operation-policy wiring.
     client/markdown-renderer.ts
       Shared sanitized Markdown rendering for conversation content and the
       read-only built-in Skill viewer.

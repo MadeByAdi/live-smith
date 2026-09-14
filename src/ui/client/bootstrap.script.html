@@ -211,8 +211,18 @@
           }, true);
         }
 
-        const composerInput = factories.createComposerInput({ getState });
         let bridgeClient;
+        const composerInput = factories.createComposerInput({
+          getState,
+          requestSubmit: () => {
+            if (
+              bridgeClient.isOperationInProgress() &&
+              !bridgeClient.isSendInProgress()
+            ) return false;
+            bridgeClient.submitComposer();
+            return true;
+          },
+        });
         try {
           bridgeClient = factories.createBridgeClient({
             bridgeConfig,
@@ -1641,27 +1651,6 @@
           const prompt = document.getElementById("prompt");
           prompt.value = "";
           prompt.addEventListener("input", bridgeClient.handleComposerInput);
-          document.addEventListener("keydown", (event) => {
-            if (event.defaultPrevented) return;
-            if (
-              event.target === prompt &&
-              !event.isComposing &&
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.altKey &&
-              (event.metaKey || event.ctrlKey || !prompt.disabled)
-            ) {
-              if (event.repeat) {
-                event.preventDefault();
-                return;
-              }
-              if (!bridgeClient.isOperationInProgress() ||
-                  bridgeClient.isSendInProgress()) {
-                event.preventDefault();
-                bridgeClient.submitComposer();
-              }
-            }
-          });
           bridgeClient.startEventStream();
           const inspector = document.getElementById("inspectorPane");
           const initialFocus = inspector.hidden
