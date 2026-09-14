@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { setImmediate } from "node:timers";
 import test from "node:test";
+import * as vm from "node:vm";
 
 import { packageBytes } from "../attachments/ooxml-test-helpers.js";
 import {
@@ -21,6 +22,7 @@ import {
 import { createHostAbortController } from "../runtime/host.js";
 import {
   AttachmentPendingQuotaError,
+  AttachmentStorageAccessError,
   AttachmentStorageCorruptionError,
   AttachmentTooLargeError,
   deleteSessionAttachment,
@@ -129,6 +131,114 @@ function pendingAudioRef(id: string, byteLength: number) {
     channels: 1,
   };
 }
+
+async function permissionTestAttachment(t: test.TestContext, sessionId: string) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-attachment-permissions-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const stored = await saveSessionAttachment(directory, sessionId, {
+    fileName: "metadata.png",
+    bytes: pngBytes,
+  }, noPendingAttachmentRefs);
+  return {
+    directory,
+    metadataPath: path.join(
+      directory,
+      "live-smith-attachments",
+      sessionId,
+      `${stored.id}.json`,
+    ),
+  };
+}
+
+async function rejectFileHandleChmod(t: test.TestContext, target: string): Promise<void> {
+  const handle = await fs.open(target, "r");
+  const prototype = Object.getPrototypeOf(handle) as {
+    chmod: (mode: number) => Promise<void>;
+  };
+  await handle.close();
+  const original = prototype.chmod;
+  Object.defineProperty(prototype, "chmod", {
+    configurable: true,
+    value: async () => { throw new Error("chmod unavailable"); },
+    writable: true,
+  });
+  t.after(() => {
+    Object.defineProperty(prototype, "chmod", {
+      configurable: true,
+      value: original,
+      writable: true,
+    });
+  });
+}
+
+test("pending metadata at 0600 reads without FileHandle chmod", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const sessionId = "session-private-metadata";
+  const fixture = await permissionTestAttachment(t, sessionId);
+  await fs.chmod(fixture.metadataPath, 0o600);
+  await rejectFileHandleChmod(t, fixture.metadataPath);
+
+  assert.equal(
+    (await listPendingSessionAttachments(fixture.directory, sessionId, [])).length,
+    1,
+  );
+});
+
+test("pending metadata tightens permissive permissions before reading", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const sessionId = "session-permissive-metadata";
+  const fixture = await permissionTestAttachment(t, sessionId);
+  await fs.chmod(fixture.metadataPath, 0o644);
+
+  assert.equal(
+    (await listPendingSessionAttachments(fixture.directory, sessionId, [])).length,
+    1,
+  );
+  assert.equal((await fs.stat(fixture.metadataPath)).mode & 0o777, 0o600);
+});
+
+test("pending metadata fails closed when permissive permissions cannot tighten", {
+  skip: process.platform === "win32",
+}, async (t) => {
+  const sessionId = "session-permissive-chmod-failure";
+  const fixture = await permissionTestAttachment(t, sessionId);
+  await fs.chmod(fixture.metadataPath, 0o644);
+  await rejectFileHandleChmod(t, fixture.metadataPath);
+
+  await assert.rejects(
+    listPendingSessionAttachments(fixture.directory, sessionId, []),
+    (error: unknown) => error instanceof AttachmentStorageAccessError,
+  );
+});
+
+test("session attachment accepts a cross-realm Uint8Array and rejects other values", async () => {
+  const foreignBytes = vm.runInNewContext(
+    "new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1])",
+  ) as Uint8Array;
+  assert.equal(foreignBytes instanceof Uint8Array, false);
+
+  const stored = await saveSessionAttachment(undefined, `memory-cross-realm-${Date.now()}`, {
+    fileName: "foreign.png",
+    bytes: foreignBytes,
+  }, noPendingAttachmentRefs);
+  assert.equal(stored.kind, "image");
+
+  for (const bytes of [
+    new DataView(new ArrayBuffer(1)),
+    new Uint8ClampedArray(1),
+    {},
+  ]) {
+    await assert.rejects(
+      saveSessionAttachment(undefined, `memory-invalid-bytes-${Date.now()}`, {
+        fileName: "invalid.png",
+        bytes: bytes as Uint8Array,
+      }, noPendingAttachmentRefs),
+      /Attachment bytes must be binary data/,
+    );
+  }
+});
 
 test("session attachment stores private image bytes and immutable metadata", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-attachment-"));
@@ -376,7 +486,7 @@ test("document attachment accepts exactly twenty MiB and preserves typed overflo
   await deleteSessionAttachments(undefined, sessionId);
 });
 
-test("attachment save rejects the absolute limit before copying caller bytes", async () => {
+test("attachment save rejects a non-byte proxy before copying caller bytes", async () => {
   const backing = new Uint8Array(MAX_DOCUMENT_ATTACHMENT_BYTES + 1);
   let copyPathTouched = false;
   const oversized = new Proxy(backing, {
@@ -392,8 +502,7 @@ test("attachment save rejects the absolute limit before copying caller bytes", a
       fileName: "oversized.bin",
       bytes: oversized,
     }, noPendingAttachmentRefs),
-    (error: unknown) =>
-      error instanceof AttachmentProcessingError && error.code === "archive_limit",
+    /Attachment bytes must be binary data/,
   );
   assert.equal(copyPathTouched, false);
 });
