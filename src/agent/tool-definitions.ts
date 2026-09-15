@@ -188,6 +188,20 @@ export function liveSmithTools(options: {
       },
     ),
     observationTool(
+      "inspect_midi_evidence",
+      "Inspect one exact MIDI clip and return a read-only deterministic evidence report: observed clip state plus derived note, timing, duration, velocity, occupancy, repetition, and supported grid metrics. It does not judge musical quality, intent, technique, harmony, or realism.",
+      {
+        trackName: { type: "string", description: "Optional track name. Omit it to use the current MIDI clip target." },
+        clipName: { type: "string", description: "Optional exact clip name." },
+        startBeat: { type: "number", description: "Optional Arrangement Clip start beat. Do not combine with slotIndex." },
+        slotIndex: { type: "integer", minimum: 0, description: "Optional 0-based Session View Clip Slot index. Do not combine with startBeat." },
+      },
+    ),
+    observationTool("inspect_guitar_playability", "Read-only standard 6-string guitar physical-assignment check. maxFretSpan has no default: omit it to receive UNKNOWN. POSSIBLE means only that a declared string/fret assignment exists; it does not judge comfort, technique, or realism.", {
+      trackName: { type: "string" }, clipName: { type: "string" }, startBeat: { type: "number" }, slotIndex: { type: "integer", minimum: 0 },
+      maxFret: { type: "integer", minimum: 0, maximum: 127 }, maxFretSpan: { type: "integer", minimum: 0, maximum: 127 },
+    }),
+    observationTool(
       "analyze_audio_clip",
       "Render one exact Arrangement Audio Clip beat range as pre-effects audio and return objective sample peak, RMS, crest factor, DC offset, silence, and clipping metrics. This is not realtime listening and does not include the track device chain.",
       {

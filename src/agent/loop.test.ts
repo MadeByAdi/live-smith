@@ -556,6 +556,60 @@ test("runAgentLoop supports inspect_midi_clip tool calls", async () => {
   assert.match(result.message, /C69 contains C, E, G, A, and D/);
 });
 
+test("runAgentLoop recognizes and dispatches inspect_midi_evidence with the existing locator contract", async () => {
+  const observed: unknown[] = [];
+  let calls = 0;
+  const result = await runAgentLoop({
+    maxConsecutiveFailures: 3,
+    askModel: async (): Promise<ModelTurn> => {
+      calls += 1;
+      return calls === 1
+        ? {
+            content: "I will inspect the observed MIDI evidence.",
+            toolCalls: [{
+              id: "evidence",
+              name: "inspect_midi_evidence",
+              arguments: JSON.stringify({ trackName: "Lead", clipName: "Pattern", startBeat: 8 }),
+            }],
+          }
+        : { content: "The report is read-only evidence.", toolCalls: [] };
+    },
+    observe: async (request) => {
+      observed.push(request);
+      return "OBSERVED MIDI\nDERIVED METRICS\nUNKNOWN / NOT ESTABLISHED";
+    },
+    confirmActions: async () => true,
+    executeActions: async () => mutationOutcome([]),
+  });
+
+  assert.deepEqual(observed, [{ type: "inspect_midi_evidence", trackName: "Lead", clipName: "Pattern", startBeat: 8 }]);
+  assert.match(result.message, /read-only evidence/i);
+});
+
+test("runAgentLoop rejects unsupported or conflicting inspect_midi_evidence arguments consistently", async () => {
+  const toolResults: string[] = [];
+  let calls = 0;
+  await runAgentLoop({
+    maxConsecutiveFailures: 3,
+    askModel: async (): Promise<ModelTurn> => {
+      calls += 1;
+      if (calls === 1) return {
+        content: "Bad inspection.",
+        toolCalls: [{ id: "bad", name: "inspect_midi_evidence", arguments: JSON.stringify({ startBeat: 0, slotIndex: 1, extra: true }) }],
+      };
+      return { content: "Stopped.", toolCalls: [] };
+    },
+    observe: async () => "never",
+    confirmActions: async () => true,
+    executeActions: async () => mutationOutcome([]),
+    onEvent: (event) => {
+      if (event.kind === "tool_result") toolResults.push(event.content);
+    },
+  });
+
+  assert.match(toolResults[0] ?? "", /does not support property extra/i);
+});
+
 test("runAgentLoop supports inspect_song_info tool calls", async () => {
   const observedRequests: string[] = [];
 

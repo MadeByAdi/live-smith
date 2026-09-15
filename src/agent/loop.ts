@@ -1678,6 +1678,14 @@ function observationCoversRecovery(
         optionalTextMatches(actual.clipName, required.clipName) &&
         actual.startBeat === required.startBeat &&
         actual.slotIndex === required.slotIndex;
+    case "inspect_midi_evidence":
+      return actual.type === "inspect_midi_evidence" &&
+        optionalTextMatches(actual.trackName, required.trackName) &&
+        optionalTextMatches(actual.clipName, required.clipName) &&
+        actual.startBeat === required.startBeat &&
+        actual.slotIndex === required.slotIndex;
+    case "inspect_guitar_playability":
+      return actual.type === "inspect_guitar_playability" && optionalTextMatches(actual.trackName, required.trackName) && optionalTextMatches(actual.clipName, required.clipName) && actual.startBeat === required.startBeat && actual.slotIndex === required.slotIndex && actual.maxFret === required.maxFret && actual.maxFretSpan === required.maxFretSpan;
     case "analyze_audio_clip":
       return actual.type === "analyze_audio_clip" &&
         optionalTextMatches(actual.trackName, required.trackName) &&
@@ -1883,6 +1891,26 @@ function observationRequestFromToolCall(
         }
         return request;
       }
+    case "inspect_midi_evidence": {
+      assertOnlyKeys(args, ["trackName", "clipName", "startBeat", "slotIndex"], `${toolCall.name} arguments`);
+      const request = {
+        type: "inspect_midi_evidence" as const,
+        ...optionalStringProp(args.trackName, "trackName"),
+        ...optionalStringProp(args.clipName, "clipName"),
+        ...optionalNumberProp(args.startBeat, "startBeat"),
+        ...optionalIntegerProp(args.slotIndex, "slotIndex", 0),
+      } as Extract<AgentObservationRequest, { type: "inspect_midi_evidence" }>;
+      if (request.startBeat !== undefined && request.slotIndex !== undefined) {
+        throw new Error("inspect_midi_evidence uses either startBeat or slotIndex, not both.");
+      }
+      return request;
+    }
+    case "inspect_guitar_playability": {
+      assertOnlyKeys(args, ["trackName", "clipName", "startBeat", "slotIndex", "maxFret", "maxFretSpan"], `${toolCall.name} arguments`);
+      const request = { type: "inspect_guitar_playability" as const, ...optionalStringProp(args.trackName, "trackName"), ...optionalStringProp(args.clipName, "clipName"), ...optionalNumberProp(args.startBeat, "startBeat"), ...optionalIntegerProp(args.slotIndex, "slotIndex", 0), ...optionalIntegerProp(args.maxFret, "maxFret", 0, 127), ...optionalIntegerProp(args.maxFretSpan, "maxFretSpan", 0, 127) } as Extract<AgentObservationRequest, { type: "inspect_guitar_playability" }>;
+      if (request.startBeat !== undefined && request.slotIndex !== undefined) throw new Error("inspect_guitar_playability uses either startBeat or slotIndex, not both.");
+      return request;
+    }
     case "analyze_audio_clip":
       assertOnlyKeys(
         args,
@@ -2016,6 +2044,8 @@ function isObservationTool(name: string): boolean {
     name === "inspect_mixer" ||
     name === "inspect_clip" ||
     name === "inspect_midi_clip" ||
+    name === "inspect_midi_evidence" ||
+    name === "inspect_guitar_playability" ||
     name === "analyze_audio_clip" ||
     name === "read_arrangement_audio" ||
     name === "inspect_song_info"

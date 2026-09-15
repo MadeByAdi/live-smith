@@ -659,6 +659,106 @@ test("inspect_midi_clip startBeat resolves Arrangement without same-name Session
   assert.doesNotMatch(result, /pitch=72/);
 });
 
+test("inspect_midi_evidence observes one stable MIDI clip without mutating it", async () => {
+  const notes = [
+    { pitch: 60, startTime: 0, duration: 1, velocity: 80 },
+    { pitch: 64, startTime: 0, duration: 1, velocity: 100 },
+  ];
+  const clip = sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id: "evidence-clip" }, name: "Evidence", startTime: 8, endTime: 12,
+    duration: 4, startMarker: 0, endMarker: 4, looping: true, loopStart: 0,
+    loopEnd: 4, muted: false, notes,
+  });
+  const track = sdkObject<MidiTrack<"1.0.0">>(MidiTrack.prototype, {
+    handle: { id: "evidence-track" }, name: "Lead", arrangementClips: [clip], takeLanes: [], clipSlots: [],
+  });
+  Object.defineProperty(clip, "parent", { value: track });
+
+  const result = await observeLive(
+    { application: { song: { tracks: [track], gridQuantization: 7, gridIsTriplet: false } } } as never,
+    { type: "inspect_midi_evidence" },
+    { track, clip },
+  );
+
+  assert.match(result, /^OBSERVED MIDI/m);
+  assert.match(result, /DERIVED METRICS/);
+  assert.match(result, /UNKNOWN \/ NOT ESTABLISHED/);
+  assert.match(result, /"notesPerClipBeat":0.5/);
+  assert.deepEqual(clip.notes, notes);
+});
+
+test("inspect_midi_evidence binds an explicit locator instead of silently using a different current target", async () => {
+  const requested = sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id: "requested" }, name: "Requested", startTime: 8, endTime: 12, duration: 4,
+    startMarker: 0, endMarker: 4, looping: false, loopStart: 0, loopEnd: 4, muted: false, notes: [],
+  });
+  const current = sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id: "current" }, name: "Current", startTime: 0, endTime: 4, duration: 4,
+    startMarker: 0, endMarker: 4, looping: false, loopStart: 0, loopEnd: 4, muted: false, notes: [],
+  });
+  const track = sdkObject<MidiTrack<"1.0.0">>(MidiTrack.prototype, {
+    handle: { id: "track" }, name: "Lead", arrangementClips: [requested, current], takeLanes: [], clipSlots: [],
+  });
+
+  const result = await observeLive(
+    { application: { song: { tracks: [track], gridQuantization: 7, gridIsTriplet: false } } } as never,
+    { type: "inspect_midi_evidence", trackName: "Lead", clipName: "Requested", startBeat: 8 },
+    { track, clip: current },
+  );
+
+  assert.match(result, /"requested"/);
+  assert.doesNotMatch(result, /"current"/);
+});
+
+test("inspect_midi_evidence rejects audio, unavailable note data, ambiguity, and changed MIDI state", async () => {
+  await assert.rejects(
+    observeLive({ application: { song: { tracks: [] } } } as never, { type: "inspect_midi_evidence" }, {}),
+    /Track/i,
+  );
+
+  const audio = analysisAudioClip({ handle: { id: "audio" }, name: "Audio", startTime: 0, endTime: 4, duration: 4 });
+  const track = sdkObject<MidiTrack<"1.0.0">>(MidiTrack.prototype, {
+    handle: { id: "track" }, name: "Lead", arrangementClips: [], takeLanes: [], clipSlots: [],
+  });
+  await assert.rejects(
+    observeLive({ application: { song: { tracks: [track] } } } as never, { type: "inspect_midi_evidence" }, { track, clip: audio }),
+    /not a MIDI clip/i,
+  );
+
+  const ambiguous = ["one", "two"].map((id) => sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id }, name: "Same", startTime: 0, endTime: 4, duration: 4, startMarker: 0, endMarker: 4,
+    looping: false, loopStart: 0, loopEnd: 4, muted: false, notes: [],
+  }));
+  Object.defineProperty(track, "arrangementClips", { value: ambiguous });
+  await assert.rejects(
+    observeLive({ application: { song: { tracks: [track] } } } as never, { type: "inspect_midi_evidence", trackName: "Lead", clipName: "Same" }, { track }),
+    /Found 2 matching MIDI clips/i,
+  );
+
+  const changing = sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id: "changing" }, name: "Changing", startTime: 0, endTime: 4, duration: 4,
+    startMarker: 0, endMarker: 4, looping: false, loopStart: 0, loopEnd: 4, muted: false,
+  });
+  let noteReads = 0;
+  Object.defineProperty(changing, "notes", { get: () => noteReads++ === 0
+    ? [{ pitch: 60, startTime: 0, duration: 1, velocity: 90 }]
+    : [{ pitch: 61, startTime: 0, duration: 1, velocity: 90 }] });
+  await assert.rejects(
+    observeLive({ application: { song: { tracks: [track], gridQuantization: 7, gridIsTriplet: false } } } as never, { type: "inspect_midi_evidence" }, { track, clip: changing }),
+    /changed during evidence inspection/i,
+  );
+
+  const unavailable = sdkObject<MidiClip<"1.0.0">>(MidiClip.prototype, {
+    handle: { id: "unavailable" }, name: "Unavailable", startTime: 0, endTime: 4, duration: 4,
+    startMarker: 0, endMarker: 4, looping: false, loopStart: 0, loopEnd: 4, muted: false,
+  });
+  Object.defineProperty(unavailable, "notes", { value: undefined });
+  await assert.rejects(
+    observeLive({ application: { song: { tracks: [track] } } } as never, { type: "inspect_midi_evidence" }, { track, clip: unavailable }),
+    /MIDI notes are unavailable/i,
+  );
+});
+
 test("inspect_device_tree reports Drum Rack pads, nested paths, and sample basenames", async () => {
   const sample = {
     handle: { id: "sample-1" },
