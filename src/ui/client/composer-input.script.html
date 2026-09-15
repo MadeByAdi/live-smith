@@ -57,6 +57,7 @@
       let completionKind = null;
       let sizedPromptValue = null;
       let sizedPromptWidth = null;
+      let promptIsComposing = false;
 
       function resizePrompt() {
         const prompt = document.getElementById("prompt");
@@ -240,7 +241,11 @@
       }
 
       function handlePromptKeydown(event) {
-        if (event.defaultPrevented || event.isComposing) return;
+        // IME boundary events may have false isComposing; 229 still belongs to the IME.
+        if (
+          event.defaultPrevented || promptIsComposing ||
+          event.isComposing || event.keyCode === 229
+        ) return;
         if (handleAutocompleteKeydown(event)) return;
         const prompt = event.currentTarget;
         if (
@@ -353,8 +358,11 @@
         window.addEventListener("resize", resizePrompt);
         prompt?.addEventListener("input", updateAutocomplete);
         prompt?.addEventListener("click", updateAutocomplete);
+        prompt?.addEventListener("compositionstart", () => { promptIsComposing = true; });
+        prompt?.addEventListener("compositionend", () => { promptIsComposing = false; });
         prompt?.addEventListener("keydown", handlePromptKeydown);
         prompt?.addEventListener("blur", () => {
+          promptIsComposing = false;
           window.setTimeout(closeAutocomplete, 0);
         });
       }

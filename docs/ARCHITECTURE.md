@@ -1732,7 +1732,13 @@ completion share one accessible listbox, while `$skill` mentions remain ordinary
 prompt content. The active-send button remains Stop; Enter submits follow-ups and
 control commands, while Cmd/Ctrl+Enter remains an alias. Shift- or Alt-modified
 Enter stays a line break even when combined with a send modifier. Repeated keydown
-events cannot submit a completed suggestion or resubmit a composer draft. A
+events cannot submit a completed suggestion or resubmit a composer draft. The
+composer tracks the input-method composition lifecycle and checks both
+`isComposing` and the IME-processing key code 229 before interpreting keyboard
+shortcuts. This includes confirmation keys delivered after `compositionend` with
+`isComposing: false`; they remain native and cannot select a completion, submit,
+queue, steer, or execute a control command. Composition end or blur releases the
+lifecycle state, and the next ordinary Enter is not delayed by a cooldown. A
 running manual compaction also owns the Stop control. Stop is correlated to the
 exact command ID and requests cancellation; it cannot abort a different or later
 command. The bridge retains a bounded set of recently admitted or pre-stopped
