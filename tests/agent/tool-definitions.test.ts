@@ -138,6 +138,7 @@ test("Live tools expose object-aware inspection without raw filesystem inputs", 
     "inspect_rack_chain",
     "inspect_mixer",
     "inspect_clip",
+    "inspect_midi_evidence",
     "analyze_audio_clip",
   ]) {
     assert.ok(tools.has(name), `${name} should be available`);
@@ -184,6 +185,16 @@ test("Live tools expose object-aware inspection without raw filesystem inputs", 
   };
   assert.ok(inspectClip.properties?.itemOffset);
   assert.ok(inspectClip.properties?.itemLimit);
+
+  const inspectMidiEvidence = tools.get("inspect_midi_evidence")?.parameters as {
+    properties?: Record<string, unknown>;
+  };
+  assert.deepEqual(Object.keys(inspectMidiEvidence.properties ?? {}).sort(), [
+    "clipName",
+    "slotIndex",
+    "startBeat",
+    "trackName",
+  ]);
 
   for (const name of [
     "inspect_track",

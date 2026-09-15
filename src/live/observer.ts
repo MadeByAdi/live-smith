@@ -29,6 +29,8 @@ import {
 } from "../attachments/contracts.js";
 import { throwIfAborted } from "../runtime/host.js";
 import { summarizeMidiNotes } from "./midi-notes.js";
+import { analyzeMidiEvidence, renderMidiEvidence, type MidiEvidenceInput } from "./midi-evidence.js";
+import { analyzeGuitarPlayability } from "./guitar-playability.js";
 import {
   equalsLoose,
   findDevice,
@@ -40,7 +42,7 @@ import {
   songTrackEntryForTrack,
   trackHeading,
 } from "./resolve.js";
-import { trackTypeLabel, type LiveTarget } from "./target.js";
+import { findTrackAncestor, trackTypeLabel, type LiveTarget } from "./target.js";
 import {
   collectDeviceTree,
   devicePathLabel,
@@ -207,6 +209,10 @@ export async function observeLive(
         request.noteLimit ?? 128,
       );
     }
+    case "inspect_midi_evidence":
+      return summarizeMidiEvidence(context, request, target);
+    case "inspect_guitar_playability":
+      return summarizeGuitarPlayability(context, request, target);
     case "analyze_audio_clip":
       return analyzeArrangementAudioClip(context, request, target, signal);
     case "read_arrangement_audio":
@@ -1008,9 +1014,13 @@ function safeTakeLanes(track: Track<"1.0.0">):
   }
 }
 
+type MidiClipObservationRequest = Extract<AgentObservationRequest, {
+  type: "inspect_midi_clip" | "inspect_midi_evidence" | "inspect_guitar_playability";
+}>;
+
 function resolveMidiClip(
   context: Api,
-  request: Extract<AgentObservationRequest, { type: "inspect_midi_clip" }>,
+  request: MidiClipObservationRequest,
   target: LiveTarget,
 ): MidiClip<"1.0.0"> {
   if (
@@ -1021,6 +1031,16 @@ function resolveMidiClip(
     target.clip instanceof MidiClip
   ) {
     return target.clip;
+  }
+
+  if (
+    !request.trackName &&
+    !request.clipName &&
+    request.startBeat === undefined &&
+    request.slotIndex === undefined &&
+    target.clip
+  ) {
+    throw new Error("The selected Clip is not a MIDI clip.");
   }
 
   const track = resolveTrack(context, request.trackName, target);
@@ -1074,6 +1094,82 @@ function resolveMidiClip(
       ...matching.map((clip) => `- ${clip.name} start=${clip.startTime} duration=${clip.duration}`),
     ].join("\n"),
   );
+}
+
+function summarizeMidiEvidence(
+  context: Api,
+  request: Extract<AgentObservationRequest, { type: "inspect_midi_evidence" }>,
+  target: LiveTarget,
+): string {
+  const clip = resolveMidiClip(context, request, target);
+  const track = safeMidiClipTrack(clip) ?? target.track ?? resolveTrack(context, request.trackName, target);
+  const snapshot = snapshotMidiEvidence(context, track, clip);
+  const report = analyzeMidiEvidence(snapshot);
+  const confirmation = snapshotMidiEvidence(context, track, clip);
+  if (JSON.stringify(snapshot) !== JSON.stringify(confirmation)) {
+    throw new Error("The MIDI clip changed during evidence inspection; refusing mixed-state evidence.");
+  }
+  return renderMidiEvidence(report);
+}
+
+function summarizeGuitarPlayability(context: Api, request: Extract<AgentObservationRequest, { type: "inspect_guitar_playability" }>, target: LiveTarget): string {
+  const clip = resolveMidiClip(context, request, target);
+  const track = safeMidiClipTrack(clip) ?? target.track ?? resolveTrack(context, request.trackName, target);
+  const snapshot = snapshotMidiEvidence(context, track, clip);
+  const report = analyzeGuitarPlayability({ notes: snapshot.notes, ...(request.maxFret === undefined ? {} : { maxFret: request.maxFret }), ...(request.maxFretSpan === undefined ? {} : { maxFretSpan: request.maxFretSpan }) });
+  if (JSON.stringify(snapshot) !== JSON.stringify(snapshotMidiEvidence(context, track, clip))) throw new Error("The MIDI clip changed during guitar playability inspection; refusing mixed-state evidence.");
+  return ["GUITAR PLAYABILITY", `- verdict: ${report.verdict}`, `- assumptions: ${JSON.stringify(report.assumptions)}`, `- reasons: ${report.reasons.join(" ")}`, `- sequence: ${JSON.stringify(report.sequence)}`, `- unknowns: ${report.unknowns.join(" ")}`].join("\n");
+}
+
+function snapshotMidiEvidence(
+  context: Api,
+  track: Track<"1.0.0">,
+  clip: MidiClip<"1.0.0">,
+): MidiEvidenceInput {
+  const notes = clip.notes;
+  if (!Array.isArray(notes)) throw new Error("MIDI notes are unavailable for evidence inspection.");
+  const parent = safeMidiClipParent(clip);
+  return {
+    trackHandleId: track.handle.id.toString(),
+    clipHandleId: clip.handle.id.toString(),
+    trackLabel: track.name,
+    clipLabel: clip.name,
+    location: parent instanceof ClipSlot ? "session"
+      : parent instanceof TakeLane ? "take-lane"
+      : parent instanceof Track ? "arrangement" : "unknown",
+    clip: {
+      startBeat: clip.startTime,
+      endBeat: clip.endTime,
+      durationBeats: clip.duration,
+      startMarkerBeat: clip.startMarker,
+      endMarkerBeat: clip.endMarker,
+      looping: clip.looping,
+      loopStartBeat: clip.loopStart,
+      loopEndBeat: clip.loopEnd,
+      muted: clip.muted,
+    },
+    notes: notes.map((note) => ({ ...note })),
+    grid: {
+      quantization: context.application.song.gridQuantization,
+      isTriplet: context.application.song.gridIsTriplet,
+    },
+  };
+}
+
+function safeMidiClipParent(clip: MidiClip<"1.0.0">): unknown {
+  try {
+    return clip.parent;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeMidiClipTrack(clip: MidiClip<"1.0.0">): Track<"1.0.0"> | undefined {
+  try {
+    return findTrackAncestor(clip);
+  } catch {
+    return undefined;
+  }
 }
 
 function midiClipsOnTrack(track: Track<"1.0.0">): MidiClip<"1.0.0">[] {

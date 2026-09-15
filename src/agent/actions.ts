@@ -134,6 +134,14 @@ export type AgentObservationRequest =
       noteLimit?: number;
     }
   | {
+      type: "inspect_midi_evidence";
+      trackName?: string;
+      clipName?: string;
+      startBeat?: number;
+      slotIndex?: number;
+    }
+  | { type: "inspect_guitar_playability"; trackName?: string; clipName?: string; startBeat?: number; slotIndex?: number; maxFret?: number; maxFretSpan?: number; }
+  | {
       type: "analyze_audio_clip";
       trackName?: string;
       clipName?: string;
