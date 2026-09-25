@@ -91,6 +91,43 @@ function artifactPackageBytes(): Uint8Array {
   });
 }
 
+const readOnlyArtifactServerSource = String.raw`
+import fs from "node:fs/promises";
+import readline from "node:readline";
+const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\n");
+lines.on("line", async (line) => {
+  const request = JSON.parse(line);
+  if (request.method === "server/discover") send({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "legacy" } });
+  else if (request.method === "initialize") send({ jsonrpc: "2.0", id: request.id, result: {
+    protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "read-only-artifact-fixture", version: "1" }
+  } });
+  else if (request.method === "tools/list") send({ jsonrpc: "2.0", id: request.id, result: { tools: [{
+    name: "analyze", description: "Analyze Session audio without writing artifacts",
+    inputSchema: { type: "object", properties: { source: { type: "string" } }, required: ["source"], additionalProperties: false },
+    _meta: { "${LIVE_SMITH_ARTIFACT_META_KEY}": { version: 1, inputs: [{ argument: "source", kind: "audio" }], outputs: [] } }
+  }] } });
+  else if (request.method === "tools/call") {
+    const bytes = await fs.readFile(request.params.arguments.source);
+    send({ jsonrpc: "2.0", id: request.id, result: { content: [{ type: "text", text: "analyzed " + bytes.byteLength + " bytes" }] } });
+  }
+});
+`;
+
+function readOnlyArtifactPackageBytes(): Uint8Array {
+  return zipSync({
+    "plugin.json": strToU8(JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "audio-analyzer",
+    })),
+    "mcp.json": strToU8(JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { local: { type: "stdio", command: "node", args: ["${PLUGIN_ROOT}/server.mjs"] } },
+    })),
+    "server.mjs": strToU8(readOnlyArtifactServerSource),
+  });
+}
+
 test("request Plugin tools run an approved installed local MCP server end to end", async (t) => {
   const directory = await fs.mkdtemp("/private/tmp/live-smith-request-plugin-");
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -293,6 +330,56 @@ test("approved artifact tools receive exact staged audio and return only saved M
   assert.equal(JSON.parse(corrupt.content).unavailableCount, 1);
   assert.deepEqual(JSON.parse(corrupt.content).artifacts.filter((artifact: { kind: string }) => artifact.kind === "midi"), []);
   assert.ok(JSON.parse(corrupt.content).artifacts.some((artifact: { artifactRef: string }) => artifact.artifactRef === source.id));
+});
+
+test("read-only audio artifact tools require only input approval and return ordinary MCP content", async (t) => {
+  const h = await audioStorageHarness(t);
+  const source = await h.save();
+  await installPlugin(h.storage, readOnlyArtifactPackageBytes());
+  await setPluginMcpServerApproved(h.storage, "audio-analyzer", "local", true);
+  await setPluginEnabled(h.storage, "audio-analyzer", true);
+
+  const withoutInputGrant = await createRequestPluginTools({
+    storageDirectory: h.storage,
+    temporaryDirectory: h.storage,
+    sessionId: h.session.id,
+    signal: h.signal,
+    withAuthorization: async (_signal, operation) => operation(),
+  });
+  assert.deepEqual(withoutInputGrant.tools().map((tool) => tool.function.name), ["list_session_artifacts"]);
+  assert.ok(withoutInputGrant.issues.some((issue) => issue.code === "artifact_permission_required"));
+  await withoutInputGrant.close();
+
+  await setPluginArtifactPermissionApproved(h.storage, "audio-analyzer", "local", "input", true);
+  const request = await createRequestPluginTools({
+    storageDirectory: h.storage,
+    temporaryDirectory: h.storage,
+    sessionId: h.session.id,
+    signal: h.signal,
+    withAuthorization: async (_signal, operation) => operation(),
+  });
+  t.after(() => request.close());
+  const tool = request.tools().find((entry) => /^plg_/u.test(entry.function.name))!;
+  assert.ok(tool);
+  assert.match(JSON.stringify(tool.function.parameters), /Opaque Session audio artifact reference/u);
+  assert.doesNotMatch(JSON.stringify(tool.function.parameters), /destination/u);
+  const result = await request.callTool({
+    id: "analyze",
+    name: tool.function.name,
+    arguments: JSON.stringify({ source: source.id }),
+  });
+  assert.equal(result.failed, undefined);
+  assert.match(JSON.parse(result.content).content[0].text, /analyzed \d+ bytes/u);
+  assert.equal(JSON.parse(result.content).artifacts, undefined);
+  assert.deepEqual(await listMidiArtifacts(h.storage, h.session.id), []);
+
+  const rawPath = await request.callTool({
+    id: "raw-path",
+    name: tool.function.name,
+    arguments: JSON.stringify({ source: "/private/not-a-session-artifact.wav" }),
+  });
+  assert.equal(rawPath.failed, true);
+  assert.doesNotMatch(rawPath.content, /private\/not-a-session-artifact/u);
 });
 
 test("artifact permission revocation after discovery blocks the local call before staging", async (t) => {

@@ -199,3 +199,30 @@ test("local artifact discovery projects the declared media kind into the model c
     } finally { await plugin.close(); }
   }
 });
+
+test("local MCP tools may stage audio without declaring a MIDI output", async () => {
+  const readOnlyTool = {
+    name: "analyze",
+    description: "Analyze audio",
+    inputSchema: { type: "object" as const, properties: { source: { type: "string" } }, required: ["source"] },
+    _meta: { [LIVE_SMITH_ARTIFACT_META_KEY]: {
+      version: 1,
+      inputs: [{ argument: "source", kind: "audio" }],
+      outputs: [],
+    } },
+  };
+  const plugin = createMcpPluginPackage(await prepared(["primary"]), {
+    connector: async () => ({
+      listTools: async () => [readOnlyTool],
+      callTool: async () => ({ content: [] }),
+      close: async () => undefined,
+    }),
+  });
+  const discovered = await plugin.tools({ sessionId: "session", signal: createHostAbortController().signal });
+  assert.deepEqual(discovered.tools[0]!.artifactContract, {
+    inputs: [{ argument: "source", kind: "audio" }], outputs: [],
+  });
+  assert.match(discovered.tools[0]!.tool.function.description, /stages declared Session audio inputs/u);
+  assert.doesNotMatch(discovered.tools[0]!.tool.function.description, /MIDI output/u);
+  await plugin.close();
+});

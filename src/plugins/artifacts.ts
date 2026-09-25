@@ -60,7 +60,8 @@ export function pluginArtifactContract(tool: Tool): PluginArtifactToolContract |
   if (raw === undefined) return undefined;
   if (!plainRecord(raw) || Object.keys(raw).some((key) => !["version", "inputs", "outputs", "continuation"].includes(key)) ||
       raw.version !== 1 || !Array.isArray(raw.inputs) || !Array.isArray(raw.outputs) ||
-      raw.inputs.length > MAX_ARTIFACT_INPUTS || raw.outputs.length !== 1) {
+      raw.inputs.length > MAX_ARTIFACT_INPUTS || raw.outputs.length > 1 ||
+      (!raw.inputs.length && !raw.outputs.length)) {
     throw new Error("Plugin artifact contract is invalid.");
   }
   const inputs = raw.inputs.map((entry) => {
@@ -159,17 +160,12 @@ export async function callPluginToolWithArtifacts(input: ArtifactPluginSource & 
     if (Object.hasOwn(argumentsValue, output.argument)) throw new Error("Plugin output paths are host-owned.");
   }
   let stagingDirectory: string | undefined;
+  let completed = false;
   try {
     stagingDirectory = await fs.mkdtemp(path.join(temporaryRoot, "live-smith-plugin-call-"));
     await fs.chmod(stagingDirectory, 0o700);
     const inputDirectory = path.join(stagingDirectory, "input");
-    const outputDirectory = path.join(stagingDirectory, "output");
     await fs.mkdir(inputDirectory, { mode: 0o700 });
-    await fs.mkdir(outputDirectory, { mode: 0o700 });
-    const directorySnapshots = await Promise.all([stagingDirectory, outputDirectory].map(async (directory) => {
-      const info = await fs.lstat(directory);
-      return { directory, dev: info.dev, ino: info.ino };
-    }));
     for (const [index, descriptor] of input.contract.inputs.entries()) {
       const artifactRef = argumentsValue[descriptor.argument];
       if (typeof artifactRef !== "string") throw new Error("Plugin artifact input reference is invalid.");
@@ -182,11 +178,17 @@ export async function callPluginToolWithArtifacts(input: ArtifactPluginSource & 
       await fs.writeFile(target, bytes, { flag: "wx", mode: 0o400 });
       argumentsValue[descriptor.argument] = target;
     }
-    const output = input.contract.outputs[0]!;
-    if (input.outputPolicy && output.kind !== "midi") throw new Error("MIDI continuation requires a MIDI output.");
-    const outputName = output.kind === "midi" ? "1.mid" : `1.${output.format}`;
-    const outputPath = path.join(outputDirectory, outputName);
-    argumentsValue[output.argument] = outputPath;
+    const output = input.contract.outputs[0];
+    const outputDirectory = output ? path.join(stagingDirectory, "output") : undefined;
+    if (outputDirectory) await fs.mkdir(outputDirectory, { mode: 0o700 });
+    const directorySnapshots = await Promise.all([stagingDirectory, ...(outputDirectory ? [outputDirectory] : [])].map(async (directory) => {
+      const info = await fs.lstat(directory);
+      return { directory, dev: info.dev, ino: info.ino };
+    }));
+    if (input.outputPolicy && output?.kind !== "midi") throw new Error("MIDI continuation requires a MIDI output.");
+    const outputName = output?.kind === "midi" ? "1.mid" : output ? `1.${output.format}` : undefined;
+    const outputPath = output && outputDirectory && outputName ? path.join(outputDirectory, outputName) : undefined;
+    if (output && outputPath) argumentsValue[output.argument] = outputPath;
     throwIfAborted(input.signal);
     const result = await input.call(argumentsValue);
     throwIfAborted(input.signal);
@@ -206,6 +208,10 @@ export async function callPluginToolWithArtifacts(input: ArtifactPluginSource & 
       ...(input.forbiddenPaths ?? []),
     ]);
     if (result.isError) return { result, artifacts: [] };
+    if (!output || !outputDirectory || !outputPath) {
+      completed = true;
+      return { result, artifacts: [] };
+    }
     const entries = await fs.readdir(outputDirectory);
     if (entries.length !== 1 || entries[0] !== outputName) throw new Error("Plugin produced undeclared artifact output.");
     const bytes = await readRegularOutput(outputPath, output.kind === "midi" ? MAX_MIDI_ARTIFACT_BYTES : MAX_AUDIO_ASSET_BYTES, input.signal);
@@ -216,6 +222,7 @@ export async function callPluginToolWithArtifacts(input: ArtifactPluginSource & 
         serverId: input.serverId, toolName: input.toolName, label: output.label, format: output.format,
         ...(input.revisionOf ? { revisionOf: input.revisionOf } : {}), bytes, signal: input.signal,
       });
+      completed = true;
       return { result, artifacts: [{ ...artifact, kind: "audio" }] };
     }
     parseMidiArtifact(bytes, input.signal);
@@ -231,9 +238,17 @@ export async function callPluginToolWithArtifacts(input: ArtifactPluginSource & 
       bytes,
       signal: input.signal,
     });
+    completed = true;
     return { result, artifacts: [{ ...artifact, kind: "midi" }] };
   } finally {
-    if (stagingDirectory) await fs.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+    if (stagingDirectory) {
+      try {
+        await fs.rm(stagingDirectory, { recursive: true, force: true });
+      } catch {
+        console.error("Live Smith Plugin staged artifact cleanup failed.");
+        if (completed) throw new Error("Plugin staged artifact cleanup could not complete.");
+      }
+    }
   }
 }
 
