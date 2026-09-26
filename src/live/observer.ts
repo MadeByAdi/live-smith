@@ -219,6 +219,10 @@ export async function observeLive(
       throw new Error(
         "Rendered audio input must be handled by the agent request boundary.",
       );
+    case "stage_arrangement_audio_artifact":
+      throw new Error(
+        "Rendered audio artifact staging must be handled by the agent request boundary.",
+      );
     case "inspect_song_info":
       return summarizeSongInfo(context, request);
   }

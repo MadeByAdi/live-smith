@@ -247,3 +247,19 @@ test("audio-capable Live tools expose bounded Arrangement audio input", () => {
   assert.doesNotMatch(JSON.stringify(readAudio), /filePath|absolute path/i);
   assert.deepEqual(readAudio.required, ["startBeat", "endBeat"]);
 });
+
+test("approved local audio-artifact tools expose bounded Arrangement artifact staging", () => {
+  const ordinary = new Set(liveSmithTools().map((tool) => tool.function.name));
+  assert.equal(ordinary.has("stage_arrangement_audio_artifact"), false);
+
+  const tool = liveSmithTools({ stageArrangementAudioArtifact: true }).find(
+    (entry) => entry.function.name === "stage_arrangement_audio_artifact",
+  )!.function;
+  const parameters = tool.parameters as { properties?: Record<string, unknown>; required?: string[] };
+  assert.deepEqual(Object.keys(parameters.properties ?? {}).sort(), [
+    "clipName", "clipStartBeat", "endBeat", "startBeat", "trackName",
+  ]);
+  assert.deepEqual(parameters.required, ["startBeat", "endBeat"]);
+  assert.match(JSON.stringify(tool), /artifactRef/u);
+  assert.match(JSON.stringify(tool), /never provide a clip name or filesystem path/u);
+});

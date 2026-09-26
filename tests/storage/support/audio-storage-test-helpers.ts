@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { TestContext } from "node:test";
 
-import { LEGACY_AUDIO_SERVICE_ID, type AudioAsset } from "../../../src/audio-services/contracts.js";
+import { LEGACY_AUDIO_SERVICE_ID, type AudioJobAssetRole } from "../../../src/audio-services/contracts.js";
 import { createHostAbortController } from "../../../src/runtime/host.js";
 import { saveAudioAsset } from "../../../src/storage/audio-assets.js";
 import { createAudioJob, updateAudioJob } from "../../../src/storage/audio-jobs.js";
@@ -17,7 +17,7 @@ export const separationJobInput: AudioJobInput = {
   provider: "lalal", serviceId: LEGACY_AUDIO_SERVICE_ID, operation: "separate_stems",
   connectionFingerprint: fingerprint, stems: ["vocals", "drums"],
 };
-export const generationJobCases: { input: AudioJobInput; roles: AudioAsset["role"][] }[] = [
+export const generationJobCases: { input: AudioJobInput; roles: AudioJobAssetRole[] }[] = [
   { input: { provider: "elevenlabs", serviceId: "eleven-music", operation: "generate_music",
     connectionFingerprint: fingerprint, stems: [], modelId: "music_v2" }, roles: ["music"] },
   { input: { provider: "elevenlabs", serviceId: "eleven-effects", operation: "generate_sound_effect",
@@ -43,11 +43,11 @@ export async function audioStorageHarness(t: TestContext, input: AudioJobInput =
   const job = await createAudioJob(storage, session.id, input);
   const directory = path.join(storage, "live-smith-audio", session.id);
   const signal = createHostAbortController().signal;
-  const save = (role: AudioAsset["role"] = "source", bytes = waveBytes()) => saveAudioAsset(storage, session.id, {
+  const save = (role: AudioJobAssetRole = "source", bytes = waveBytes()) => saveAudioAsset(storage, session.id, {
     jobId: job.id, role, label: role, bytes,
     origin: { kind: job.operation === "separate_stems" ? "attachment" : "generated" }, signal,
   });
-  const saveResult = async (role: AudioAsset["role"] = "vocals", bytes = waveBytes()) => {
+  const saveResult = async (role: AudioJobAssetRole = "vocals", bytes = waveBytes()) => {
     const asset = await save(role, bytes);
     await updateAudioJob(storage, session.id, job.id, { outputAssets: [asset] });
     return asset;

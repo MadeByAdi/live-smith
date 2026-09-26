@@ -155,6 +155,14 @@ export type AgentObservationRequest =
       startBeat: number;
       endBeat: number;
     }
+  | {
+      type: "stage_arrangement_audio_artifact";
+      trackName?: string;
+      clipName?: string;
+      clipStartBeat?: number;
+      startBeat: number;
+      endBeat: number;
+    }
   | ({ type: "inspect_song_info" } & ObservationItemPage);
 
 export function observationRequestForAction(

@@ -30,6 +30,7 @@ import {
 } from "../agent/actions.js";
 import { liveSmithTools } from "../agent/tool-definitions.js";
 import { createRequestAudioTools } from "./audio/request-audio-tools.js";
+import { stageArrangementAudioArtifact } from "./arrangement-audio-artifact.js";
 import {
   createRequestPluginTools,
   type PluginExecutionAuthorization,
@@ -702,7 +703,8 @@ export async function handleAgentRequest(
           runtimeProfile,
           [...liveSmithTools({
             readArrangementAudio: canReadArrangementAudio(),
-            ...(storageDirectory
+            stageArrangementAudioArtifact: pluginTools.hasApprovedAudioArtifactInput,
+            ...(pluginTools.midiArtifacts().length
               ? { additionalActionSchemas: [midiArtifactImportActionSchema] }
               : {}),
           }), ...externalTools.tools()],
@@ -826,6 +828,21 @@ export async function handleAgentRequest(
         return turn;
       },
       observe: async (request) => {
+        if (request.type === "stage_arrangement_audio_artifact") {
+          if (!pluginTools.hasApprovedAudioArtifactInput) {
+            throw new Error(
+              "stage_arrangement_audio_artifact requires an approved local Plugin audio input tool.",
+            );
+          }
+          return stageArrangementAudioArtifact({
+            context,
+            storageDirectory,
+            sessionId: session.id,
+            target: interaction.target,
+            request,
+            signal: callbacks.signal,
+          });
+        }
         if (request.type === "read_arrangement_audio") {
           if (!supportsArrangementAudioInput) {
             throw new Error(

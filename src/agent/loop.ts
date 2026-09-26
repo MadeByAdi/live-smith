@@ -1649,6 +1649,7 @@ function observationCoversRecovery(
     case "inspect_current_object":
       return true;
     case "read_arrangement_audio":
+    case "stage_arrangement_audio_artifact":
       return false;
     case "inspect_song_info":
       return actual.type === "inspect_song_info" && (
@@ -1965,6 +1966,29 @@ function observationRequestFromToolCall(
       }
       return request;
     }
+    case "stage_arrangement_audio_artifact": {
+      assertOnlyKeys(
+        args,
+        ["trackName", "clipName", "clipStartBeat", "startBeat", "endBeat"],
+        `${toolCall.name} arguments`,
+      );
+      const request: Extract<AgentObservationRequest, {
+        type: "stage_arrangement_audio_artifact";
+      }> = {
+        type: "stage_arrangement_audio_artifact" as const,
+        ...optionalStringProp(args.trackName, "trackName"),
+        ...optionalStringProp(args.clipName, "clipName"),
+        ...optionalNumberProp(args.clipStartBeat, "clipStartBeat"),
+        startBeat: requiredNumber(args.startBeat, "startBeat"),
+        endBeat: requiredNumber(args.endBeat, "endBeat"),
+      };
+      if (request.endBeat <= request.startBeat) {
+        throw new Error(
+          "stage_arrangement_audio_artifact requires endBeat greater than startBeat.",
+        );
+      }
+      return request;
+    }
     case "inspect_song_info":
       assertOnlyKeys(args, observationItemPageKeys, `${toolCall.name} arguments`);
       return { type: "inspect_song_info", ...observationItemPageProps(args) };
@@ -2067,6 +2091,7 @@ function isObservationTool(name: string): boolean {
     name === "inspect_guitar_playability" ||
     name === "analyze_audio_clip" ||
     name === "read_arrangement_audio" ||
+    name === "stage_arrangement_audio_artifact" ||
     name === "inspect_song_info"
   );
 }

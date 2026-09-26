@@ -5,7 +5,8 @@ import { isDeepStrictEqual, types } from "node:util";
 
 import { inspectAudioAttachment } from "../attachments/audio.js";
 import {
-  AUDIO_OUTPUT_LABELS, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_SESSION_BYTES, MAX_AUDIO_JOB_OUTPUTS, type AudioAsset, type AudioJob, type AudioOrigin,
+  AUDIO_OUTPUT_LABELS, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_SESSION_BYTES, MAX_AUDIO_JOB_OUTPUTS,
+  type AudioAsset, type AudioJob, type AudioJobAssetRole, type AudioOrigin,
 } from "../audio-services/contracts.js";
 import { allocateArtifactVersion, artifactVersion } from "../agent/artifact-contracts.js";
 import { audioOutputDescriptor, audioArtifactOutputDescriptor, audioOutputsCanShareWork } from "../audio-services/audio-output.js";
@@ -14,7 +15,7 @@ import { storedSessionAudioBytes } from "./audio-storage-budget.js";
 import { cloneJsonValue } from "../model/json-clone.js";
 import { throwIfAborted } from "../runtime/host.js";
 import { isMissingFileError } from "./errors.js";
-import { isSafeStorageId, requireSafeStorageId } from "./id.js";
+import { createStorageId, isSafeStorageId, requireSafeStorageId } from "./id.js";
 import {
   removeDirectoryDurably, withStorageTransaction,
   writeBytesAtomicallyCreateOnly, writeJsonAtomicallyCreateOnly,
@@ -30,7 +31,7 @@ import {
 export async function saveAudioAsset(
   storageDirectory: string | undefined,
   sessionId: string,
-  input: { jobId: string; label: string; role: AudioAsset["role"]; bytes: Uint8Array; origin: AudioOrigin; signal: AbortSignal },
+  input: { jobId: string; label: string; role: AudioJobAssetRole; bytes: Uint8Array; origin: AudioOrigin; signal: AbortSignal },
 ): Promise<AudioAsset> {
   requireAudioStorage(storageDirectory, sessionId);
   requireSafeStorageId(input.jobId, "Audio job ID");
@@ -103,6 +104,49 @@ export async function saveAudioAsset(
 }
 
 /**
+ * Persists an already verified, bounded pre-FX Arrangement render for use by
+ * approved local audio-artifact Plugin tools. This is deliberately not an
+ * audio job: no provider request, remote task, or generated output exists.
+ */
+export async function saveArrangementAudioArtifact(
+  storageDirectory: string | undefined,
+  sessionId: string,
+  input: { label: string; bytes: Uint8Array; origin: AudioOrigin; signal: AbortSignal },
+): Promise<AudioAsset> {
+  requireAudioStorage(storageDirectory, sessionId);
+  throwIfAborted(input.signal);
+  if (!audioRecordHasOnly(input, ["label", "bytes", "origin", "signal"]) ||
+    !types.isUint8Array(input.bytes) || input.bytes.byteLength > MAX_AUDIO_ASSET_BYTES ||
+    input.origin.kind !== "arrangement") {
+    throw new AudioStorageError("Arrangement audio artifacts must be valid bounded Arrangement audio.");
+  }
+  const bytes = new Uint8Array(input.bytes);
+  const origin = cloneJsonValue(input.origin);
+  const inspection = await inspectAudioAttachment({ bytes, signal: input.signal, limits: audioAssetInspectionLimits });
+  const asset: AudioAsset = {
+    id: createStorageId("audio_artifact"), sessionId, role: "arrangement_render",
+    label: input.label, origin, byteLength: bytes.byteLength, sha256: hashBytes(bytes), ...inspection,
+  };
+  if (!isAudioAsset(asset)) throw new AudioStorageError("Audio artifact metadata is invalid.");
+  assertAudioJsonSize(asset, MAX_AUDIO_ASSET_METADATA_BYTES);
+  return withStorageTransaction(storageDirectory, async (transaction) => {
+    throwIfAborted(input.signal);
+    await requireAudioSession(storageDirectory, sessionId, transaction);
+    const directory = (await bindAudioDirectory(storageDirectory, sessionId, true))!;
+    const usedBytes = await storedSessionAudioBytes(storageDirectory, sessionId);
+    if (usedBytes + asset.byteLength > MAX_AUDIO_SESSION_BYTES) {
+      throw new AudioStorageError("This Session has reached its 1 GiB audio storage limit.");
+    }
+    await assertAudioDirectory(directory);
+    await writeJsonAtomicallyCreateOnly(path.join(directory.directory, `${asset.id}.asset.json`), asset);
+    await assertAudioDirectory(directory);
+    await writeBytesAtomicallyCreateOnly(path.join(directory.directory, `${asset.id}.audio`), bytes);
+    await assertAudioDirectory(directory);
+    return asset;
+  });
+}
+
+/**
  * Called while the app owns the complete same-Session send/command fence. The
  * checked budget therefore cannot be consumed by another supported Session
  * operation before this request saves its results. File writes recheck quota.
@@ -134,8 +178,11 @@ export async function readAudioAsset(
   const directory = await bindAudioDirectory(storageDirectory, sessionId);
   const asset = directory && await readAudioAssetRecord(directory, sessionId, assetId);
   if (!asset || !directory) throw new AudioStorageError("The audio asset does not exist in this Session.");
-  const job = await loadAudioJob(storageDirectory, sessionId, asset.jobId);
-  if (!audioJobOwnsAssetRole(job, asset.role)) throw new AudioStorageError();
+  if (asset.role !== "arrangement_render") {
+    if (!asset.jobId) throw new AudioStorageError();
+    const job = await loadAudioJob(storageDirectory, sessionId, asset.jobId);
+    if (!audioJobOwnsAssetRole(job, asset.role)) throw new AudioStorageError();
+  }
   const bytes = await readVerifiedBytes(directory, asset, signal);
   const afterRead = await readAudioAssetRecord(directory, sessionId, assetId);
   if (!isDeepStrictEqual(afterRead, asset)) throw new AudioStorageError();
@@ -167,6 +214,24 @@ export async function listAudioAssets(
   return listAssetsForJobs(storageDirectory, sessionId, jobs, jobId !== undefined);
 }
 
+/** Lists only generic read-only Arrangement-render artifacts, never audio-job outputs. */
+export async function listArrangementAudioArtifacts(
+  storageDirectory: string | undefined,
+  sessionId: string,
+): Promise<AudioAsset[]> {
+  requireAudioStorage(storageDirectory, sessionId);
+  await requireAudioSession(storageDirectory, sessionId);
+  const directory = await bindAudioDirectory(storageDirectory, sessionId);
+  if (!directory) return [];
+  const artifacts: AudioAsset[] = [];
+  for (const name of await audioDirectoryEntries(directory)) {
+    if (!name.endsWith(".asset.json")) continue;
+    const asset = await readAudioAssetRecord(directory, sessionId, name.slice(0, -11));
+    if (asset?.role === "arrangement_render" && await hasAudioBlob(directory, asset)) artifacts.push(asset);
+  }
+  return artifacts.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 /** One verified snapshot for callers that need both jobs and recoverable assets. */
 export async function readAudioSessionState(
   storageDirectory: string, sessionId: string,
@@ -184,7 +249,7 @@ async function listAssetsForJobs(
   const committed = new Map(jobs.flatMap((job) => job.outputAssets).map((asset) => [asset.id, asset]));
   const target = oneJob ? jobs[0]! : undefined;
   const wanted = target ? new Set(["source", ...Object.keys(AUDIO_OUTPUT_LABELS)]
-    .map((role) => audioAssetId(target.id, role as AudioAsset["role"]))) : undefined;
+    .map((role) => audioAssetId(target.id, role as AudioJobAssetRole))) : undefined;
   const assets: AudioAsset[] = [];
   for (const name of await audioDirectoryEntries(directory)) {
     if (!name.endsWith(".asset.json")) continue;
@@ -192,7 +257,8 @@ async function listAssetsForJobs(
     if (wanted && !wanted.has(id)) continue;
     // Job loading already verified committed metadata against the job snapshot.
     const asset = committed.get(id) ?? await readAudioAssetRecord(directory, sessionId, id);
-    const job = asset && byJobId.get(asset.jobId);
+    if (asset?.role === "arrangement_render") continue;
+    const job = asset?.jobId === undefined ? undefined : byJobId.get(asset.jobId);
     if (!asset || !job || !audioJobOwnsAssetRole(job, asset.role)) throw new AudioStorageError();
     if (await hasAudioBlob(directory, asset)) assets.push(asset);
   }

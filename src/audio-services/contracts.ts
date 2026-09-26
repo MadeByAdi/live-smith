@@ -170,12 +170,16 @@ export interface AudioOrigin {
   sourceAssetId?: string;
 }
 
+export type AudioJobAssetRole = AudioOutputRole;
+export type AudioAssetRole = AudioJobAssetRole | "arrangement_render";
+
 export interface AudioAsset {
   id: string;
   sessionId: string;
-  jobId: string;
+  /** Present only for assets owned by an existing audio job. */
+  jobId?: string;
   label: string;
-  role: AudioOutputRole;
+  role: AudioAssetRole;
   /** Absent on historical receipts, which remain readable without rewriting. */
   version?: ArtifactVersion;
   mediaType: "audio/wav" | "audio/mpeg";

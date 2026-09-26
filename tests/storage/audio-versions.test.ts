@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import test from "node:test";
-import type { AudioAsset, AudioJob } from "../../src/audio-services/contracts.js";
+import type { AudioAsset, AudioJob, AudioJobAssetRole } from "../../src/audio-services/contracts.js";
 import { audioOutputDescriptor } from "../../src/audio-services/audio-output.js";
 import { savePluginAudioArtifact } from "../../src/storage/audio-artifacts.js";
 import { saveAudioAsset, readAudioAsset } from "../../src/storage/audio-assets.js";
@@ -18,7 +18,7 @@ test("music siblings share a work without a derived chain; selected revisions an
   assert.deepEqual(first.version, { groupId: first.id, number: 1 });
   assert.deepEqual(alternative.version, { groupId: first.id, number: 2 });
   const next = await createAudioJob(h.storage, h.session.id, { ...music, artifactSource: { kind: "audio", id: alternative.id } });
-  const save = (role: AudioAsset["role"]) => saveAudioAsset(h.storage, h.session.id, {
+  const save = (role: AudioJobAssetRole) => saveAudioAsset(h.storage, h.session.id, {
     jobId: next.id, role, label: role, bytes: waveBytes(), origin: { kind: "generated" }, signal: h.signal,
   });
   const revised = await save("music");
@@ -47,7 +47,7 @@ test("component outputs and effects retain source provenance without becoming fu
   const h = await audioStorageHarness(t, music);
   const source = await h.save("music");
   const sourceRef = { kind: "audio" as const, id: source.id };
-  const make = async (operation: "extract_music_stems" | "generate_sound_sample", roles: AudioAsset["role"][]) => {
+  const make = async (operation: "extract_music_stems" | "generate_sound_sample", roles: AudioJobAssetRole[]) => {
     const job = await createAudioJob(h.storage, h.session.id, { provider: "suno", serviceId: "stems", operation,
       connectionFingerprint: fingerprint, stems: [], artifactSource: sourceRef });
     const assets: AudioAsset[] = [];

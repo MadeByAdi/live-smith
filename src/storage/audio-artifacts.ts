@@ -77,8 +77,11 @@ export async function savePluginAudioArtifact(
       throw new AudioStorageError("This Session has reached its audio artifact storage limit.");
     }
     const id = createStorageId("audio_artifact");
+    const parentDescriptor = audioParent?.role === "arrangement_render"
+      ? { kind: "audio" as const, label: audioParent.label }
+      : audioParent && audioArtifactOutputDescriptor(audioParent);
     const version = allocateArtifactVersion(id, [...await listAudioAssetRecords(storageDirectory, sessionId), ...records],
-      audioParent && audioOutputsCanShareWork({ kind: "audio", label: input.label }, audioArtifactOutputDescriptor(audioParent))
+      audioParent && parentDescriptor && audioOutputsCanShareWork({ kind: "audio", label: input.label }, parentDescriptor)
         ? { revisionOf: audioParent.id } : {});
     const artifact: PluginAudioArtifact = {
       ...(input.pluginId === undefined ? { connectionId: input.connectionId } : { pluginId: input.pluginId }),
@@ -159,8 +162,15 @@ export async function readSessionAudioArtifact(
   storageDirectory: string | undefined, sessionId: string, id: string, signal?: AbortSignal,
 ): Promise<{ asset: SessionAudioArtifact; bytes: Uint8Array }> {
   if (id.startsWith("audio_artifact_")) {
-    const { artifact, bytes } = await readPluginAudioArtifact(storageDirectory, sessionId, id, signal);
-    return { asset: artifact, bytes };
+    try {
+      const { artifact, bytes } = await readPluginAudioArtifact(storageDirectory, sessionId, id, signal);
+      return { asset: artifact, bytes };
+    } catch (error) {
+      if (!(error instanceof AudioArtifactNotFoundError)) throw error;
+      const result = await readAudioAsset(storageDirectory, sessionId, id, signal);
+      if (result.asset.role !== "arrangement_render") throw new AudioArtifactNotFoundError();
+      return result;
+    }
   }
   const jobs = await listAudioJobs(storageDirectory, sessionId);
   const expected = jobs.flatMap((job) => job.outputAssets).find((asset) => asset.id === id);

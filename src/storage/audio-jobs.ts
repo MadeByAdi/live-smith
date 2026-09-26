@@ -10,7 +10,7 @@ import {
   LEGACY_AUDIO_SERVICE_ID, MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_ASSET_DURATION_SECONDS,
   MAX_AUDIO_JOB_OUTPUTS, MAX_AUDIO_SESSION_JOBS, SEPARATION_STEMS, SUNO_UPLOAD_MUTATIONS,
   MAX_AUDIO_JOB_TITLE_CHARACTERS,
-  type AudioAsset, type AudioJob, type AudioOrigin, type SeparationStem, type SunoUploadReceipt,
+  type AudioAsset, type AudioAssetRole, type AudioJob, type AudioJobAssetRole, type AudioOrigin, type SeparationStem, type SunoUploadReceipt,
 } from "../audio-services/contracts.js";
 import { audioOutputDescriptor, isGeneratedAudioOutputRole, isGeneratedStemRole } from "../audio-services/audio-output.js";
 import { isArtifactRef, isArtifactVersion } from "../agent/artifact-contracts.js";
@@ -381,7 +381,7 @@ function validFailedOutputKeys(job: Record<string, unknown> & JobConfiguration):
 }
 
 export function audioJobOwnsAssetRole(
-  job: Pick<AudioJob, "provider" | "operation" | "stems"> & { expectedOutputRoles?: unknown; expectedOutputs?: unknown }, role: AudioAsset["role"],
+  job: Pick<AudioJob, "provider" | "operation" | "stems"> & { expectedOutputRoles?: unknown; expectedOutputs?: unknown }, role: AudioJobAssetRole,
 ): boolean {
   if (job.operation === "upload_music" && role === "source") return job.provider === "suno";
   if (job.expectedOutputs !== undefined &&
@@ -456,7 +456,7 @@ export function boundedAudioText(value: unknown, maxBytes: number, allowEmpty = 
     Buffer.byteLength(value, "utf8") <= maxBytes && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
-export function audioAssetId(jobId: string, role: AudioAsset["role"]): string {
+export function audioAssetId(jobId: string, role: AudioAssetRole): string {
   return `asset_${createHash("sha256").update(`${jobId}\0${role}`).digest("hex")}`;
 }
 
@@ -475,18 +475,24 @@ export function isAudioOrigin(value: unknown): value is AudioOrigin {
 }
 
 export function isAudioAsset(value: unknown): value is AudioAsset {
-  return audioRecordHasOnly(value, [
+  if (!audioRecordHasOnly(value, [
     "id", "sessionId", "jobId", "label", "role", "mediaType", "byteLength", "sha256",
     "durationSeconds", "sampleRate", "channels", "origin", "version",
-  ]) && isSafeStorageId(value.sessionId) && isSafeStorageId(value.jobId) &&
+  ]) || !isSafeStorageId(value.sessionId) ||
+    !boundedAudioText(value.label, 256) || !isAudioHash(value.sha256) ||
+    !Number.isSafeInteger(value.byteLength) || (value.byteLength as number) <= 0 ||
+    (value.byteLength as number) > MAX_AUDIO_ASSET_BYTES ||
+    !isAudioAttachmentInspection(value, audioAssetInspectionLimits) ||
+    !isAudioOrigin(value.origin) || value.origin.sourceAssetId === value.id ||
+    !(!Object.hasOwn(value, "version") || isArtifactVersion(value.version, value.id as string))) return false;
+  if (value.role === "arrangement_render") {
+    return !Object.hasOwn(value, "jobId") && isSafeStorageId(value.id) &&
+      value.id.startsWith("audio_artifact_") && value.origin.kind === "arrangement" &&
+      !Object.hasOwn(value, "version");
+  }
+  return isSafeStorageId(value.jobId) &&
     audioOutputDescriptor(value.role) !== undefined &&
-    value.id === audioAssetId(value.jobId, value.role as AudioAsset["role"]) &&
-    (!Object.hasOwn(value, "version") || isArtifactVersion(value.version, value.id as string)) &&
-    boundedAudioText(value.label, 256) && isAudioHash(value.sha256) &&
-    Number.isSafeInteger(value.byteLength) && (value.byteLength as number) > 0 &&
-    (value.byteLength as number) <= MAX_AUDIO_ASSET_BYTES &&
-    isAudioAttachmentInspection(value, audioAssetInspectionLimits) && isAudioOrigin(value.origin) &&
-    value.origin.sourceAssetId !== value.id &&
+    value.id === audioAssetId(value.jobId, value.role as AudioAssetRole) &&
     (isGeneratedAudioOutputRole(value.role) === (value.origin.kind === "generated"));
 }
 

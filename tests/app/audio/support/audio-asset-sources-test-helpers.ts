@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { TestContext } from "node:test";
 
-import type { AudioAsset } from "../../../../src/audio-services/contracts.js";
+import type { AudioAsset, AudioJobAssetRole } from "../../../../src/audio-services/contracts.js";
 import type { ManagedSampleSource } from "../../../../src/live/sample-source.js";
 import { createHostAbortController } from "../../../../src/runtime/host.js";
 import { saveAudioAsset } from "../../../../src/storage/audio-assets.js";
@@ -46,7 +46,7 @@ export async function assetHarness(t: TestContext, kind: "separation" | "generat
   };
   const sources = new Map<string, ManagedSampleSource>();
   const committed = new Map<string, AudioAsset>();
-  async function save(role: AudioAsset["role"] = kind === "generation" ? "music" : "vocals", bytes = waveBytes()) {
+  async function save(role: AudioJobAssetRole = kind === "generation" ? "music" : "vocals", bytes = waveBytes()) {
     const asset = await saveAudioAsset(directory, session.id, {
       jobId: job.id, label: "/untrusted/label.wav", role, bytes,
       origin: kind === "generation" ? { kind: "generated" } : { kind: "arrangement", startBeat: 4, endBeat: 8, tempo: 120 },

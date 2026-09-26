@@ -275,6 +275,97 @@ test("enabled Plugin Skills render in their own group and toggle by namespaced I
   } finally { harness.close(); }
 });
 
+test("the initial-state decoder accepts dotted Plugin IDs in namespaced Plugin Skills", async () => {
+  const state = stateFixture();
+  state.activeSkillIds = ["local.audio-analyzer-rs:audio-analysis"];
+  state.sessions[0]!.activeSkillIds = ["local.audio-analyzer-rs:audio-analysis"];
+  state.availableSkills = [{
+    id: "local.audio-analyzer-rs:audio-analysis",
+    description: "Analyze staged audio",
+    source: "plugin",
+    pluginId: "local.audio-analyzer-rs",
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    assert.equal("LiveSmithUI" in harness.window, true);
+    assert.equal(harness.document.querySelector("#status")?.textContent, "");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("the initial-state decoder keeps existing built-in and user Skill IDs valid", async () => {
+  const state = stateFixture();
+  state.availableSkills = [
+    {
+      id: "arranging-section-energy",
+      description: "Shape section energy",
+      source: "built-in",
+    },
+    {
+      id: "user-mix-notes",
+      description: "Remember the user's mix process",
+      source: "user",
+    },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    assert.equal("LiveSmithUI" in harness.window, true);
+    assert.equal(harness.document.querySelector("#status")?.textContent, "");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("the initial-state decoder rejects dotted IDs for non-Plugin Skills", async () => {
+  const state = stateFixture();
+  state.availableSkills = [{
+    id: "local.audio-analyzer-rs",
+    description: "Not a Plugin Skill reference",
+    source: "user",
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    assert.match(
+      harness.document.querySelector("#status")?.textContent ?? "",
+      /invalid initial state/i,
+    );
+    assert.equal("LiveSmithUI" in harness.window, false);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("the initial-state decoder rejects malformed namespaced Plugin Skill IDs", async () => {
+  const malformedPluginSkills: readonly { id: string; pluginId: string }[] = [
+    { id: ":audio-analysis", pluginId: "" },
+    { id: "local.audio-analyzer-rs:", pluginId: "local.audio-analyzer-rs" },
+    { id: "local.audio-analyzer-rs:audio.analysis", pluginId: "local.audio-analyzer-rs" },
+    { id: "local audio analyzer:audio-analysis", pluginId: "local audio analyzer" },
+    { id: "local.audio-analyzer-rs:audio-analysis:extra", pluginId: "local.audio-analyzer-rs" },
+  ];
+  for (const { id, pluginId } of malformedPluginSkills) {
+    const state = stateFixture();
+    state.availableSkills = [{
+      id,
+      description: "Malformed Plugin Skill",
+      source: "plugin",
+      pluginId,
+    }];
+    const harness = await createDialogHarness(state);
+    try {
+      assert.match(harness.document.querySelector("#status")?.textContent ?? "", /invalid initial state/i);
+      assert.equal("LiveSmithUI" in harness.window, false);
+      assert.deepEqual(harness.errors, []);
+    } finally {
+      harness.close();
+    }
+  }
+});
+
 test("Skill toggle focus survives command failure and the four-Skill limit", async () => {
   const activeSkillIds = [
     "arranging-section-energy",

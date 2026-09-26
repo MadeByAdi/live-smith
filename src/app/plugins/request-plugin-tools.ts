@@ -43,6 +43,7 @@ export interface RequestPluginTools extends Toolset {
   catalogTools(): readonly RequestPluginCatalogTool[];
   issues: readonly PluginToolIssue[];
   readonly hasAudioOutputs: boolean;
+  readonly hasApprovedAudioArtifactInput: boolean;
   unavailableMidiArtifacts: number;
   midiArtifacts(): readonly MidiArtifact[];
   close(): Promise<void>;
@@ -387,6 +388,8 @@ export async function createRequestPluginTools(input: {
       toolsets,
       hasAudioOutputs: catalogRoutes.some((routes) => [...routes.values()].some(({ definition }) =>
         definition.artifactContract?.outputs.some((output) => output.kind === "audio"))),
+      hasApprovedAudioArtifactInput: catalogRoutes.some((routes) => [...routes.values()].some(({ definition }) =>
+        definition.artifactContract?.inputs.some((input) => input.kind === "audio"))),
       catalogTools: () => catalogRoutes.flatMap((routes) => [...routes.values()].filter(({ definition }) =>
         appVisibility(definition.app, "model") || definition.app?.resourceUri).map(({ definition, connection, runtime, configurationRevision, managed }) => {
         const identity = {

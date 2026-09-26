@@ -4,6 +4,7 @@ import { MAX_AGENT_PLAN_ACTIONS } from "./actions.js";
 
 export function liveSmithTools(options: {
   readArrangementAudio?: boolean;
+  stageArrangementAudioArtifact?: boolean;
   additionalActionSchemas?: readonly Record<string, unknown>[];
 } = {}): ModelFunctionTool[] {
   return [
@@ -250,6 +251,20 @@ export function liveSmithTools(options: {
               description:
                 "Requested Arrangement end beat inside the Clip.",
             },
+          },
+          ["startBeat", "endBeat"],
+        )]
+      : []),
+    ...(options.stageArrangementAudioArtifact
+      ? [observationTool(
+          "stage_arrangement_audio_artifact",
+          "Render one bounded range inside an isolated Arrangement Audio Clip as verified pre-effects audio and save it as an opaque Session audio artifact for an approved local Plugin tool. Use the returned artifactRef exactly; never provide a clip name or filesystem path. This excludes the track device chain, sends, returns, master processing, and other tracks.",
+          {
+            trackName: { type: "string", description: "Optional audio track name. Omit it to use the current target track." },
+            clipName: { type: "string", description: "Optional exact Arrangement Audio Clip name for disambiguation." },
+            clipStartBeat: { type: "number", description: "Optional exact Arrangement Clip start beat for disambiguation." },
+            startBeat: { type: "number", description: "Requested Arrangement start beat inside the Clip." },
+            endBeat: { type: "number", description: "Requested Arrangement end beat inside the Clip." },
           },
           ["startBeat", "endBeat"],
         )]

@@ -9,7 +9,7 @@ import test from "node:test";
 
 import { inspectAudioAttachment, isAudioAttachmentInspection } from "../../src/attachments/audio.js";
 import {
-  MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_SESSION_BYTES, SEPARATION_STEMS, type AudioAsset,
+  MAX_AUDIO_ASSET_BYTES, MAX_AUDIO_SESSION_BYTES, SEPARATION_STEMS, type AudioAsset, type AudioJobAssetRole,
 } from "../../src/audio-services/contracts.js";
 import { copyAudioFileSafely } from "../../src/live/audio-attachment-source.js";
 import { createHostAbortController } from "../../src/runtime/host.js";
@@ -367,9 +367,9 @@ test("generated WAV and MP3 assets retain deterministic IDs, hashes and immutabl
 });
 
 test("every asset boundary rejects roles owned by another operation or provider, including unpublished output records", async (t) => {
-  const allRoles: AudioAsset["role"][] = [...SEPARATION_STEMS, "source", "residual", "music", "music_alternative", "sound_effect"];
+  const allRoles: AudioJobAssetRole[] = [...SEPARATION_STEMS, "source", "residual", "music", "music_alternative", "sound_effect"];
   for (const { input, roles } of [
-    { input: separationJobInput, roles: ["source", "vocals", "drums", "residual"] as AudioAsset["role"][] },
+    { input: separationJobInput, roles: ["source", "vocals", "drums", "residual"] as AudioJobAssetRole[] },
     ...generationJobCases,
   ]) {
     const h = await audioStorageHarness(t, input);

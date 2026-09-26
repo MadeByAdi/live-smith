@@ -898,6 +898,39 @@ test("runAgentLoop binds rendered audio to its tool result for the next model tu
   assert.match(result.message, /now hear/);
 });
 
+test("runAgentLoop passes bounded Arrangement artifact staging without a filesystem path", async () => {
+  const observedRequests: unknown[] = [];
+  const result = await runAgentLoop({
+    maxConsecutiveFailures: 3,
+    askModel: async (input): Promise<ModelTurn> => input.messages.length === 0
+      ? {
+          content: "I will stage the exact range for the approved analyzer.",
+          toolCalls: [{
+            id: "stage-audio",
+            name: "stage_arrangement_audio_artifact",
+            arguments: JSON.stringify({ trackName: "Vox", clipName: "Lead", clipStartBeat: 0, startBeat: 4, endBeat: 8 }),
+          }],
+        }
+      : { content: "I will use the returned opaque artifact reference.", toolCalls: [] },
+    observe: async (request) => {
+      observedRequests.push(request);
+      return JSON.stringify({ artifactRef: "audio_artifact_123", usage: "Never use a filesystem path." });
+    },
+    confirmActions: async () => true,
+    executeActions: async () => mutationOutcome([]),
+  });
+
+  assert.deepEqual(observedRequests, [{
+    type: "stage_arrangement_audio_artifact",
+    trackName: "Vox",
+    clipName: "Lead",
+    clipStartBeat: 0,
+    startBeat: 4,
+    endBeat: 8,
+  }]);
+  assert.match(result.message, /opaque artifact reference/u);
+});
+
 test("tool-produced audio is accepted only after its trace result succeeds", async () => {
   const audio = {
     type: "audio" as const,
