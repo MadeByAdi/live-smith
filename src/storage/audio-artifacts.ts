@@ -168,7 +168,7 @@ export async function readSessionAudioArtifact(
     } catch (error) {
       if (!(error instanceof AudioArtifactNotFoundError)) throw error;
       const result = await readAudioAsset(storageDirectory, sessionId, id, signal);
-      if (result.asset.role !== "arrangement_render") throw new AudioArtifactNotFoundError();
+      if (result.asset.role !== "arrangement_render" && result.asset.role !== "agent_audio_tap") throw new AudioArtifactNotFoundError();
       return result;
     }
   }

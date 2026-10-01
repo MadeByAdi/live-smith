@@ -263,3 +263,16 @@ test("approved local audio-artifact tools expose bounded Arrangement artifact st
   assert.match(JSON.stringify(tool), /artifactRef/u);
   assert.match(JSON.stringify(tool), /never provide a clip name or filesystem path/u);
 });
+
+test("Live tools expose AgentAudioTap capture without raw filesystem inputs", () => {
+  const tool = liveSmithTools().find(
+    (entry) => entry.function.name === "capture_agent_audio_tap",
+  )!.function;
+  const parameters = tool.parameters as { properties?: Record<string, unknown>; required?: string[] };
+  assert.deepEqual(Object.keys(parameters.properties ?? {}).sort(), ["listenerName", "tapId"]);
+  assert.equal(parameters.required, undefined);
+  assert.match(tool.description, /same-Session audio artifact/u);
+  assert.match(tool.description, /ambiguous/u);
+  assert.match(tool.description, /Do not answer that live listening or Main capture is impossible/u);
+  assert.doesNotMatch(JSON.stringify(tool), /filePath|absolute path|wav path/i);
+});

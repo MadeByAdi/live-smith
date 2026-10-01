@@ -472,6 +472,7 @@
           pendingAttachments: state.pendingAttachments,
           plugins: state.plugins,
           audioJobs: state.audioJobs,
+          agentAudioTapListeners: state.agentAudioTapListeners,
           midiContinuation: state.midiContinuation,
           contextSummary: state.contextSummary,
           liveContext: state.liveContext,
@@ -1219,6 +1220,7 @@
         if (authoritativeOwnsSelection) {
           merged.activeSessionId = state.activeSessionId;
           merged.audioJobs = state.audioJobs;
+          merged.agentAudioTapListeners = state.agentAudioTapListeners;
           merged.midiContinuation = state.midiContinuation;
           merged.events = state.events;
           merged.pendingAttachments = state.pendingAttachments;
@@ -1230,6 +1232,7 @@
         } else {
           merged.activeSessionId = current.activeSessionId;
           merged.audioJobs = current.audioJobs;
+          merged.agentAudioTapListeners = current.agentAudioTapListeners;
           merged.midiContinuation = current.midiContinuation;
           merged.events = current.events;
           merged.pendingAttachments = current.pendingAttachments;
@@ -1262,6 +1265,9 @@
         ) {
           if (sameJsonValue(current.audioJobs, baseline.audioJobs) || contextCutOrder > 0) {
             merged.audioJobs = state.audioJobs;
+          }
+          if (sameJsonValue(current.agentAudioTapListeners, baseline.agentAudioTapListeners) || contextCutOrder > 0) {
+            merged.agentAudioTapListeners = state.agentAudioTapListeners;
           }
           if (sameJsonValue(current.midiContinuation, baseline.midiContinuation) || contextCutOrder > 0) {
             merged.midiContinuation = state.midiContinuation;

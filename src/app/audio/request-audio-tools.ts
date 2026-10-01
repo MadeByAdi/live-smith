@@ -20,6 +20,7 @@ import { ToolRegistry } from "../../plugins/registry.js";
 import { listPluginAudioArtifacts, readSessionAudioArtifact, readExpectedSessionAudioArtifact, type SessionAudioArtifact } from "../../storage/audio-artifacts.js";
 import { loadSessionEvents } from "../../storage/events.js";
 import { listAudioJobs } from "../../storage/audio-jobs.js";
+import { listSessionAudioArtifacts } from "../../storage/audio-assets.js";
 import { readSessionAttachmentBytes, type AudioSessionAttachmentRef } from "../../storage/attachments.js";
 import { throwIfAborted } from "../../runtime/host.js";
 import {
@@ -95,6 +96,7 @@ export async function createRequestAudioTools(input: {
     await input.onAssets(values);
   };
   await registerAssets(audioAssetsFromJobs(jobs));
+  await registerAssets(await listSessionAudioArtifacts(input.storageDirectory, input.sessionId));
   await registerAssets(await listPluginAudioArtifacts(input.storageDirectory, input.sessionId));
   const processing: AudioProcessingContext = {
     storageDirectory: input.storageDirectory, sessionId: input.sessionId,

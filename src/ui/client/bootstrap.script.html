@@ -1133,6 +1133,64 @@
           hostAdapter.closeWithResult({ kind: "close" });
         }
 
+        async function captureMainForAnalysis() {
+          if (bridgeClient.isOperationInProgress() || bridgeClient.hasAnySendInProgress()) return false;
+          const accepted = await confirmAction({
+            title: window.LiveSmithI18n.message("Capture Main for analysis?"),
+            message: window.LiveSmithI18n.message("Smith will capture the current bounded Arrangement selection automatically. Live must be stopped first. The resulting Main capture stays in this Session for approved analysis only."),
+            acceptLabel: window.LiveSmithI18n.message("Capture Main"),
+          });
+          if (!accepted) return false;
+          return bridgeClient.runCommand("capture_main_for_analysis", {
+            sessionId: getState().activeSessionId,
+          }, { cancellable: true });
+        }
+
+        async function captureListenerForAnalysis(tapId, trackName) {
+          if (bridgeClient.isOperationInProgress() || bridgeClient.hasAnySendInProgress()) return false;
+          const accepted = await confirmAction({
+            title: window.LiveSmithI18n.message(`Capture ${trackName} for analysis?`),
+            message: window.LiveSmithI18n.message(`Smith will capture the current bounded Arrangement selection automatically from ${trackName}. Live must be stopped first.`),
+            acceptLabel: window.LiveSmithI18n.message("Capture"),
+          });
+          if (!accepted) return false;
+          return bridgeClient.runCommand("capture_listener_for_analysis", {
+            sessionId: getState().activeSessionId, tapId,
+          }, { cancellable: true });
+        }
+
+        function currentBoundedArrangementRange() {
+          const state = getState();
+          const context = state.liveContext;
+          if (context?.sessionId !== state.activeSessionId || context.availability !== "available") return null;
+          const range = context.value?.range;
+          if (!range || !Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end <= range.start) return null;
+          return range;
+        }
+
+        function captureListenerDisabledReason(listener) {
+          if (!listener || !listener.tapId) return t("No live listener is available.");
+          if (!currentBoundedArrangementRange()) return t("Automatic listening requires a valid bounded Arrangement selection.");
+          return "";
+        }
+
+        function renderAgentAudioTapListeners() {
+          const shell = document.getElementById("agentAudioTapListeners");
+          if (!shell) return;
+          const listeners = Array.isArray(getState().agentAudioTapListeners) ? getState().agentAudioTapListeners : [];
+          shell.replaceChildren(...listeners.filter((listener) => listener.trackType !== "main").map((listener) => {
+            const button = document.createElement("button");
+            button.type = "button"; button.className = "secondary composer-control";
+            button.textContent = `Capture ${listener.trackName}`;
+            const disabledReason = captureListenerDisabledReason(listener);
+            button.title = disabledReason || `Capture ${listener.trackName} for analysis`;
+            button.setAttribute("aria-label", disabledReason ? `Capture ${listener.trackName} unavailable: ${disabledReason}` : `Capture ${listener.trackName} for analysis`);
+            button.disabled = Boolean(disabledReason);
+            button.addEventListener("click", () => captureListenerForAnalysis(listener.tapId, listener.trackName));
+            return button;
+          }));
+        }
+
         function renderProfileStateProjection() {
           profileEditor.retryPendingCatalogApply();
           profileEditor.renderOAuthAuthState(profileSettingsLocked);
@@ -1380,6 +1438,7 @@
           renderContextSummary(getState().contextSummary || "");
           renderSessionShortcuts();
           renderComposerRuntimeControls();
+          renderAgentAudioTapListeners();
           renderSendPresentation();
           renderComposerContextUsage();
           renderContextAttachments();
@@ -1912,6 +1971,7 @@
           handleModelConfigSelection: profileEditor.handleModelConfigSelection,
           handleWebSearchChange: profileEditor.handleWebSearchChange,
           handleSendButton: bridgeClient.handleSendButton,
+          captureMainForAnalysis,
           markDraftDirty: profileEditor.markDraftDirty,
           addManualModel: profileEditor.addManualModel,
           logoutOAuth: profileEditor.logoutOAuth,

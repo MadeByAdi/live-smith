@@ -110,6 +110,10 @@ export interface ChatDialogState {
   integrationConnections?: IntegrationConnectionsView;
   audioJobs?: AudioJobView[];
   midiContinuation?: MidiContinuationView;
+  /** Fresh, local AgentAudioTap proof listeners; never persisted as Session state. */
+  agentAudioTapListeners?: Array<{
+    tapId: string; trackName: string; trackType: "main" | "group" | "track" | "return";
+  }>;
   /** Imported website-session evidence, not a generation capability or credential. */
   sunoAccounts?: SunoAccountView[];
   /** Modal-only catalog for one saved connection; omission clears prior results. */

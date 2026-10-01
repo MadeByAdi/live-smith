@@ -5,6 +5,68 @@ import { commandCalls, createDialogHarness, pendingAudio, pendingImage } from ".
 import { audioState, service, musicService, sunoService, job, broadcast,
   integrationConnectionView, selectedAudioService } from "../support/chat-dialog.audio-test-helpers.js";
 
+test("Capture Main asks for explicit approval before starting the bounded Session capture", async () => {
+  const state = audioState();
+  const harness = await createDialogHarness(state);
+  try {
+    harness.click("#captureMainForAnalysisButton");
+    await harness.settle();
+    assert.equal(commandCalls(harness).some((call) => (call.body as { kind?: string }).kind === "capture_main_for_analysis"), false);
+    await harness.acceptAppConfirmation();
+    await harness.settle();
+    assert.deepEqual(commandCalls(harness).at(-1)?.body, {
+      kind: "capture_main_for_analysis", sessionId: state.activeSessionId,
+    });
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
+test("Capture Song stays enabled from the listener registry and bounded Arrangement range", async () => {
+  const state = audioState();
+  state.liveContext = {
+    sessionId: state.activeSessionId,
+    availability: "available",
+    value: { origin: "arrangement-selection", objectKind: "other", title: "Arrangement selection",
+      range: { coordinate: "arrangement-beats", start: 320, end: 336 }, details: [] },
+  };
+  state.agentAudioTapListeners = [
+    { tapId: "tap_1a0eff33645_6db3925", trackName: "Song", trackType: "group" },
+    { tapId: "tap_1a0eff30af0_5c8513b3", trackName: "Main", trackType: "main" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const song = [...harness.document.querySelectorAll<HTMLButtonElement>("#agentAudioTapListeners button")]
+      .find((button) => button.textContent === "Capture Song");
+    assert.ok(song);
+    assert.equal(song.disabled, false);
+    song.click();
+    await harness.settle();
+    assert.equal(commandCalls(harness).some((call) => (call.body as { kind?: string }).kind === "capture_listener_for_analysis"), false);
+    await harness.acceptAppConfirmation();
+    await harness.settle();
+    assert.deepEqual(commandCalls(harness).at(-1)?.body, {
+      kind: "capture_listener_for_analysis", sessionId: state.activeSessionId, tapId: "tap_1a0eff33645_6db3925",
+    });
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
+test("Capture Song explains when a bounded Arrangement range is unavailable", async () => {
+  const state = audioState();
+  state.agentAudioTapListeners = [
+    { tapId: "tap_1a0eff33645_6db3925", trackName: "Song", trackType: "group" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const song = harness.document.querySelector<HTMLButtonElement>("#agentAudioTapListeners button")!;
+    assert.equal(song.textContent, "Capture Song");
+    assert.equal(song.disabled, true);
+    assert.match(song.title, /valid bounded Arrangement selection/u);
+    assert.match(song.getAttribute("aria-label") ?? "", /unavailable/u);
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
 test("generated music, alternatives and sound effects show their bound service, operation and local players", async () => {
   const state = audioState([service, musicService, sunoService]);
   const source = job(state.activeSessionId).outputs[0]!;

@@ -163,6 +163,11 @@ export type AgentObservationRequest =
       startBeat: number;
       endBeat: number;
     }
+  | {
+      type: "capture_agent_audio_tap";
+      listenerName?: string;
+      tapId?: string;
+    }
   | ({ type: "inspect_song_info" } & ObservationItemPage);
 
 export function observationRequestForAction(

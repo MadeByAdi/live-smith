@@ -270,6 +270,24 @@ export function liveSmithTools(options: {
         )]
       : []),
     observationTool(
+      "capture_agent_audio_tap",
+      "Capture one live AgentAudioTap listener over the current bounded Arrangement selection and save it as an opaque same-Session audio artifact. Use this for explicit user listening/capture requests such as Listen to Song, Capture Main, Listen to Vocals, or Analyze Main for this section. Do not answer that live listening or Main capture is impossible when this tool and a matching live listener are available. Resolve the target from the read-only Live AgentAudioTap listeners context; pass an exact listenerName or exact tapId. If the requested listener is ambiguous, unavailable, stale, or no bounded Arrangement selection exists, this tool fails safely instead of guessing. Never expose filesystem paths.",
+      {
+        listenerName: {
+          type: "string",
+          minLength: 1,
+          description:
+            "Exact current track/listener name from the Live AgentAudioTap listeners context, for example Main or Song. If multiple live listeners share this name, the tool will fail and you must ask the user to clarify.",
+        },
+        tapId: {
+          type: "string",
+          pattern: "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          description:
+            "Optional exact stable tapId from the Live AgentAudioTap listeners context. Use this when the listener identity is explicit or a duplicate name would be ambiguous.",
+        },
+      },
+    ),
+    observationTool(
       "inspect_song_info",
       "Inspect song-level settings plus a paged list of zero-based Session View Scene indexes and Arrangement Cue Points. Follow nextOffset until the target Scene or Cue Point is visible.",
       itemPageProperties(),

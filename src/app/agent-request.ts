@@ -160,6 +160,14 @@ import {
   estimateTransportContextTokens,
   resolveAutoCompactTokenLimit,
 } from "./context/context-compaction.js";
+import { formatSessionAudioArtifactsForReasoning } from "./audio-artifact-context.js";
+import {
+  captureSessionArrangementWithAgentAudioTap,
+  discoverAgentAudioTapListeners,
+  resolveAgentAudioTapCaptureTarget,
+  type AgentAudioTapArrangementWindow,
+  type AgentAudioTapCaptureLifecycleResult,
+} from "./agent-audio-tap.js";
 
 type Api = ExtensionContext<"1.0.0">;
 const maxConsecutiveInvalidToolCalls = 3;
@@ -449,6 +457,11 @@ export async function handleAgentRequest(
   const requestLiveContext = prepared.recoveryContext
     ? `${interaction.summary}\n\n${prepared.recoveryContext}`
     : interaction.summary;
+  const requestLiveContextWithListeners = [
+    requestLiveContext,
+    callbacks.agentAudioTapListenerContext,
+    await formatSessionAudioArtifactsForReasoning(storageDirectory, session.id),
+  ].filter((section) => section !== undefined && section.trim().length > 0).join("\n\n");
   const autoCompactTokenLimit = resolveAutoCompactTokenLimit(runtimeProfile);
   const maybeCompactContext = async (
     agentMessages: Parameters<typeof buildModelRequest>[0]["agentMessages"],
@@ -460,7 +473,7 @@ export async function handleAgentRequest(
     const activeAgentMessages = agentMessages.slice(compactedAgentMessageCount);
     const estimatedTokens = estimateTransportContextTokens(buildModelRequest({
       prompt: activePrompt,
-      liveContext: requestLiveContext,
+      liveContext: requestLiveContextWithListeners,
       runtimeProfile,
       history: activeHistory,
       attachmentParts: activeAttachmentParts,
@@ -490,7 +503,7 @@ export async function handleAgentRequest(
     await callbacks.onProgress("Compacting conversation context");
     const checkpoint = await createConversationCheckpoint({
       prompt: activePrompt,
-      liveContext: requestLiveContext,
+      liveContext: requestLiveContextWithListeners,
       runtimeProfile,
       history: activeHistory,
       attachmentParts: activeAttachmentParts,
@@ -738,7 +751,7 @@ export async function handleAgentRequest(
             request: async ({ markResponseStarted, reconnectState }) => {
               const requestInput: Omit<ModelTurnRequestInput, "turnExecutor"> = {
                 prompt: activePrompt,
-                liveContext: requestLiveContext,
+                liveContext: requestLiveContextWithListeners,
                 runtimeProfile,
                 history: activeHistory,
                 attachmentParts: activeAttachmentParts,
@@ -828,6 +841,54 @@ export async function handleAgentRequest(
         return turn;
       },
       observe: async (request) => {
+        if (request.type === "capture_agent_audio_tap") {
+          if (!storageDirectory) throw new Error("AgentAudioTap capture storage is unavailable.");
+          const window = arrangementCaptureWindowFromInteraction(interaction);
+          if (!window) {
+            throw new Error("Automatic listening requires a valid bounded Arrangement selection.");
+          }
+          const discoverListeners = callbacks.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners;
+          const listeners = await discoverListeners();
+          const { listener, target } = resolveAgentAudioTapCaptureTarget(listeners, {
+            ...(request.listenerName === undefined ? {} : { listenerName: request.listenerName }),
+            ...(request.tapId === undefined ? {} : { tapId: request.tapId }),
+          });
+          const capture = await captureSessionArrangementWithAgentAudioTap({
+            storageDirectory,
+            sessionId: session.id,
+            signal: callbacks.signal,
+            target,
+            window,
+            onProgress: (message) => callbacks.onProgress(message),
+            discoverListeners,
+            ...(callbacks.captureArrangementWithAgentAudioTap === undefined
+              ? {}
+              : { capture: callbacks.captureArrangementWithAgentAudioTap }),
+            onLifecycleResult: async (result: AgentAudioTapCaptureLifecycleResult) => {
+              try {
+                const event = await appendTraceEvent(storageDirectory, session.id, {
+                  kind: "tool_result",
+                  name: "AgentAudioTap capture lifecycle",
+                  content: JSON.stringify(result),
+                });
+                await callbacks.onSessionEvent(event);
+              } catch { /* Diagnostics never alter capture behavior. */ }
+            },
+          });
+          return JSON.stringify({
+            artifactRef: capture.artifactRef,
+            captureId: capture.captureId,
+            listener: {
+              tapId: listener.tapId,
+              trackName: capture.listener.trackName,
+              trackType: capture.listener.trackType,
+              canonicalParent: capture.listener.canonicalParent,
+            },
+            range: { startBeat: window.startBeat, endBeat: window.endBeat },
+            durationSeconds: capture.durationSeconds,
+            channels: capture.channels,
+          });
+        }
         if (request.type === "stage_arrangement_audio_artifact") {
           if (!pluginTools.hasApprovedAudioArtifactInput) {
             throw new Error(
@@ -1292,6 +1353,10 @@ interface AgentRequestCallbacks {
   skillContextSnapshot?: ResolvedSkillContext;
   /** Global user-authored preferences captured atomically for this send. */
   customInstructionsSnapshot?: string;
+  /** Read-only compact AgentAudioTap listener registry snapshot for model reasoning. */
+  agentAudioTapListenerContext?: string;
+  discoverAgentAudioTapListeners?: typeof discoverAgentAudioTapListeners;
+  captureArrangementWithAgentAudioTap?: Parameters<typeof captureSessionArrangementWithAgentAudioTap>[0]["capture"];
   steering?: SteeringChannel;
   steeringSendId?: string;
   onDelta(delta: string): Promise<void> | void;
@@ -1347,6 +1412,20 @@ async function resolvePendingAttachmentRefs(
     }
     return sessionAttachmentRefFromStored(attachment);
   });
+}
+
+function arrangementCaptureWindowFromInteraction(
+  interaction: LiveInteractionContext,
+): AgentAudioTapArrangementWindow | undefined {
+  const range = interaction.presentation.origin === "arrangement-selection"
+    ? interaction.presentation.range
+    : undefined;
+  if (range?.coordinate !== "arrangement-beats" ||
+    !Number.isFinite(range.start) || !Number.isFinite(range.end) ||
+    range.start < 0 || range.end <= range.start) {
+    return undefined;
+  }
+  return { startBeat: range.start, endBeat: range.end };
 }
 async function appendAgentLoopTraceEvent(
   storageDirectory: string | undefined,

@@ -15,6 +15,7 @@ import {
   objectInteractionContext,
 } from "./live/context.js";
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
+import { openChatInSystemBrowser } from "./runtime/chat-browser.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
@@ -97,7 +98,7 @@ async function askAboutObject(
   await runAgentFlow(
     context,
     objectInteractionContext(context, handle),
-    { liveMutationQueue, openOAuthAuthorizationUrl },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }
 
@@ -109,7 +110,7 @@ async function askAboutArrangementSelection(
   await runAgentFlow(
     context,
     arrangementSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }
 
@@ -121,6 +122,6 @@ async function askAboutClipSlotSelection(
   await runAgentFlow(
     context,
     clipSlotSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }

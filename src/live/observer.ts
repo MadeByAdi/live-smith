@@ -135,6 +135,8 @@ export async function observeLive(
   signal?: AbortSignal,
 ): Promise<string> {
   switch (request.type) {
+    case "capture_agent_audio_tap":
+      throw new Error("AgentAudioTap capture is handled by the Smith Session capture backend, not the Live observer.");
     case "inspect_live_set":
       return summarizeLiveSet(context);
     case "inspect_current_object":

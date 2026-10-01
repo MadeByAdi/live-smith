@@ -162,16 +162,25 @@ export interface AudioGenerationAdapter {
 }
 
 export interface AudioOrigin {
-  kind: "attachment" | "arrangement" | "asset" | "generated";
+  kind: "attachment" | "arrangement" | "asset" | "generated" | "agent_audio_tap";
   /** Arrangement position of the rendered snapshot, not a live target binding. */
   startBeat?: number;
   endBeat?: number;
   tempo?: number;
   sourceAssetId?: string;
+  /** Opaque capture receipt created by the upstream AgentAudioTap command protocol. */
+  captureId?: string;
+  scope?: "main" | "listener";
+  tapPosition?: "main_insertion_point" | "track_insertion_point";
+  tapId?: string;
+  trackName?: string;
+  trackType?: "main" | "group" | "track" | "return";
+  canonicalParent?: string;
+  windowId?: string;
 }
 
 export type AudioJobAssetRole = AudioOutputRole;
-export type AudioAssetRole = AudioJobAssetRole | "arrangement_render";
+export type AudioAssetRole = AudioJobAssetRole | "arrangement_render" | "agent_audio_tap";
 
 export interface AudioAsset {
   id: string;

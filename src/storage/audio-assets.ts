@@ -147,6 +147,56 @@ export async function saveArrangementAudioArtifact(
 }
 
 /**
+ * R&D-only ingress for a finalized stereo Main capture produced by the
+ * unchanged upstream AgentAudioTap.  The caller owns the command protocol;
+ * this boundary only admits immutable verified bytes into the Session store.
+ */
+export async function saveAgentAudioTapArtifact(
+  storageDirectory: string | undefined,
+  sessionId: string,
+  input: { label: string; bytes: Uint8Array; captureId: string; origin?: AudioOrigin; signal: AbortSignal; minimumDurationSeconds?: number },
+): Promise<AudioAsset> {
+  requireAudioStorage(storageDirectory, sessionId);
+  requireSafeStorageId(input.captureId, "AgentAudioTap capture ID");
+  throwIfAborted(input.signal);
+  if (!audioRecordHasOnly(input, ["label", "bytes", "captureId", "origin", "signal", "minimumDurationSeconds"]) ||
+      !types.isUint8Array(input.bytes) || input.bytes.byteLength > MAX_AUDIO_ASSET_BYTES) {
+    throw new AudioStorageError("AgentAudioTap artifacts must be valid bounded audio.");
+  }
+  if (input.minimumDurationSeconds !== undefined &&
+    (!Number.isFinite(input.minimumDurationSeconds) || input.minimumDurationSeconds < 0 || input.minimumDurationSeconds > 60)) {
+    throw new AudioStorageError("AgentAudioTap minimum duration is invalid.");
+  }
+  const bytes = new Uint8Array(input.bytes);
+  const inspection = await inspectAudioAttachment({ bytes, signal: input.signal, limits: audioAssetInspectionLimits });
+  if (inspection.channels !== 2) throw new AudioStorageError("AgentAudioTap Main captures must be stereo.");
+  if (input.minimumDurationSeconds !== undefined && inspection.durationSeconds < input.minimumDurationSeconds) {
+    throw new AudioStorageError("AgentAudioTap capture is too short for the requested Arrangement window.");
+  }
+  const asset: AudioAsset = {
+    id: createStorageId("audio_artifact"), sessionId, role: "agent_audio_tap",
+    label: input.label, origin: input.origin ?? { kind: "agent_audio_tap", captureId: input.captureId,
+      scope: "main", tapPosition: "main_insertion_point" },
+    byteLength: bytes.byteLength, sha256: hashBytes(bytes), ...inspection,
+  };
+  if (!isAudioAsset(asset)) throw new AudioStorageError("AgentAudioTap artifact metadata is invalid.");
+  assertAudioJsonSize(asset, MAX_AUDIO_ASSET_METADATA_BYTES);
+  return withStorageTransaction(storageDirectory, async (transaction) => {
+    await requireAudioSession(storageDirectory, sessionId, transaction);
+    const directory = (await bindAudioDirectory(storageDirectory, sessionId, true))!;
+    if (await storedAudioBytes(directory) + asset.byteLength > MAX_AUDIO_SESSION_BYTES) {
+      throw new AudioStorageError("This Session has reached its 1 GiB audio storage limit.");
+    }
+    await assertAudioDirectory(directory);
+    await writeJsonAtomicallyCreateOnly(path.join(directory.directory, `${asset.id}.asset.json`), asset);
+    await assertAudioDirectory(directory);
+    await writeBytesAtomicallyCreateOnly(path.join(directory.directory, `${asset.id}.audio`), bytes);
+    await assertAudioDirectory(directory);
+    return asset;
+  });
+}
+
+/**
  * Called while the app owns the complete same-Session send/command fence. The
  * checked budget therefore cannot be consumed by another supported Session
  * operation before this request saves its results. File writes recheck quota.
@@ -178,7 +228,7 @@ export async function readAudioAsset(
   const directory = await bindAudioDirectory(storageDirectory, sessionId);
   const asset = directory && await readAudioAssetRecord(directory, sessionId, assetId);
   if (!asset || !directory) throw new AudioStorageError("The audio asset does not exist in this Session.");
-  if (asset.role !== "arrangement_render") {
+  if (asset.role !== "arrangement_render" && asset.role !== "agent_audio_tap") {
     if (!asset.jobId) throw new AudioStorageError();
     const job = await loadAudioJob(storageDirectory, sessionId, asset.jobId);
     if (!audioJobOwnsAssetRole(job, asset.role)) throw new AudioStorageError();
@@ -232,6 +282,29 @@ export async function listArrangementAudioArtifacts(
   return artifacts.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/**
+ * Lists generic read-only Session artifacts that are deliberately outside the
+ * audio-job model. They remain immutable, Session-bound, and verified before
+ * any consumer resolves them.
+ */
+export async function listSessionAudioArtifacts(
+  storageDirectory: string | undefined,
+  sessionId: string,
+): Promise<AudioAsset[]> {
+  requireAudioStorage(storageDirectory, sessionId);
+  await requireAudioSession(storageDirectory, sessionId);
+  const directory = await bindAudioDirectory(storageDirectory, sessionId);
+  if (!directory) return [];
+  const artifacts: AudioAsset[] = [];
+  for (const name of await audioDirectoryEntries(directory)) {
+    if (!name.endsWith(".asset.json")) continue;
+    const asset = await readAudioAssetRecord(directory, sessionId, name.slice(0, -11));
+    if ((asset?.role === "arrangement_render" || asset?.role === "agent_audio_tap") &&
+      await hasAudioBlob(directory, asset)) artifacts.push(asset);
+  }
+  return artifacts.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 /** One verified snapshot for callers that need both jobs and recoverable assets. */
 export async function readAudioSessionState(
   storageDirectory: string, sessionId: string,
@@ -257,7 +330,7 @@ async function listAssetsForJobs(
     if (wanted && !wanted.has(id)) continue;
     // Job loading already verified committed metadata against the job snapshot.
     const asset = committed.get(id) ?? await readAudioAssetRecord(directory, sessionId, id);
-    if (asset?.role === "arrangement_render") continue;
+    if (asset?.role === "arrangement_render" || asset?.role === "agent_audio_tap") continue;
     const job = asset?.jobId === undefined ? undefined : byJobId.get(asset.jobId);
     if (!asset || !job || !audioJobOwnsAssetRole(job, asset.role)) throw new AudioStorageError();
     if (await hasAudioBlob(directory, asset)) assets.push(asset);

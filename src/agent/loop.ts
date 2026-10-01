@@ -1650,6 +1650,7 @@ function observationCoversRecovery(
       return true;
     case "read_arrangement_audio":
     case "stage_arrangement_audio_artifact":
+    case "capture_agent_audio_tap":
       return false;
     case "inspect_song_info":
       return actual.type === "inspect_song_info" && (
@@ -1989,6 +1990,18 @@ function observationRequestFromToolCall(
       }
       return request;
     }
+    case "capture_agent_audio_tap": {
+      assertOnlyKeys(args, ["listenerName", "tapId"], `${toolCall.name} arguments`);
+      const request = {
+        type: "capture_agent_audio_tap" as const,
+        ...optionalStringProp(args.listenerName, "listenerName"),
+        ...optionalStringProp(args.tapId, "tapId"),
+      } as Extract<AgentObservationRequest, { type: "capture_agent_audio_tap" }>;
+      if (request.listenerName === undefined && request.tapId === undefined) {
+        throw new Error("capture_agent_audio_tap requires listenerName or tapId.");
+      }
+      return request;
+    }
     case "inspect_song_info":
       assertOnlyKeys(args, observationItemPageKeys, `${toolCall.name} arguments`);
       return { type: "inspect_song_info", ...observationItemPageProps(args) };
@@ -2092,6 +2105,7 @@ function isObservationTool(name: string): boolean {
     name === "analyze_audio_clip" ||
     name === "read_arrangement_audio" ||
     name === "stage_arrangement_audio_artifact" ||
+    name === "capture_agent_audio_tap" ||
     name === "inspect_song_info"
   );
 }

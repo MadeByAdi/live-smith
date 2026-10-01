@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeGuitarPlayability, fretMappingsForPitch, STANDARD_GUITAR_OPEN_PITCHES } from "./guitar-playability.js";
+import { analyzeGuitarPlayability, fretMappingsForPitch, STANDARD_GUITAR_OPEN_PITCHES } from "../../src/live/guitar-playability.js";
 
 const report = (notes: Array<{ pitch: number; startTime: number; duration: number }>, maxFretSpan?: number) => analyzeGuitarPlayability({ notes, ...(maxFretSpan === undefined ? {} : { maxFretSpan }) });
 

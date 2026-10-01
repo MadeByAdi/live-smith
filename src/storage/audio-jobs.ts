@@ -461,10 +461,28 @@ export function audioAssetId(jobId: string, role: AudioAssetRole): string {
 }
 
 export function isAudioOrigin(value: unknown): value is AudioOrigin {
-  if (!audioRecordHasOnly(value, ["kind", "startBeat", "endBeat", "tempo", "sourceAssetId"]) ||
-    !["attachment", "arrangement", "asset", "generated"].includes(value.kind as string)) return false;
+  if (!audioRecordHasOnly(value, ["kind", "startBeat", "endBeat", "tempo", "sourceAssetId", "captureId", "scope", "tapPosition", "tapId", "trackName", "trackType", "canonicalParent", "windowId"]) ||
+    !["attachment", "arrangement", "asset", "generated", "agent_audio_tap"].includes(value.kind as string)) return false;
   if (value.kind === "generated") return audioRecordHasOnly(value, ["kind", "sourceAssetId"]) &&
     (!Object.hasOwn(value, "sourceAssetId") || isSafeStorageId(value.sourceAssetId));
+  if (value.kind === "agent_audio_tap") {
+    if (!isSafeStorageId(value.captureId)) return false;
+    const hasStart = Object.hasOwn(value, "startBeat");
+    const hasEnd = Object.hasOwn(value, "endBeat");
+    if (hasStart !== hasEnd) return false;
+    if ((hasStart || hasEnd) && (
+      typeof value.startBeat !== "number" || typeof value.endBeat !== "number" ||
+      !Number.isFinite(value.startBeat) || !Number.isFinite(value.endBeat) ||
+      value.startBeat < 0 || value.endBeat <= value.startBeat
+    )) return false;
+    const rangeKeys = hasStart ? ["startBeat", "endBeat"] as const : [] as const;
+    if (value.scope === "main") return audioRecordHasOnly(value, ["kind", "captureId", "scope", "tapPosition", ...rangeKeys]) &&
+      value.tapPosition === "main_insertion_point";
+    return audioRecordHasOnly(value, ["kind", "captureId", "scope", "tapPosition", "tapId", "trackName", "trackType", "canonicalParent", "windowId", ...rangeKeys]) &&
+      value.tapPosition === "track_insertion_point" && isSafeStorageId(value.tapId) &&
+      boundedAudioText(value.trackName, 256) && ["main", "group", "track", "return"].includes(value.trackType as string) &&
+      boundedAudioText(value.canonicalParent, 512) && isSafeStorageId(value.windowId);
+  }
   for (const field of ["startBeat", "endBeat", "tempo"] as const) {
     if (Object.hasOwn(value, field) &&
       (typeof value[field] !== "number" || !Number.isFinite(value[field]) || value[field] < 0)) return false;
@@ -488,6 +506,11 @@ export function isAudioAsset(value: unknown): value is AudioAsset {
   if (value.role === "arrangement_render") {
     return !Object.hasOwn(value, "jobId") && isSafeStorageId(value.id) &&
       value.id.startsWith("audio_artifact_") && value.origin.kind === "arrangement" &&
+      !Object.hasOwn(value, "version");
+  }
+  if (value.role === "agent_audio_tap") {
+    return !Object.hasOwn(value, "jobId") && isSafeStorageId(value.id) &&
+      value.id.startsWith("audio_artifact_") && value.origin.kind === "agent_audio_tap" &&
       !Object.hasOwn(value, "version");
   }
   return isSafeStorageId(value.jobId) &&

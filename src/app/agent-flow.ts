@@ -30,6 +30,11 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 import { audioJobViews, resumeAudioJob } from "./audio/audio-processing.js";
 import { downloadAudioOutput } from "./audio/audio-generation.js";
 import { audioMessage as m } from "./audio/audio-messages.js";
+import {
+  captureArrangementWithAgentAudioTap,
+  discoverAgentAudioTapListeners,
+  formatAgentAudioTapListenersForReasoning,
+} from "./agent-audio-tap.js";
 import { uiMessage, type UiMessage } from "../i18n/ui-message.js";
 import { SunoSessionManager } from "./audio/suno/suno-session-manager.js";
 import { SunoModelCatalog } from "./audio/suno/suno-model-catalog.js";
@@ -274,6 +279,9 @@ export interface AgentFlowDependencies extends DialogModelStateDependencies {
   verifySunoSession?: SunoSessionVerifier;
   readSunoMusicService?: typeof readSunoMusicService;
   downloadAudioOutput?: typeof downloadAudioOutput;
+  /** Test seams; production uses the bounded AgentAudioTap command-file adapter. */
+  captureArrangementWithAgentAudioTap?: typeof captureArrangementWithAgentAudioTap;
+  discoverAgentAudioTapListeners?: typeof discoverAgentAudioTapListeners;
   appendSessionEvent?: typeof appendSessionEvent;
   deleteSession?: typeof deleteSession;
   getOrCreateDefaultSession?: typeof getOrCreateDefaultSession;
@@ -732,6 +740,8 @@ export async function runAgentFlow(
         ? undefined
         : modelState.authProjection(modelAuthScope);
       const audioJobs = await audioJobViews(storageDirectory, activeSession.id);
+      const agentAudioTapListeners = await (dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners)()
+        .catch(() => []);
       const sunoAccounts = await sunoSessions.views(settings.integrationConnections?.connections ?? []);
       const catalog = await sunoModelCatalog.view(settings.integrationConnections?.revision);
       throwIfAborted(signal);
@@ -763,6 +773,9 @@ export async function runAgentFlow(
         ...(settings.integrationConnections ? { integrationConnections: integrationConnectionsView(settings.integrationConnections) } : {}),
         mcpOAuthStates: await mcpOAuthStates(storageDirectory),
         audioJobs,
+        agentAudioTapListeners: agentAudioTapListeners.map(({ tapId, trackName, trackType }) => ({
+          tapId, trackName, trackType,
+        })),
         sunoAccounts,
         ...(catalog === undefined ? {} : { sunoModelCatalog: catalog }),
         availableSkills: storageSnapshot.availableSkills,
@@ -2328,6 +2341,58 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation(undefined, { signal });
     }
 
+    if (commandInput.kind === "capture_main_for_analysis" || commandInput.kind === "capture_listener_for_analysis") {
+      return withNamedSessionMutation(commandInput.sessionId, "agent-audio-tap-capture", signal, async () => {
+        try {
+          const session = await attachmentSession(commandInput.sessionId);
+          if (!storageDirectory) {
+            throw new Error("AgentAudioTap capture storage is unavailable.");
+          }
+          const activeInteraction = resolveSessionInteraction(session);
+          const selectionRange = activeInteraction?.presentation.origin === "arrangement-selection"
+            ? activeInteraction.presentation.range
+            : undefined;
+          const range = selectionRange?.coordinate === "arrangement-beats" ? selectionRange : undefined;
+          const capture = await captureSessionArrangementWithAgentAudioTap({
+            storageDirectory,
+            sessionId: commandInput.sessionId,
+            signal,
+            onProgress: (message) => commandContext.progress(message),
+            target: commandInput.kind === "capture_listener_for_analysis"
+              ? { kind: "listener", tapId: commandInput.tapId }
+              : { kind: "main" },
+            window: range === undefined ? undefined : { startBeat: range.start, endBeat: range.end },
+            discoverListeners: dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners,
+            capture: dependencies.captureArrangementWithAgentAudioTap ?? captureArrangementWithAgentAudioTap,
+            onLifecycleResult: async (result) => {
+              try {
+                await (dependencies.appendSessionEvent ?? appendSessionEvent)(storageDirectory, commandInput.sessionId, {
+                  kind: "tool_result",
+                  name: "AgentAudioTap capture lifecycle",
+                  content: JSON.stringify(result),
+                });
+              } catch { /* Diagnostics never alter capture behavior. */ }
+            },
+          });
+          status = uiMessage("{name} capture saved for analysis ({seconds} seconds).", {
+            name: capture.listener.trackName,
+            seconds: Math.round(capture.durationSeconds),
+          });
+        } catch (error) {
+          if (!signal.aborted) throw error;
+          const state = await buildStateAfterCommandMutation(undefined, {
+            heldSessionId: commandInput.sessionId, sessionMutationHeld: true,
+          });
+          throw new ChatBridgeCommandStoppedError(state);
+        } finally {
+          notifySessionStateChanged(commandInput.sessionId);
+        }
+        return buildStateAfterCommandMutation(undefined, {
+          heldSessionId: commandInput.sessionId, sessionMutationHeld: true,
+        });
+      });
+    }
+
     if (commandInput.kind === "resume_audio_job" || commandInput.kind === "download_audio_output") {
       return withNamedSessionMutation(commandInput.sessionId, "audio-job", signal, async () => {
         try {
@@ -3012,6 +3077,10 @@ export async function runAgentFlow(
         let requestFailed = false;
         let requestError: unknown;
         try {
+          const discoverAgentAudioTap = dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners;
+          const agentAudioTapListenerContext = formatAgentAudioTapListenersForReasoning(
+            await discoverAgentAudioTap().catch(() => []),
+          );
           await handleAgentRequest(
             context,
             storageDirectory,
@@ -3028,6 +3097,11 @@ export async function runAgentFlow(
               customInstructionsSnapshot:
                 requestSnapshot.settings.customInstructions,
               steering,
+              agentAudioTapListenerContext,
+              discoverAgentAudioTapListeners: discoverAgentAudioTap,
+              ...(dependencies.captureArrangementWithAgentAudioTap === undefined
+                ? {}
+                : { captureArrangementWithAgentAudioTap: dependencies.captureArrangementWithAgentAudioTap }),
               ...(sendContext.attachmentIds === undefined ? {} : { attachmentIds: sendContext.attachmentIds }),
               withAttachmentMutation: (operation) => withAttachmentMutation(session.id, signal, operation),
               steeringSendId: sendContext.sendId,

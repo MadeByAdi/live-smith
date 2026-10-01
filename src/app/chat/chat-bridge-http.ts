@@ -248,6 +248,8 @@ export type ChatBridgeCommandInput =
   | { kind: "export_artifact"; sessionId: string; artifact: ArtifactRef }
   | { kind: "attach_artifact"; sessionId: string; artifact: ArtifactRef }
   | { kind: "open_attachment"; sessionId: string; attachmentId: string }
+  | { kind: "capture_main_for_analysis"; sessionId: string }
+  | { kind: "capture_listener_for_analysis"; sessionId: string; tapId: string }
   | { kind: "open_suno_website" }
   | { kind: "open_suno_platform" }
   | { kind: "import_suno_session"; serviceId: string; sessionValue: string }

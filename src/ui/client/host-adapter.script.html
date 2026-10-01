@@ -16,6 +16,19 @@
               method: "close_and_send",
               params: [JSON.stringify(result)],
             });
+            if (!isWebKit && !isWebView2) {
+              const bridge = window.__LIVE_SMITH_BRIDGE__;
+              if (bridge && bridge.baseUrl) {
+                void fetch(`${bridge.baseUrl}/close`, {
+                  method: "POST",
+                  credentials: "same-origin",
+                  keepalive: true,
+                }).finally(() => {
+                  window.close();
+                  window.location.replace("about:blank");
+                });
+              }
+            }
           },
         };
       })();

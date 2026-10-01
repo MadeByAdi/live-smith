@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MAX_MIDI_EVIDENCE_NOTES, analyzeMidiEvidence } from "./midi-evidence.js";
+import { MAX_MIDI_EVIDENCE_NOTES, analyzeMidiEvidence } from "../../src/live/midi-evidence.js";
 
 const source = {
   trackHandleId: "track-1",

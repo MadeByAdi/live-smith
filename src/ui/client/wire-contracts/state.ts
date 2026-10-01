@@ -48,6 +48,7 @@ export function createStateValidators({ isWireIntegrationConnections, isWireSuno
         "sunoModelCatalog",
         "sessionToolCatalog",
         "audioJobs",
+        "agentAudioTapListeners",
         "midiContinuation",
         "liveContext",
         "sessionContinueTarget",
@@ -94,6 +95,8 @@ export function createStateValidators({ isWireIntegrationConnections, isWireSuno
       (value.sessionToolCatalog !== undefined &&
         !isWireSessionToolCatalog(value.sessionToolCatalog, value.activeSessionId)) ||
       (value.audioJobs !== undefined && !isWireAudioJobs(value.audioJobs, value.activeSessionId)) ||
+      (value.agentAudioTapListeners !== undefined && (!isWireArray(value.agentAudioTapListeners) ||
+        value.agentAudioTapListeners.length > 16 || !value.agentAudioTapListeners.every(isWireAgentAudioTapListener))) ||
       (value.midiContinuation !== undefined && !isWireMidiContinuation(value.midiContinuation, value.activeSessionId)) ||
       !isWireLiveContext(value.liveContext) ||
       !isWireRecord(value.sessionContinueTarget) ||
@@ -242,6 +245,16 @@ export function createStateValidators({ isWireIntegrationConnections, isWireSuno
       ) return false;
     }
     return true;
+  }
+
+  function isWireAgentAudioTapListener(value: unknown): boolean {
+    return isWireRecord(value) &&
+      hasOnlyWireKeys(value, ["tapId", "trackName", "trackType"]) &&
+      isWireStorageId(value.tapId) &&
+      typeof value.trackName === "string" &&
+      value.trackName.length > 0 &&
+      value.trackName.length <= 256 &&
+      includes(["main", "group", "track", "return"], value.trackType);
   }
 
   function wireErrorEnvelopeKind(payload: unknown): "send" | "command" | "global" | null {

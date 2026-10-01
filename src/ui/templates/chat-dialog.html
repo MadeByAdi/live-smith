@@ -83,6 +83,8 @@
             <textarea id="prompt" name="prompt" rows="1" aria-label="Message Live Smith" aria-autocomplete="list" aria-controls="composerAutocomplete" aria-expanded="false" autocomplete="off" spellcheck="true" placeholder="Describe your idea…" data-i18n-placeholder="Describe your idea…" data-i18n-aria-label="Message Live Smith"></textarea>
             <div class="composer-toolbar">
               <div class="composer-live-controls">
+                <button id="captureMainForAnalysisButton" class="secondary composer-control" type="button" title="Capture Main for analysis" aria-label="Capture Main for analysis" onclick="LiveSmithUI.captureMainForAnalysis()">Capture Main for analysis</button>
+                <span id="agentAudioTapListeners" class="composer-live-controls" aria-label="Available audio listeners"></span>
                 <div id="attachmentMenuShell" class="attachment-menu-shell">
                   <button id="attachmentMenuButton" class="attachment-menu-button composer-icon-control" type="button" aria-label="Add attachment" aria-controls="attachmentMenu" aria-describedby="attachmentCapabilityHint" aria-expanded="false" data-i18n-aria-label="Add attachment">+</button>
                   <div id="attachmentMenu" class="attachment-menu floating-surface" aria-label="Attachment options" hidden data-i18n-aria-label="Attachment options">

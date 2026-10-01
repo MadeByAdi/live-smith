@@ -134,19 +134,20 @@ test("opening an Arrangement selection keeps its bounded selection context", asy
           },
         );
         const ordinaryState = await ordinaryResponse.json() as ChatDialogState;
-        assert.match(ordinaryState.contextSummary, /MIDI track "Bass"/);
-        assert.doesNotMatch(ordinaryState.contextSummary, /Arrangement selection/);
+        assert.match(ordinaryState.contextSummary, /Arrangement selection: beats 8 to 16/);
         assert.deepEqual(ordinaryState.liveContext, {
           sessionId: ordinarySession.id,
           availability: "available",
-          value: { origin: "object", objectKind: "track", title: "Bass", details: ["MIDI track"] },
+          value: state.liveContext.value,
         });
 
         track.name = "Bass renamed";
         const refreshedOrdinary = await (
           await fetch(`${chatUrl.origin}/state?token=${token}`)
         ).json() as ChatDialogState;
-        assert.match(refreshedOrdinary.contextSummary, /MIDI track "Bass renamed"/);
+        assert.match(refreshedOrdinary.contextSummary, /Arrangement selection: beats 8 to 16/);
+        assert.equal(refreshedOrdinary.liveContext.availability, "available");
+        assert.deepEqual(refreshedOrdinary.liveContext.value.details, ['MIDI track "Bass renamed"']);
 
         const selectionResponse = await fetch(
           `${chatUrl.origin}/command?token=${token}`,
@@ -187,6 +188,7 @@ test("opening an Arrangement selection keeps its bounded selection context", asy
 
   await runAgentFlow(context as never, interaction, {
     renderHtml: () => "<html></html>",
+    discoverAgentAudioTapListeners: async () => [],
     requestModelTurn: async (request) => {
       modelLiveContext = request.liveContext;
       return { content: "Selection received.", toolCalls: [] };
@@ -256,11 +258,10 @@ test("restoring a historical Session binds only that Session to the current sele
           }),
         });
         const ordinary = await ordinaryResponse.json() as ChatDialogState;
-        assert.match(ordinary.contextSummary, /MIDI track "Bass"/);
-        assert.doesNotMatch(ordinary.contextSummary, /Arrangement selection/);
+        assert.match(ordinary.contextSummary, /Arrangement selection: beats 4 to 12/);
         assert.equal(ordinary.liveContext.availability, "available");
         assert.equal(ordinary.liveContext.sessionId, ordinarySession.id);
-        assert.equal(ordinary.liveContext.value.origin, "object");
+        assert.equal(ordinary.liveContext.value.origin, "arrangement-selection");
       },
     },
   };
