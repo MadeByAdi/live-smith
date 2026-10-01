@@ -1704,7 +1704,11 @@ export async function createChatBridge(
       }
 
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/audio-assets/")) {
-        assertExactQueryParameters(url, ["token", "sessionId"], "Audio asset request");
+        assertExactQueryParameters(
+          url,
+          ["token", "sessionId"],
+          "Audio asset request",
+        );
         if (!options.readAudioAsset) { response.writeHead(404).end("Not found"); return; }
         const assetId = url.pathname.slice("/audio-assets/".length);
         const sessionIds = url.searchParams.getAll("sessionId");
@@ -1731,7 +1735,11 @@ export async function createChatBridge(
       }
 
       if (request.method === "GET" && url.pathname === "/state") {
-        assertExactQueryParameters(url, ["token", "sessionId"], "State request");
+        assertExactQueryParameters(
+          url,
+          ["token", "sessionId"],
+          "State request",
+        );
         const invalidatedSessionIds = url.searchParams.getAll("sessionId");
         if (invalidatedSessionIds.length > 1) {
           throw new ChatBridgeRequestValidationError(
@@ -1768,6 +1776,13 @@ export async function createChatBridge(
             readStateSnapshotCutRevision,
           ),
         );
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/close") {
+        assertExactQueryParameters(url, ["token"], "Close request");
+        response.writeHead(204, sensitiveResponseHeaders).end();
+        queueMicrotask(resolveFrontendClose);
         return;
       }
 

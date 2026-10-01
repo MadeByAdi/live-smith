@@ -10,6 +10,7 @@ import { buildClientScript } from "./scripts/build-client-script.js";
 import { buildDocumentParserScript } from "./scripts/build-document-parser.js";
 import { compileUiStyles } from "./scripts/build-ui-styles.js";
 import { readNativeVerifierCapsule } from "./scripts/build-native-verifier.js";
+import { readSmithCompanionCapsule } from "./scripts/build-smith-companion.js";
 import { assertPackagedBundleContainsThirdPartyNotices } from "./src/release/package-verification.js";
 
 const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8")) as {
@@ -29,6 +30,7 @@ const chatStyles = await compileUiStyles("src/ui/styles/chat.css", production);
 const resultStyles = await compileUiStyles("src/ui/styles/result.css", production);
 const verificationStyles = await compileUiStyles("src/ui/styles/suno-verification.css", production);
 const nativeVerifierCapsule = await readNativeVerifierCapsule();
+const smithCompanionCapsule = await readSmithCompanionCapsule();
 
 const buildResult = await esbuild.build({
   entryPoints: ["src/extension.ts"],
@@ -54,6 +56,7 @@ const buildResult = await esbuild.build({
     __LIVE_SMITH_RESULT_STYLES__: JSON.stringify(resultStyles),
     __LIVE_SMITH_SUNO_VERIFICATION_STYLES__: JSON.stringify(verificationStyles),
     __LIVE_SMITH_NATIVE_VERIFIER_CAPSULE__: JSON.stringify(JSON.stringify(nativeVerifierCapsule)),
+    __LIVE_SMITH_COMPANION_CAPSULE__: JSON.stringify(JSON.stringify(smithCompanionCapsule)),
   },
   banner: {
     js: `/*!\n${thirdPartyNotices.replaceAll("*/", "* /")}\n*/\n(function () {`,
@@ -162,6 +165,7 @@ function verifySourceRuntimeBoundaries(sourceDirectory: string): void {
     "src/runtime/system-open.ts",
     "src/runtime/system-proxy.ts",
     "src/runtime/suno-human-verification.ts",
+    "src/runtime/smith-companion.ts",
   ].map(path.normalize));
   for (const file of sourceFiles(sourceDirectory)) {
     if (file.endsWith(".test.ts")) continue;

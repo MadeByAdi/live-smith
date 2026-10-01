@@ -231,6 +231,109 @@ test("known bridge routes reject duplicate tokens and route-specific extra query
   }
 });
 
+test("a one-time browser launch establishes cookie-authenticated bridge access without exposing the bridge token", async () => {
+  const { bridge } = await createContractBridge();
+  const { token } = bridgeAddress(bridge.url);
+  const launchUrl = new URL(bridge.browserUrl);
+  assert.equal(launchUrl.searchParams.has("token"), false);
+  assert.equal(launchUrl.searchParams.getAll("launch").length, 1);
+
+  const launch = await fetch(launchUrl);
+  assert.equal(launch.status, 200);
+  const cookie = launch.headers.get("set-cookie");
+  assert.ok(cookie);
+  assert.match(cookie, /HttpOnly/i);
+  assert.match(cookie, /SameSite=Strict/i);
+  assert.doesNotMatch(await launch.text(), new RegExp(token, "u"));
+
+  const state = await request(launchUrl.origin, "/state", {
+    headers: { Cookie: cookie.split(";", 1)[0]! },
+  });
+  assert.equal(state.status, 200);
+  await state.body?.cancel();
+
+  const replay = await fetch(launchUrl);
+  assert.equal(replay.status, 403);
+  await replay.body?.cancel();
+  await bridge.close();
+});
+
+test("browser cookie authentication reaches every bridge route class without a bearer query", async () => {
+  const { bridge } = await createContractBridge();
+  const launchUrl = new URL(bridge.browserUrl);
+  const launch = await fetch(launchUrl);
+  const cookie = launch.headers.get("set-cookie");
+  assert.ok(cookie);
+  await launch.body?.cancel();
+  const headers = { Cookie: cookie.split(";", 1)[0]! };
+  const json = { ...headers, "Content-Type": "application/json" };
+  const cases: Array<{ path: string; init?: RequestInit; accepted: readonly number[] }> = [
+    { path: "/state", accepted: [200] },
+    { path: "/events", accepted: [200] },
+    { path: "/send", init: { method: "POST", headers: { ...json, "X-Live-Smith-Send-Id": "browser-send" }, body: JSON.stringify({ prompt: "hello", sessionId: "session-1" }) }, accepted: [200] },
+    { path: "/steer", init: { method: "POST", headers: { ...json, "X-Live-Smith-Send-Id": "browser-send", "X-Live-Smith-Steer-Id": "browser-steer" }, body: JSON.stringify({ prompt: "change", sessionId: "session-1" }) }, accepted: [409] },
+    { path: "/confirm", init: { method: "POST", headers: json, body: JSON.stringify({ id: "none", apply: false }) }, accepted: [200] },
+    { path: "/stop", init: { method: "POST", headers: { ...json, "X-Live-Smith-Send-Id": "browser-stop" }, body: "{}" }, accepted: [200] },
+    { path: "/command", init: { method: "POST", headers: { ...json, "X-Live-Smith-Command-Id": "browser-command" }, body: jsonBody }, accepted: [200] },
+    { path: "/session-model-capabilities", init: { method: "POST", headers: { ...json, "X-Live-Smith-Command-Id": "browser-capability" }, body: capabilityReadBody }, accepted: [200] },
+    { path: "/attachments?sessionId=session-1&fileName=browser.png", init: { method: "POST", headers: { ...headers, "Content-Type": "application/octet-stream" }, body: Buffer.from("x") }, accepted: [201] },
+    { path: "/skills?replace=false", init: { method: "POST", headers: { ...headers, "Content-Type": "text/markdown; charset=utf-8", "X-Live-Smith-Command-Id": "browser-skill" }, body: skillBody }, accepted: [201] },
+    { path: "/audio-assets/asset-1?sessionId=session-1", accepted: [404] },
+  ];
+  try {
+    for (const entry of cases) {
+      const response = await request(launchUrl.origin, entry.path, { ...entry.init, headers: entry.init?.headers ?? headers });
+      assert.ok(entry.accepted.includes(response.status), `${entry.path}: ${response.status}`);
+      await response.body?.cancel();
+    }
+    const close = await request(launchUrl.origin, "/close", { method: "POST", headers });
+    assert.equal(close.status, 204);
+    await bridge.waitForFrontendClose();
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("browser cookies are bridge-instance scoped and stale or invalid clients are rejected", async () => {
+  const first = await createContractBridge();
+  const second = await createContractBridge();
+  const firstLaunch = new URL(first.bridge.browserUrl);
+  const secondLaunch = new URL(second.bridge.browserUrl);
+  const firstResponse = await fetch(firstLaunch);
+  const secondResponse = await fetch(secondLaunch);
+  const firstCookie = firstResponse.headers.get("set-cookie")!.split(";", 1)[0]!;
+  const secondCookie = secondResponse.headers.get("set-cookie")!.split(";", 1)[0]!;
+  await firstResponse.body?.cancel();
+  await secondResponse.body?.cancel();
+  try {
+    const cases: Array<[string, HeadersInit | undefined, number]> = [
+      [firstLaunch.origin, undefined, 403],
+      [firstLaunch.origin, { Cookie: "LiveSmithBridge-invalid=wrong" }, 403],
+      [firstLaunch.origin, { Cookie: secondCookie }, 403],
+      [secondLaunch.origin, { Cookie: firstCookie }, 403],
+      [firstLaunch.origin, { Cookie: firstCookie }, 200],
+      [secondLaunch.origin, { Cookie: secondCookie }, 200],
+    ];
+    for (const [origin, headers, status] of cases) {
+      const response = await request(origin, "/state", headers ? { headers } : undefined);
+      assert.equal(response.status, status);
+      await response.body?.cancel();
+    }
+    const { token } = bridgeAddress(first.bridge.url);
+    const modal = await request(firstLaunch.origin, `/state?token=${token}`);
+    assert.equal(modal.status, 200);
+    await modal.body?.cancel();
+    await first.bridge.close();
+    await assert.rejects(
+      request(firstLaunch.origin, "/state", { headers: { Cookie: firstCookie } }),
+      /fetch failed/i,
+    );
+  } finally {
+    await first.bridge.close();
+    await second.bridge.close();
+  }
+});
+
 test("every JSON route requires one unambiguous application/json media type", async () => {
   const { bridge } = await createContractBridge();
   const { origin, token } = bridgeAddress(bridge.url);
