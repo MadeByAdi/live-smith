@@ -1160,6 +1160,14 @@ never start either transport. MCP schemas, names, results, stderr, message sizes
 timeouts, and cancellation are bounded; package paths, private data paths, and
 raw process or network errors cannot enter model-visible results.
 
+Personal SnappySnap support uses the same installed-Plugin boundary rather than
+a separate controller. The Direct wrapper is expected to declare a local stdio
+MCP server that executes the bundled VST3 helper,
+`/Library/Audio/Plug-Ins/VST3/SnappySnap.vst3/Contents/Resources/SnappyMCPServer`,
+with `--stdio`. The wrapper package may be versioned as source or artifact
+evidence, but enabled state, MCP approval, artifact permissions, and runtime
+catalog rows remain mutable local state and are never promoted into the repo.
+
 MCP tools cannot call the Live executor. An approved artifact-input contract
 replaces an opaque Session audio or MIDI reference with one read-only temporary file for
 the duration of the call. An independently approved artifact-output contract
@@ -2364,6 +2372,18 @@ OpenAI Responses and Anthropic Messages do not expose the tool and reject any
 such part defensively. The render is pre-effects Arrangement audio and excludes
 the track device chain, sends, and master mix. The SDK has no equivalent render
 for Session View Clips or Take Lanes.
+
+When the current request has an approved **local** MCP server with an
+audio-artifact input, the agent can instead call
+`stage_arrangement_audio_artifact`. It uses the same bounded render and all of
+the same post-render identity, overlap, and state checks before it persists the
+verified bytes as a Session-scoped opaque audio artifact. This record is not an
+audio-generation job and carries its pre-effects Arrangement beat-range
+provenance. Only the returned artifact reference reaches the model; the
+artifact bridge later reads that exact same-Session asset, stages a private
+read-only file for the approved Plugin call, and removes it afterward. No
+filesystem path, clip name, Session View render, device chain, send, return, or
+master signal is admitted through this path.
 
 The beta SDK render call has no cancellation parameter. Live Smith cancels the
 caller's wait immediately, but keeps the unresolved host render and any returned

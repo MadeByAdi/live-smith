@@ -551,6 +551,13 @@ Apps can also be opened from the Plugin card. See the [configuration and UI
 author guide](docs/DEVELOPMENT.md#persistent-plugin-configuration) for supported
 formats, scope, and a runnable offline example.
 
+For SnappySnap, the preserved personal integration direction is a Direct local
+MCP Plugin that launches the bundled VST3 helper at
+`/Library/Audio/Plug-Ins/VST3/SnappySnap.vst3/Contents/Resources/SnappyMCPServer`
+with `--stdio`. Keep the Plugin package, catalog enablement, MCP approval, and
+artifact permissions in runtime storage; do not copy those mutable approvals into
+source control.
+
 **Connections** save named accounts or servers. **Settings → Extensions → Audio
 services** manages audio accounts; **MCP** manages directly configured servers and
 servers provided by Plugins, including their permissions. One source can have multiple named
@@ -689,6 +696,10 @@ to read an isolated Arrangement Audio Clip range without creating a saved
 attachment. This sends a temporary pre-effects render for the current request;
 Session View Clips and the track device chain are not included. That temporary
 render is model input only and is not an attachment SampleSource.
+When an approved local Plugin declares a compatible audio-artifact input, Smith
+can also stage the same verified bounded Arrangement render as an opaque
+Session artifact for that Plugin. The artifact remains pre-effects Arrangement
+audio only; it is not a processed mix and never exposes a filesystem path.
 Saved Session audio results follow the same verified model-capability gate: the
 agent can listen to one exact local asset when asked, while remote-only Suno
 players and their URLs are never sent to the model.
