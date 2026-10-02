@@ -1177,11 +1177,9 @@
           const shell = document.getElementById("agentAudioTapListeners");
           if (!shell) return;
           const listeners = agentAudioTapCaptureListeners();
-          if (listeners.length === 0) {
-            shell.replaceChildren();
-            return;
-          }
-          const disabledReason = currentBoundedArrangementRange() ? "" : t("Automatic listening requires a valid bounded Arrangement selection.");
+          const disabledReason = listeners.length === 0
+            ? t("No fresh Track/Group AgentAudioTap listener is online.")
+            : currentBoundedArrangementRange() ? "" : t("Automatic listening requires a valid bounded Arrangement selection.");
           const select = document.createElement("select");
           select.id = "captureAgentAudioTapListenerSelect";
           select.className = "composer-select composer-control";

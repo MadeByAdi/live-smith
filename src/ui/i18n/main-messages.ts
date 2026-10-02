@@ -333,6 +333,7 @@ export const mainMessages: Record<string, string> = {
   "Capture {trackName} for analysis?": "捕获 {trackName} 用于分析？",
   "Smith will capture the current bounded Arrangement selection automatically from {trackName}. Live must be stopped first.": "Smith 会从 {trackName} 自动捕获当前有边界的编曲选区。Live 必须先停止。",
   "Capture": "捕获",
+  "No fresh Track/Group AgentAudioTap listener is online.": "没有新鲜在线的轨道/编组 AgentAudioTap 监听器。",
   "Automatic listening requires a valid bounded Arrangement selection.": "自动监听需要有效的有边界编曲选区。",
   "Capture a track or group AgentAudioTap listener for analysis": "捕获轨道或编组的 AgentAudioTap 监听器用于分析",
   "Capture Track or Group unavailable: {reason}": "捕获轨道或编组不可用：{reason}",

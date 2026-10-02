@@ -109,6 +109,30 @@ test("Capture Track/Group explains when a bounded Arrangement range is unavailab
   } finally { harness.close(); }
 });
 
+test("Capture Track/Group remains visible when no fresh listener is online", async () => {
+  const state = audioState();
+  state.liveContext = {
+    sessionId: state.activeSessionId,
+    availability: "available",
+    value: { origin: "arrangement-selection", objectKind: "other", title: "Arrangement selection",
+      range: { coordinate: "arrangement-beats", start: 320, end: 336 }, details: [] },
+  };
+  state.agentAudioTapListeners = [
+    { tapId: "tap_1a0eff30af0_5c8513b3", trackName: "Main", trackType: "main" },
+  ];
+  const harness = await createDialogHarness(state);
+  try {
+    const select = harness.document.querySelector<HTMLSelectElement>("#captureAgentAudioTapListenerSelect")!;
+    assert.ok(select);
+    assert.equal(select.options.length, 1);
+    assert.equal(select.options[0]?.textContent, "Capture Track/Group");
+    assert.equal(select.disabled, true);
+    assert.match(select.title, /No fresh Track\/Group/u);
+    assert.match(select.getAttribute("aria-label") ?? "", /unavailable/u);
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
 test("generated music, alternatives and sound effects show their bound service, operation and local players", async () => {
   const state = audioState([service, musicService, sunoService]);
   const source = job(state.activeSessionId).outputs[0]!;
