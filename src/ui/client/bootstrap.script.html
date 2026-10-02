@@ -1149,8 +1149,8 @@
         async function captureListenerForAnalysis(tapId, trackName) {
           if (bridgeClient.isOperationInProgress() || bridgeClient.hasAnySendInProgress()) return false;
           const accepted = await confirmAction({
-            title: window.LiveSmithI18n.message(`Capture ${trackName} for analysis?`),
-            message: window.LiveSmithI18n.message(`Smith will capture the current bounded Arrangement selection automatically from ${trackName}. Live must be stopped first.`),
+            title: window.LiveSmithI18n.message("Capture {trackName} for analysis?", { trackName }),
+            message: window.LiveSmithI18n.message("Smith will capture the current bounded Arrangement selection automatically from {trackName}. Live must be stopped first.", { trackName }),
             acceptLabel: window.LiveSmithI18n.message("Capture"),
           });
           if (!accepted) return false;
@@ -1168,27 +1168,52 @@
           return range;
         }
 
-        function captureListenerDisabledReason(listener) {
-          if (!listener || !listener.tapId) return t("No live listener is available.");
-          if (!currentBoundedArrangementRange()) return t("Automatic listening requires a valid bounded Arrangement selection.");
-          return "";
+        function agentAudioTapCaptureListeners() {
+          const listeners = Array.isArray(getState().agentAudioTapListeners) ? getState().agentAudioTapListeners : [];
+          return listeners.filter((listener) => listener.trackType !== "main");
         }
 
         function renderAgentAudioTapListeners() {
           const shell = document.getElementById("agentAudioTapListeners");
           if (!shell) return;
-          const listeners = Array.isArray(getState().agentAudioTapListeners) ? getState().agentAudioTapListeners : [];
-          shell.replaceChildren(...listeners.filter((listener) => listener.trackType !== "main").map((listener) => {
-            const button = document.createElement("button");
-            button.type = "button"; button.className = "secondary composer-control";
-            button.textContent = `Capture ${listener.trackName}`;
-            const disabledReason = captureListenerDisabledReason(listener);
-            button.title = disabledReason || `Capture ${listener.trackName} for analysis`;
-            button.setAttribute("aria-label", disabledReason ? `Capture ${listener.trackName} unavailable: ${disabledReason}` : `Capture ${listener.trackName} for analysis`);
-            button.disabled = Boolean(disabledReason);
-            button.addEventListener("click", () => captureListenerForAnalysis(listener.tapId, listener.trackName));
-            return button;
-          }));
+          const listeners = agentAudioTapCaptureListeners();
+          if (listeners.length === 0) {
+            shell.replaceChildren();
+            return;
+          }
+          const disabledReason = currentBoundedArrangementRange() ? "" : t("Automatic listening requires a valid bounded Arrangement selection.");
+          const select = document.createElement("select");
+          select.id = "captureAgentAudioTapListenerSelect";
+          select.className = "composer-select composer-control";
+          select.disabled = Boolean(disabledReason);
+          select.title = disabledReason || t("Capture a track or group AgentAudioTap listener for analysis");
+          select.setAttribute("aria-label", disabledReason ? t("Capture Track or Group unavailable: {reason}", { reason: disabledReason }) : t("Capture Track or Group"));
+
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = t("Capture Track/Group");
+          placeholder.disabled = true;
+          placeholder.selected = true;
+          select.append(placeholder);
+
+          for (const listener of listeners) {
+            const option = document.createElement("option");
+            option.value = listener.tapId;
+            option.textContent = listener.trackName;
+            option.dataset.tapId = listener.tapId;
+            option.dataset.trackName = listener.trackName;
+            option.dataset.trackType = listener.trackType;
+            select.append(option);
+          }
+
+          select.addEventListener("change", () => {
+            const tapId = select.value;
+            select.selectedIndex = 0;
+            const listener = agentAudioTapCaptureListeners().find((entry) => entry.tapId === tapId);
+            if (!listener) return;
+            void captureListenerForAnalysis(listener.tapId, listener.trackName);
+          });
+          shell.replaceChildren(select);
         }
 
         function renderProfileStateProjection() {

@@ -21,7 +21,7 @@ test("Capture Main asks for explicit approval before starting the bounded Sessio
   } finally { harness.close(); }
 });
 
-test("Capture Song stays enabled from the listener registry and bounded Arrangement range", async () => {
+test("Capture Track/Group lists fresh non-Main listeners and captures the selected stable tapId", async () => {
   const state = audioState();
   state.liveContext = {
     sessionId: state.activeSessionId,
@@ -31,15 +31,22 @@ test("Capture Song stays enabled from the listener registry and bounded Arrangem
   };
   state.agentAudioTapListeners = [
     { tapId: "tap_1a0eff33645_6db3925", trackName: "Song", trackType: "group" },
+    { tapId: "tap_1a0eff30af0_vocals", trackName: "Lead Vox", trackType: "track" },
     { tapId: "tap_1a0eff30af0_5c8513b3", trackName: "Main", trackType: "main" },
   ];
   const harness = await createDialogHarness(state);
   try {
-    const song = [...harness.document.querySelectorAll<HTMLButtonElement>("#agentAudioTapListeners button")]
-      .find((button) => button.textContent === "Capture Song");
-    assert.ok(song);
-    assert.equal(song.disabled, false);
-    song.click();
+    const select = harness.document.querySelector<HTMLSelectElement>("#captureAgentAudioTapListenerSelect")!;
+    assert.ok(select);
+    assert.equal(select.disabled, false);
+    assert.deepEqual([...select.options].map((option) => option.textContent), [
+      "Capture Track/Group", "Song", "Lead Vox",
+    ]);
+    assert.deepEqual([...select.options].map((option) => option.value), [
+      "", "tap_1a0eff33645_6db3925", "tap_1a0eff30af0_vocals",
+    ]);
+    assert.equal([...select.options].some((option) => option.textContent === "Main"), false);
+    harness.select("#captureAgentAudioTapListenerSelect", "tap_1a0eff33645_6db3925");
     await harness.settle();
     assert.equal(commandCalls(harness).some((call) => (call.body as { kind?: string }).kind === "capture_listener_for_analysis"), false);
     await harness.acceptAppConfirmation();
@@ -51,18 +58,53 @@ test("Capture Song stays enabled from the listener registry and bounded Arrangem
   } finally { harness.close(); }
 });
 
-test("Capture Song explains when a bounded Arrangement range is unavailable", async () => {
+test("Capture Track/Group display refreshes from registry names while retaining tap identity", async () => {
+  const original = audioState();
+  original.liveContext = {
+    sessionId: original.activeSessionId,
+    availability: "available",
+    value: { origin: "arrangement-selection", objectKind: "other", title: "Arrangement selection",
+      range: { coordinate: "arrangement-beats", start: 320, end: 336 }, details: [] },
+  };
+  original.agentAudioTapListeners = [
+    { tapId: "tap_1a0eff33645_6db3925", trackName: "Song", trackType: "group" },
+  ];
+  const harness = await createDialogHarness(original);
+  try {
+    const select = harness.document.querySelector<HTMLSelectElement>("#captureAgentAudioTapListenerSelect")!;
+    assert.equal(select.options[1]?.textContent, "Song");
+    assert.equal(select.options[1]?.value, "tap_1a0eff33645_6db3925");
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+
+  const renamed = {
+    ...original,
+    agentAudioTapListeners: [
+      { tapId: "tap_1a0eff33645_6db3925", trackName: "Song Print Bus", trackType: "group" as const },
+    ],
+  };
+  const renamedHarness = await createDialogHarness(renamed);
+  try {
+    const select = renamedHarness.document.querySelector<HTMLSelectElement>("#captureAgentAudioTapListenerSelect")!;
+    assert.equal(select.options[1]?.textContent, "Song Print Bus");
+    assert.equal(select.options[1]?.value, "tap_1a0eff33645_6db3925");
+    assert.deepEqual(renamedHarness.errors, []);
+  } finally { renamedHarness.close(); }
+});
+
+test("Capture Track/Group explains when a bounded Arrangement range is unavailable", async () => {
   const state = audioState();
   state.agentAudioTapListeners = [
     { tapId: "tap_1a0eff33645_6db3925", trackName: "Song", trackType: "group" },
   ];
   const harness = await createDialogHarness(state);
   try {
-    const song = harness.document.querySelector<HTMLButtonElement>("#agentAudioTapListeners button")!;
-    assert.equal(song.textContent, "Capture Song");
-    assert.equal(song.disabled, true);
-    assert.match(song.title, /valid bounded Arrangement selection/u);
-    assert.match(song.getAttribute("aria-label") ?? "", /unavailable/u);
+    const select = harness.document.querySelector<HTMLSelectElement>("#captureAgentAudioTapListenerSelect")!;
+    assert.equal(select.options[0]?.textContent, "Capture Track/Group");
+    assert.equal(select.options[1]?.textContent, "Song");
+    assert.equal(select.disabled, true);
+    assert.match(select.title, /valid bounded Arrangement selection/u);
+    assert.match(select.getAttribute("aria-label") ?? "", /unavailable/u);
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
 });
