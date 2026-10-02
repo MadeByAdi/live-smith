@@ -14,18 +14,17 @@ import {
   clipSlotSelectionInteractionContext,
   objectInteractionContext,
 } from "./live/context.js";
+import { openChatInSystemBrowser } from "./runtime/chat-browser.js";
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
-import { createSmithCompanionOpener } from "./runtime/smith-companion.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
 export function activate(activation: ActivationContext) {
   const context = initialize(activation, "1.0.0");
   const liveMutationQueue = new LiveMutationQueue();
-  const openNonBlockingChat = createSmithCompanionOpener();
 
   context.commands.registerCommand("live-smith.ask-object", (arg: unknown) => {
-    void askAboutObject(context, arg as Handle, liveMutationQueue, openNonBlockingChat).catch((error) =>
+    void askAboutObject(context, arg as Handle, liveMutationQueue).catch((error) =>
       showAgentError(context, error),
     );
   });
@@ -37,7 +36,6 @@ export function activate(activation: ActivationContext) {
         context,
         arg as ArrangementSelection,
         liveMutationQueue,
-        openNonBlockingChat,
       ).catch(
         (error) => showAgentError(context, error),
       );
@@ -51,7 +49,6 @@ export function activate(activation: ActivationContext) {
         context,
         arg as ClipSlotSelection,
         liveMutationQueue,
-        openNonBlockingChat,
       ).catch(
         (error) => showAgentError(context, error),
       );
@@ -97,12 +94,11 @@ async function askAboutObject(
   context: Api,
   handle: Handle,
   liveMutationQueue: LiveMutationQueue,
-  openNonBlockingChat: ReturnType<typeof createSmithCompanionOpener>,
 ): Promise<void> {
   await runAgentFlow(
     context,
     objectInteractionContext(context, handle),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }
 
@@ -110,12 +106,11 @@ async function askAboutArrangementSelection(
   context: Api,
   selection: ArrangementSelection,
   liveMutationQueue: LiveMutationQueue,
-  openNonBlockingChat: ReturnType<typeof createSmithCompanionOpener>,
 ): Promise<void> {
   await runAgentFlow(
     context,
     arrangementSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }
 
@@ -123,11 +118,10 @@ async function askAboutClipSlotSelection(
   context: Api,
   selection: ClipSlotSelection,
   liveMutationQueue: LiveMutationQueue,
-  openNonBlockingChat: ReturnType<typeof createSmithCompanionOpener>,
 ): Promise<void> {
   await runAgentFlow(
     context,
     clipSlotSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
   );
 }
