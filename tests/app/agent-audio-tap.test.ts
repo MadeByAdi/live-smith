@@ -9,8 +9,8 @@ import { listSessionAudioArtifacts, readAudioAsset } from "../../src/storage/aud
 import { createSession } from "../../src/storage/sessions.js";
 import {
   AGENT_AUDIO_TAP_COMMAND_FILE_NAME,
-  AGENT_AUDIO_TAP_EXTENSION_ID,
   AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME,
+  AGENT_AUDIO_TAP_REGISTRY_ROOT,
   admitFinalizedAgentAudioTapCapture,
   captureMainWithAgentAudioTap,
   captureArrangementWithAgentAudioTap,
@@ -235,15 +235,15 @@ test("the adapter writes only opaque unique upstream start/stop commands", async
   await assert.rejects(writeAgentAudioTapCommand(command, { id: "tapcapture_123", command: "start" }), /absolute host-owned/u);
 });
 
-test("the canonical AgentAudioTap registry lives in Ableton Extensions Data for production sandbox access", () => {
+test("the canonical AgentAudioTap registry uses a same-length production-readable temp path", () => {
   const directory = agentAudioTapRegistryDirectory();
   const command = agentAudioTapCommandFile();
 
   assert.equal(path.basename(directory), AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME);
   assert.equal(path.basename(command), AGENT_AUDIO_TAP_COMMAND_FILE_NAME);
   assert.equal(path.dirname(command), directory);
-  assert.match(command, /Library\/Application Support\/Ableton\/Extensions Data/u);
-  assert.match(command, new RegExp(`${AGENT_AUDIO_TAP_EXTENSION_ID}/${AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME}/${AGENT_AUDIO_TAP_COMMAND_FILE_NAME}$`, "u"));
+  assert.equal(directory, path.join(AGENT_AUDIO_TAP_REGISTRY_ROOT, AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME));
+  assert.equal(command.length, "/Volumes/T7 Shield/Users/Aditya/.ableton-live-mcp/agent_audio_tap_command.json".length);
   assert.doesNotMatch(command, /\.ableton-live-mcp/u);
 });
 

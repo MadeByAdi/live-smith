@@ -158,7 +158,7 @@
             139.0,
             20.0
           ],
-          "text": "js agent_audio_tap_registry.js \"/Volumes/T7 Shield/Users/Aditya/Library/Application Support/Ableton/Extensions Data/sam-kuler.live-smith/agent-audio-tap/agent_audio_tap_command.json\""
+          "text": "js agent_audio_tap_registry.js \"/private/tmp/live-smith-agent-audio-tap-registryx/agent_audio_tap_command.json\""
         }
       },
       {

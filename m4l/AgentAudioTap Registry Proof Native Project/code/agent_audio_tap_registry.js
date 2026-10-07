@@ -3,7 +3,7 @@ autowatch = 1;
 inlets = 1;
 outlets = 4;
 
-var commandFile = jsarguments.length > 1 ? String(jsarguments[1]) : "/Volumes/T7 Shield/Users/Aditya/Library/Application Support/Ableton/Extensions Data/sam-kuler.live-smith/agent-audio-tap/agent_audio_tap_command.json";
+var commandFile = jsarguments.length > 1 ? String(jsarguments[1]) : "/private/tmp/live-smith-agent-audio-tap-registryx/agent_audio_tap_command.json";
 var tapId = "";
 var device = null;
 var track = null;

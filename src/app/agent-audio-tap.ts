@@ -1,5 +1,4 @@
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { MAX_AUDIO_ASSET_BYTES } from "../audio-services/contracts.js";
@@ -43,9 +42,9 @@ export interface AgentAudioTapArrangementWindow {
   endBeat: number;
 }
 
-export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "agent-audio-tap";
+export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "live-smith-agent-audio-tap-registryx";
 export const AGENT_AUDIO_TAP_COMMAND_FILE_NAME = "agent_audio_tap_command.json";
-export const AGENT_AUDIO_TAP_EXTENSION_ID = "sam-kuler.live-smith";
+export const AGENT_AUDIO_TAP_REGISTRY_ROOT = "/private/tmp";
 
 type AgentAudioTapCommand = "start" | "stop" | "arm" | "begin" | "cancel";
 type AgentAudioTapCaptureState = "armed" | "recording" | "stopped" | "failed";
@@ -70,15 +69,7 @@ export class AgentAudioTapCaptureError extends Error {
 }
 
 export function agentAudioTapRegistryDirectory(): string {
-  return path.join(
-    os.homedir(),
-    "Library",
-    "Application Support",
-    "Ableton",
-    "Extensions Data",
-    AGENT_AUDIO_TAP_EXTENSION_ID,
-    AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME,
-  );
+  return path.join(AGENT_AUDIO_TAP_REGISTRY_ROOT, AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME);
 }
 
 export function agentAudioTapCommandFile(): string {
