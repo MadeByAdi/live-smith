@@ -1,4 +1,5 @@
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import { MAX_AUDIO_ASSET_BYTES } from "../audio-services/contracts.js";
@@ -42,9 +43,9 @@ export interface AgentAudioTapArrangementWindow {
   endBeat: number;
 }
 
-export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "live-smith-agent-audio-tap-registryx";
-export const AGENT_AUDIO_TAP_COMMAND_FILE_NAME = "agent_audio_tap_command.json";
-export const AGENT_AUDIO_TAP_REGISTRY_ROOT = "/private/tmp";
+export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "a";
+export const AGENT_AUDIO_TAP_COMMAND_FILE_NAME = "tap.json";
+export const AGENT_AUDIO_TAP_REGISTRY_ROOT = path.join(os.tmpdir(), "Ableton Extensions");
 
 type AgentAudioTapCommand = "start" | "stop" | "arm" | "begin" | "cancel";
 type AgentAudioTapCaptureState = "armed" | "recording" | "stopped" | "failed";
@@ -74,6 +75,15 @@ export function agentAudioTapRegistryDirectory(): string {
 
 export function agentAudioTapCommandFile(): string {
   return path.join(agentAudioTapRegistryDirectory(), AGENT_AUDIO_TAP_COMMAND_FILE_NAME);
+}
+
+export async function ensureAgentAudioTapRegistryDirectory(commandFile = agentAudioTapCommandFile()): Promise<boolean> {
+  try {
+    await fs.mkdir(path.dirname(commandFile), { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export interface AgentAudioTapCaptureLifecycleResult {
@@ -136,7 +146,9 @@ export async function writeAgentAudioTapCommand(commandFile: string, value: {
     }
     requireSafeStorageId(value.captureId, "AgentAudioTap capture ID");
   }
-  await fs.mkdir(path.dirname(commandFile), { recursive: true });
+  if (!await ensureAgentAudioTapRegistryDirectory(commandFile)) {
+    throw new Error("AgentAudioTap registry directory is unavailable.");
+  }
   await fs.writeFile(commandFile, JSON.stringify(value), { mode: 0o600 });
 }
 
@@ -153,7 +165,7 @@ export async function discoverAgentAudioTapListeners(input: {
   const maximumLiveListeners = 64;
   let names: string[];
   try {
-    await fs.mkdir(directory, { recursive: true });
+    if (!await ensureAgentAudioTapRegistryDirectory(commandFile)) return [];
     names = await fs.readdir(directory);
   } catch { return []; }
   const listeners: AgentAudioTapListener[] = [];

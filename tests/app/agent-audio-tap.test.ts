@@ -17,6 +17,7 @@ import {
   captureSessionArrangementWithAgentAudioTap,
   createAgentAudioTapCaptureIntent,
   discoverAgentAudioTapListeners,
+  ensureAgentAudioTapRegistryDirectory,
   formatAgentAudioTapListenersForReasoning,
   agentAudioTapListenersForReasoning,
   agentAudioTapCommandFile,
@@ -243,8 +244,16 @@ test("the canonical AgentAudioTap registry uses a same-length production-readabl
   assert.equal(path.basename(command), AGENT_AUDIO_TAP_COMMAND_FILE_NAME);
   assert.equal(path.dirname(command), directory);
   assert.equal(directory, path.join(AGENT_AUDIO_TAP_REGISTRY_ROOT, AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME));
+  assert.equal(directory, path.join(os.tmpdir(), "Ableton Extensions", "a"));
   assert.equal(command.length, "/Volumes/T7 Shield/Users/Aditya/.ableton-live-mcp/agent_audio_tap_command.json".length);
   assert.doesNotMatch(command, /\.ableton-live-mcp/u);
+  assert.doesNotMatch(command, /\/private\/tmp/u);
+});
+
+test("Smith ensures the shared AgentAudioTap registry directory before Max writes status", async () => {
+  assert.equal(await ensureAgentAudioTapRegistryDirectory(), true);
+  const stat = await fs.stat(agentAudioTapRegistryDirectory());
+  assert.equal(stat.isDirectory(), true);
 });
 
 test("listener discovery returns no listeners when the registry directory cannot be read", async (t) => {

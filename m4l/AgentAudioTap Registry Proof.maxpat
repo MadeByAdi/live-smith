@@ -158,7 +158,7 @@
             139.0,
             20.0
           ],
-          "text": "js agent_audio_tap_registry.js \"/private/tmp/live-smith-agent-audio-tap-registryx/agent_audio_tap_command.json\""
+          "text": "js agent_audio_tap_registry.js \"/var/folders/3n/gst0h6md1rddn9tsbbmf2drh0000gp/T/Ableton Extensions/a/tap.json\""
         }
       },
       {

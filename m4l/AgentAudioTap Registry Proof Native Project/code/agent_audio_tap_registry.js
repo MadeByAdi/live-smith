@@ -3,7 +3,7 @@ autowatch = 1;
 inlets = 1;
 outlets = 4;
 
-var commandFile = jsarguments.length > 1 ? String(jsarguments[1]) : "/private/tmp/live-smith-agent-audio-tap-registryx/agent_audio_tap_command.json";
+var commandFile = jsarguments.length > 1 ? String(jsarguments[1]) : "/var/folders/3n/gst0h6md1rddn9tsbbmf2drh0000gp/T/Ableton Extensions/a/tap.json";
 var tapId = "";
 var device = null;
 var track = null;

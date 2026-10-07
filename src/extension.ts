@@ -8,6 +8,7 @@ import {
 } from "@ableton-extensions/sdk";
 
 import { runAgentFlow, showAgentError } from "./app/agent-flow.js";
+import { ensureAgentAudioTapRegistryDirectory } from "./app/agent-audio-tap.js";
 import { LiveMutationQueue } from "./app/live-mutation-queue.js";
 import {
   arrangementSelectionInteractionContext,
@@ -22,6 +23,7 @@ type Api = ExtensionContext<"1.0.0">;
 export function activate(activation: ActivationContext) {
   const context = initialize(activation, "1.0.0");
   const liveMutationQueue = new LiveMutationQueue();
+  void ensureAgentAudioTapRegistryDirectory();
 
   context.commands.registerCommand("live-smith.ask-object", (arg: unknown) => {
     void askAboutObject(context, arg as Handle, liveMutationQueue).catch((error) =>
