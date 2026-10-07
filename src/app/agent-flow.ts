@@ -2363,6 +2363,7 @@ export async function runAgentFlow(
             ? activeInteraction.presentation.range
             : undefined;
           const range = selectionRange?.coordinate === "arrangement-beats" ? selectionRange : undefined;
+          const commandRange = { startBeat: commandInput.startBeat, endBeat: commandInput.endBeat };
           const capture = await captureSessionArrangementWithAgentAudioTap({
             storageDirectory,
             sessionId: commandInput.sessionId,
@@ -2371,7 +2372,7 @@ export async function runAgentFlow(
             target: commandInput.kind === "capture_listener_for_analysis"
               ? { kind: "listener", tapId: commandInput.tapId }
               : { kind: "main" },
-            window: range === undefined ? undefined : { startBeat: range.start, endBeat: range.end },
+            window: range === undefined ? commandRange : { startBeat: range.start, endBeat: range.end },
             discoverListeners: dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners,
             capture: dependencies.captureArrangementWithAgentAudioTap ?? captureArrangementWithAgentAudioTap,
             onLifecycleResult: async (result: AgentAudioTapCaptureLifecycleResult) => {

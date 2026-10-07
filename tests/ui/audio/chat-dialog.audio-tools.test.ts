@@ -7,6 +7,12 @@ import { audioState, service, musicService, sunoService, job, broadcast,
 
 test("Capture Main asks for explicit approval before starting the bounded Session capture", async () => {
   const state = audioState();
+  state.liveContext = {
+    sessionId: state.activeSessionId,
+    availability: "available",
+    value: { origin: "arrangement-selection", objectKind: "other", title: "Arrangement selection",
+      range: { coordinate: "arrangement-beats", start: 0, end: 64 }, details: [] },
+  };
   const harness = await createDialogHarness(state);
   try {
     harness.click("#captureMainForAnalysisButton");
@@ -15,7 +21,7 @@ test("Capture Main asks for explicit approval before starting the bounded Sessio
     await harness.acceptAppConfirmation();
     await harness.settle();
     assert.deepEqual(commandCalls(harness).at(-1)?.body, {
-      kind: "capture_main_for_analysis", sessionId: state.activeSessionId,
+      kind: "capture_main_for_analysis", sessionId: state.activeSessionId, startBeat: 0, endBeat: 64,
     });
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
@@ -53,6 +59,7 @@ test("Capture Track/Group lists fresh non-Main listeners and captures the select
     await harness.settle();
     assert.deepEqual(commandCalls(harness).at(-1)?.body, {
       kind: "capture_listener_for_analysis", sessionId: state.activeSessionId, tapId: "tap_1a0eff33645_6db3925",
+      startBeat: 320, endBeat: 336,
     });
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }

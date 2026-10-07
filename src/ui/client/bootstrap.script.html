@@ -1138,6 +1138,8 @@
 
         async function captureMainForAnalysis() {
           if (bridgeClient.isOperationInProgress() || bridgeClient.hasAnySendInProgress()) return false;
+          const range = currentBoundedArrangementRange();
+          if (!range) return false;
           const accepted = await confirmAction({
             title: window.LiveSmithI18n.message("Capture Main for analysis?"),
             message: window.LiveSmithI18n.message("Smith will capture the current bounded Arrangement selection automatically. Live must be stopped first. The resulting Main capture stays in this Session for approved analysis only."),
@@ -1145,12 +1147,14 @@
           });
           if (!accepted) return false;
           return bridgeClient.runCommand("capture_main_for_analysis", {
-            sessionId: getState().activeSessionId,
+            sessionId: getState().activeSessionId, startBeat: range.start, endBeat: range.end,
           }, { cancellable: true });
         }
 
         async function captureListenerForAnalysis(tapId, trackName) {
           if (bridgeClient.isOperationInProgress() || bridgeClient.hasAnySendInProgress()) return false;
+          const range = currentBoundedArrangementRange();
+          if (!range) return false;
           const accepted = await confirmAction({
             title: window.LiveSmithI18n.message("Capture {trackName} for analysis?", { trackName }),
             message: window.LiveSmithI18n.message("Smith will capture the current bounded Arrangement selection automatically from {trackName}. Live must be stopped first.", { trackName }),
@@ -1158,7 +1162,7 @@
           });
           if (!accepted) return false;
           return bridgeClient.runCommand("capture_listener_for_analysis", {
-            sessionId: getState().activeSessionId, tapId,
+            sessionId: getState().activeSessionId, tapId, startBeat: range.start, endBeat: range.end,
           }, { cancellable: true });
         }
 

@@ -248,8 +248,8 @@ export type ChatBridgeCommandInput =
   | { kind: "export_artifact"; sessionId: string; artifact: ArtifactRef }
   | { kind: "attach_artifact"; sessionId: string; artifact: ArtifactRef }
   | { kind: "open_attachment"; sessionId: string; attachmentId: string }
-  | { kind: "capture_main_for_analysis"; sessionId: string }
-  | { kind: "capture_listener_for_analysis"; sessionId: string; tapId: string }
+  | { kind: "capture_main_for_analysis"; sessionId: string; startBeat: number; endBeat: number }
+  | { kind: "capture_listener_for_analysis"; sessionId: string; tapId: string; startBeat: number; endBeat: number }
   | { kind: "open_suno_website" }
   | { kind: "open_suno_platform" }
   | { kind: "import_suno_session"; serviceId: string; sessionValue: string }
@@ -1202,18 +1202,20 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     return { kind, sessionId: input.sessionId, attachmentId: input.attachmentId };
   }
   if (kind === "capture_main_for_analysis") {
-    assertOnlyInputKeys(input, ["kind", "sessionId"], "capture_main_for_analysis command");
+    assertOnlyInputKeys(input, ["kind", "sessionId", "startBeat", "endBeat"], "capture_main_for_analysis command");
+    const range = captureRangeFromInput(input);
     if (!isSafeStorageId(input.sessionId)) {
       throw new ChatBridgeRequestValidationError("Choose one valid Session before capturing Main.");
     }
-    return { kind, sessionId: input.sessionId };
+    return { kind, sessionId: input.sessionId, ...range };
   }
   if (kind === "capture_listener_for_analysis") {
-    assertOnlyInputKeys(input, ["kind", "sessionId", "tapId"], "capture_listener_for_analysis command");
+    assertOnlyInputKeys(input, ["kind", "sessionId", "tapId", "startBeat", "endBeat"], "capture_listener_for_analysis command");
+    const range = captureRangeFromInput(input);
     if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.tapId)) {
       throw new ChatBridgeRequestValidationError("Choose one valid Session and AgentAudioTap listener before capturing.");
     }
-    return { kind, sessionId: input.sessionId, tapId: input.tapId };
+    return { kind, sessionId: input.sessionId, tapId: input.tapId, ...range };
   }
   if (kind === "resume_audio_job") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "jobId"], "resume_audio_job command");
@@ -1680,6 +1682,16 @@ function assertOnlyInputKeys(
       `${label} does not support property ${unknown}.`,
     );
   }
+}
+
+function captureRangeFromInput(input: Record<string, unknown>): { startBeat: number; endBeat: number } {
+  const { startBeat, endBeat } = input;
+  if (typeof startBeat !== "number" || typeof endBeat !== "number" ||
+    !Number.isFinite(startBeat) || !Number.isFinite(endBeat) ||
+    startBeat < 0 || endBeat <= startBeat) {
+    throw new ChatBridgeRequestValidationError("Choose a valid bounded Arrangement selection before capturing.");
+  }
+  return { startBeat, endBeat };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
