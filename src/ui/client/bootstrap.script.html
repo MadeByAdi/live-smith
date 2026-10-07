@@ -1180,6 +1180,12 @@
           const disabledReason = listeners.length === 0
             ? t("No fresh Track/Group AgentAudioTap listener is online.")
             : currentBoundedArrangementRange() ? "" : t("Automatic listening requires a valid bounded Arrangement selection.");
+          const renderKey = JSON.stringify({
+            disabledReason,
+            locale: i18n.locale,
+            listeners: listeners.map(({ tapId, trackName, trackType }) => ({ tapId, trackName, trackType })),
+          });
+          if (shell.dataset.renderKey === renderKey) return;
           const select = document.createElement("select");
           select.id = "captureAgentAudioTapListenerSelect";
           select.className = "composer-select composer-control";
@@ -1211,6 +1217,7 @@
             if (!listener) return;
             void captureListenerForAnalysis(listener.tapId, listener.trackName);
           });
+          shell.dataset.renderKey = renderKey;
           shell.replaceChildren(select);
         }
 

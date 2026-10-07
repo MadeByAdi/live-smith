@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import test from "node:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -7,7 +8,7 @@ import { audioStorageHarness as rawAudioStorageHarness, generationJobCases, wave
 import { midiBytes, noteTrack, sequentialNotes } from "../../attachments/support/midi-test-helpers.js";
 import { savePluginAudioArtifact } from "../../../src/storage/audio-artifacts.js";
 import { createAudioJob, loadAudioJob, updateAudioJob } from "../../../src/storage/audio-jobs.js";
-import { saveAudioAsset } from "../../../src/storage/audio-assets.js";
+import { readAudioAsset, saveAgentAudioTapArtifact, saveAudioAsset } from "../../../src/storage/audio-assets.js";
 import { saveMidiArtifact } from "../../../src/storage/midi-artifacts.js";
 import { appendSessionEvent, loadSessionEvents, type SessionEvent } from "../../../src/storage/events.js";
 import { createSession } from "../../../src/storage/sessions.js";
@@ -541,6 +542,84 @@ test("audio recovery receipts become public artifacts only after output ownershi
   assert.equal((await listSessionArtifacts(input)).artifacts[0]!.ref.id, asset.id);
 });
 
+test("AgentAudioTap captures enter the canonical Session artifact catalog without losing provenance", async (t) => {
+  const h = await rawAudioStorageHarness(t);
+  const other = await createSession(h.storage, { title: "Other", projectKey: "test-project", scope: { kind: "selection", identity: "other", label: "Other" } });
+  const main = await saveAgentAudioTapArtifact(h.storage, h.session.id, {
+    label: "Main capture from upstream AgentAudioTap",
+    bytes: stereoWaveBytes(4),
+    captureId: "tapcapture_main_123",
+    origin: {
+      kind: "agent_audio_tap",
+      captureId: "tapcapture_main_123",
+      scope: "main",
+      tapPosition: "main_insertion_point",
+      startBeat: 320,
+      endBeat: 336,
+    },
+    signal: h.signal,
+  });
+  const song = await saveAgentAudioTapArtifact(h.storage, h.session.id, {
+    label: "Song capture from upstream AgentAudioTap",
+    bytes: stereoWaveBytes(4),
+    captureId: "tapcapture_song_123",
+    origin: {
+      kind: "agent_audio_tap",
+      captureId: "tapcapture_song_123",
+      scope: "listener",
+      tapPosition: "track_insertion_point",
+      startBeat: 320,
+      endBeat: 336,
+      tapId: "tap_song_123",
+      trackName: "Song",
+      trackType: "group",
+      canonicalParent: "live_set tracks 0",
+      windowId: "tapwindow_song_123",
+    },
+    signal: h.signal,
+  });
+  await saveAgentAudioTapArtifact(h.storage, other.id, {
+    label: "Other Session Main capture",
+    bytes: stereoWaveBytes(4),
+    captureId: "tapcapture_other_123",
+    signal: h.signal,
+  });
+
+  const input = { storageDirectory: h.storage, sessionId: h.session.id, signal: h.signal };
+  const catalog = await listSessionArtifacts(input);
+  assert.equal(isSessionArtifacts(catalog), true);
+  assert.equal(catalog.total, 2);
+  assert.deepEqual(new Set(catalog.artifacts.map((entry) => entry.ref.id)), new Set([main.id, song.id]));
+  for (const artifact of catalog.artifacts) {
+    assert.equal(artifact.ref.kind, "audio");
+    assert.equal(artifact.sourceLabel, "AgentAudioTap capture");
+    assert.equal(artifact.audio?.mediaType, "audio/wav");
+    assert.equal(artifact.audio?.jobId, undefined);
+    assert.ok((artifact.audio?.durationSeconds ?? 0) > 0);
+  }
+  const detail = await readSessionArtifact({ ...input, artifact: { kind: "audio", id: song.id } });
+  assert.equal(isSessionArtifactDetail(detail), true);
+  assert.equal(detail.artifact.ref.id, song.id);
+  assert.equal(detail.artifact.audio?.mediaType, "audio/wav");
+  assert.equal(detail.artifact.sourceLabel, "AgentAudioTap capture");
+  assert.equal(detail.artifact.generation, undefined);
+  assert.equal(detail.artifact.parent, undefined);
+  assert.deepEqual((await readAudioAsset(h.storage, h.session.id, song.id, h.signal)).asset.origin, {
+    kind: "agent_audio_tap",
+    captureId: "tapcapture_song_123",
+    scope: "listener",
+    tapPosition: "track_insertion_point",
+    startBeat: 320,
+    endBeat: 336,
+    tapId: "tap_song_123",
+    trackName: "Song",
+    trackType: "group",
+    canonicalParent: "live_set tracks 0",
+    windowId: "tapwindow_song_123",
+  });
+  assert.deepEqual((await listSessionArtifacts({ ...input, sessionId: other.id })).artifacts.map((entry) => entry.label), ["Other Session Main capture"]);
+});
+
 test("provider audio recovers saved sources without a tool result and retains legacy event provenance", async (t) => {
   const jobInput = generationJobCases[0]!.input;
   const h = await rawAudioStorageHarness(t, jobInput);
@@ -567,3 +646,24 @@ test("provider audio recovers saved sources without a tool result and retains le
     assert.deepEqual(listed.parent, parent);
   }
 });
+
+function stereoWaveBytes(durationSeconds = 1): Uint8Array {
+  const sampleRate = 8_000;
+  const frames = Math.max(1, Math.floor(sampleRate * durationSeconds));
+  const bytes = Buffer.alloc(44 + frames * 2 * 2);
+  bytes.write("RIFF", 0, "ascii");
+  bytes.writeUInt32LE(bytes.byteLength - 8, 4);
+  bytes.write("WAVEfmt ", 8, "ascii");
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(2, 22);
+  bytes.writeUInt32LE(sampleRate, 24);
+  bytes.writeUInt32LE(sampleRate * 4, 28);
+  bytes.writeUInt16LE(4, 32);
+  bytes.writeUInt16LE(16, 34);
+  bytes.write("data", 36, "ascii");
+  bytes.writeUInt32LE(bytes.byteLength - 44, 40);
+  bytes.writeInt16LE(1200, 44);
+  bytes.writeInt16LE(-1200, 46);
+  return new Uint8Array(bytes);
+}

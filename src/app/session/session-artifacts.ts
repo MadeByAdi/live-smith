@@ -1,12 +1,17 @@
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+
 import { artifactKey, artifactVersion, pendingArtifactParentFromEvents, primaryArtifactsFromEvents, type ArtifactRef, type ArtifactSelection, type ArtifactVersion, type ArtifactVersionSummary } from "../../agent/artifact-contracts.js";
 import { audioOutputDescriptor } from "../../audio-services/audio-output.js";
 import { MAX_MIDI_PREVIEW_NOTES, type MidiPreviewNote } from "../../agent/action-preview.js";
-import { readAudioSessionState } from "../../storage/audio-assets.js";
+import { listSessionAudioArtifacts, readAudioSessionState } from "../../storage/audio-assets.js";
+import { bindAudioDirectory } from "../../storage/audio-jobs.js";
 import { listPluginAudioArtifacts, readSessionAudioArtifact } from "../../storage/audio-artifacts.js";
 import { appendSessionEvent, loadSessionEvents, type SessionEvent } from "../../storage/events.js";
 import { MAX_MIDI_ARTIFACT_NOTES, inspectMidiArtifacts, readMidiArtifact, midiArtifactPartSummaries, midiArtifactVersion, type MidiArtifactPartSummary } from "../../storage/midi-artifacts.js";
 import { listSessions } from "../../storage/sessions.js";
 import { throwIfAborted } from "../../runtime/host.js";
+import type { AudioAsset } from "../../audio-services/contracts.js";
 
 export const ARTIFACT_PAGE_SIZE = 24;
 export interface ArtifactGeneration {
@@ -154,12 +159,14 @@ export async function readSessionArtifactCatalog(input: SessionInput & { include
   artifacts: SessionArtifact[]; unavailableCount: number; continuation?: ArtifactRef;
 }> {
   await requireSession(input);
-  const [listing, audio, pluginAudio, events] = await Promise.all([
+  const [listing, audio, sessionAudio, pluginAudio, events] = await Promise.all([
     inspectMidiArtifacts(input.storageDirectory, input.sessionId), input.storageDirectory
       ? readAudioSessionState(input.storageDirectory, input.sessionId) : Promise.resolve({ jobs: [], assets: [] }),
+    input.storageDirectory ? listSessionAudioArtifacts(input.storageDirectory, input.sessionId) : Promise.resolve([]),
     listPluginAudioArtifacts(input.storageDirectory, input.sessionId),
     loadSessionEvents(input.storageDirectory, input.sessionId),
   ]);
+  const sessionAudioCreatedAt = await sessionAudioArtifactCreatedAt(input.storageDirectory, input.sessionId, sessionAudio);
   const { jobs, assets } = audio;
   const generations = artifactGenerationsFromEvents(events);
   const generationAt = (key: string, createdAt: string) => {
@@ -190,6 +197,13 @@ export async function readSessionArtifactCatalog(input: SessionInput & { include
       ...(artifact.sourceArtifact ? { parent: artifact.sourceArtifact } : {}),
       version: { ...artifact.version, groupLabel: artifact.label },
       audio: { durationSeconds: artifact.durationSeconds, mediaType: artifact.mediaType } })),
+    ...sessionAudio.map((asset): SessionArtifact => ({
+      ref: { kind: "audio", id: asset.id },
+      label: asset.label,
+      createdAt: sessionAudioCreatedAt.get(asset.id) ?? new Date(0).toISOString(),
+      sourceLabel: asset.role === "agent_audio_tap" ? "AgentAudioTap capture" : "Arrangement audio render",
+      audio: { durationSeconds: asset.durationSeconds, mediaType: asset.mediaType },
+    })),
   ].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || artifactKey(a.ref).localeCompare(artifactKey(b.ref)));
   const artifacts = summaries;
   const groups = new Map<string, SessionArtifact[]>();
@@ -220,6 +234,23 @@ export async function readSessionArtifactCatalog(input: SessionInput & { include
   }
   await requireSession(input);
   return { artifacts, unavailableCount: listing.unavailableCount, ...(continuation ? { continuation } : {}) };
+}
+
+async function sessionAudioArtifactCreatedAt(
+  storageDirectory: string | undefined,
+  sessionId: string,
+  artifacts: readonly AudioAsset[],
+): Promise<Map<string, string>> {
+  const directory = storageDirectory && artifacts.length
+    ? await bindAudioDirectory(storageDirectory, sessionId)
+    : undefined;
+  const createdAt = new Map<string, string>();
+  if (!directory) return createdAt;
+  await Promise.all(artifacts.map(async (asset) => {
+    const info = await fs.stat(path.join(directory.directory, `${asset.id}.asset.json`));
+    createdAt.set(asset.id, new Date(info.mtimeMs).toISOString());
+  }));
+  return createdAt;
 }
 
 async function hydrateMidiArtifact(input: SessionInput, artifact: SessionArtifact, maximumNotes = MAX_MIDI_PREVIEW_NOTES): Promise<SessionArtifact> {

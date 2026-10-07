@@ -365,7 +365,10 @@ export function isWireConversationScope(value: unknown): value is ConversationSc
 
 export function isWireSkillId(value: unknown): value is string {
   return typeof value === "string" &&
-    /^[a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?$/.test(value) &&
+    (
+      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) ||
+      /^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+    ) &&
     value.length <= WIRE_MAX_SKILL_ID_LENGTH;
 }
 

@@ -339,6 +339,7 @@ export const mainMessages: Record<string, string> = {
   "Capture Track or Group unavailable: {reason}": "捕获轨道或编组不可用：{reason}",
   "Capture Track or Group": "捕获轨道或编组",
   "Capture Track/Group": "捕获轨道/编组",
+  "{name} capture saved for analysis ({seconds} seconds).": "{name} 捕获已保存用于分析（{seconds} 秒）。",
   "{count} queued follow-up canceled because the target Session is no longer available.": "{count} 条排队的后续请求因目标会话已不可用而取消。",
   "{count} queued follow-ups canceled because the target Session is no longer available.": "{count} 条排队的后续请求因目标会话已不可用而取消。",
   "Continue": "继续",

@@ -59,6 +59,21 @@ test("real script boots and Add then Discard restores the saved profile", async 
   }
 });
 
+test("browser-launched cookie-authenticated UI omits empty bridge token from EventSource URL", async () => {
+  const harness = await createDialogHarness(
+    stateFixture(),
+    { baseUrl: "http://bridge.test", token: "" },
+  );
+  try {
+    assert.deepEqual(harness.eventSourceUrls, [
+      "http://bridge.test/events",
+    ]);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
 test("a valid Profile starts in chat-first mode and exposes an accessible Inspector", async () => {
   const state = stateFixture();
   state.openSettingsOnLoad = false;

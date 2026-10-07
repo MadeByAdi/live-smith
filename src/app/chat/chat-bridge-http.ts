@@ -1201,6 +1201,20 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     }
     return { kind, sessionId: input.sessionId, attachmentId: input.attachmentId };
   }
+  if (kind === "capture_main_for_analysis") {
+    assertOnlyInputKeys(input, ["kind", "sessionId"], "capture_main_for_analysis command");
+    if (!isSafeStorageId(input.sessionId)) {
+      throw new ChatBridgeRequestValidationError("Choose one valid Session before capturing Main.");
+    }
+    return { kind, sessionId: input.sessionId };
+  }
+  if (kind === "capture_listener_for_analysis") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "tapId"], "capture_listener_for_analysis command");
+    if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.tapId)) {
+      throw new ChatBridgeRequestValidationError("Choose one valid Session and AgentAudioTap listener before capturing.");
+    }
+    return { kind, sessionId: input.sessionId, tapId: input.tapId };
+  }
   if (kind === "resume_audio_job") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "jobId"], "resume_audio_job command");
     if (!isSafeStorageId(input.sessionId) || !isSafeStorageId(input.jobId)) {
