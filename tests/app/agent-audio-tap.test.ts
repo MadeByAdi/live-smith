@@ -8,6 +8,9 @@ import { createHostAbortController } from "../../src/runtime/host.js";
 import { listSessionAudioArtifacts, readAudioAsset } from "../../src/storage/audio-assets.js";
 import { createSession } from "../../src/storage/sessions.js";
 import {
+  AGENT_AUDIO_TAP_COMMAND_FILE_NAME,
+  AGENT_AUDIO_TAP_EXTENSION_ID,
+  AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME,
   admitFinalizedAgentAudioTapCapture,
   captureMainWithAgentAudioTap,
   captureArrangementWithAgentAudioTap,
@@ -16,6 +19,8 @@ import {
   discoverAgentAudioTapListeners,
   formatAgentAudioTapListenersForReasoning,
   agentAudioTapListenersForReasoning,
+  agentAudioTapCommandFile,
+  agentAudioTapRegistryDirectory,
   resolveAgentAudioTapCaptureTarget,
   resolveAgentAudioTapListener,
   writeAgentAudioTapCommand,
@@ -228,6 +233,29 @@ test("the adapter writes only opaque unique upstream start/stop commands", async
   await writeAgentAudioTapCommand(command, { id: "tapcapture_123", command: "start", path: "/private/tmp/capture.wav" });
   assert.deepEqual(JSON.parse(await fs.readFile(command, "utf8")), { id: "tapcapture_123", command: "start", path: "/private/tmp/capture.wav" });
   await assert.rejects(writeAgentAudioTapCommand(command, { id: "tapcapture_123", command: "start" }), /absolute host-owned/u);
+});
+
+test("the canonical AgentAudioTap registry lives in Ableton Extensions Data for production sandbox access", () => {
+  const directory = agentAudioTapRegistryDirectory();
+  const command = agentAudioTapCommandFile();
+
+  assert.equal(path.basename(directory), AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME);
+  assert.equal(path.basename(command), AGENT_AUDIO_TAP_COMMAND_FILE_NAME);
+  assert.equal(path.dirname(command), directory);
+  assert.match(command, /Library\/Application Support\/Ableton\/Extensions Data/u);
+  assert.match(command, new RegExp(`${AGENT_AUDIO_TAP_EXTENSION_ID}/${AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME}/${AGENT_AUDIO_TAP_COMMAND_FILE_NAME}$`, "u"));
+  assert.doesNotMatch(command, /\.ableton-live-mcp/u);
+});
+
+test("listener discovery returns no listeners when the registry directory cannot be read", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-agent-registry-blocked-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const fileAsDirectory = path.join(directory, "not-a-directory");
+  await fs.writeFile(fileAsDirectory, "occupied");
+
+  assert.deepEqual(await discoverAgentAudioTapListeners({
+    commandFile: path.join(fileAsDirectory, AGENT_AUDIO_TAP_COMMAND_FILE_NAME),
+  }), []);
 });
 
 test("fresh listener receipts are bounded and resolve only their stable tap ID", async (t) => {

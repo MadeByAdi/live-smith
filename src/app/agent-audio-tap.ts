@@ -43,6 +43,10 @@ export interface AgentAudioTapArrangementWindow {
   endBeat: number;
 }
 
+export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "agent-audio-tap";
+export const AGENT_AUDIO_TAP_COMMAND_FILE_NAME = "agent_audio_tap_command.json";
+export const AGENT_AUDIO_TAP_EXTENSION_ID = "sam-kuler.live-smith";
+
 type AgentAudioTapCommand = "start" | "stop" | "arm" | "begin" | "cancel";
 type AgentAudioTapCaptureState = "armed" | "recording" | "stopped" | "failed";
 
@@ -63,6 +67,22 @@ export class AgentAudioTapCaptureError extends Error {
     super(message, options);
     this.name = "AgentAudioTapCaptureError";
   }
+}
+
+export function agentAudioTapRegistryDirectory(): string {
+  return path.join(
+    os.homedir(),
+    "Library",
+    "Application Support",
+    "Ableton",
+    "Extensions Data",
+    AGENT_AUDIO_TAP_EXTENSION_ID,
+    AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME,
+  );
+}
+
+export function agentAudioTapCommandFile(): string {
+  return path.join(agentAudioTapRegistryDirectory(), AGENT_AUDIO_TAP_COMMAND_FILE_NAME);
 }
 
 export interface AgentAudioTapCaptureLifecycleResult {
@@ -125,6 +145,7 @@ export async function writeAgentAudioTapCommand(commandFile: string, value: {
     }
     requireSafeStorageId(value.captureId, "AgentAudioTap capture ID");
   }
+  await fs.mkdir(path.dirname(commandFile), { recursive: true });
   await fs.writeFile(commandFile, JSON.stringify(value), { mode: 0o600 });
 }
 
@@ -132,7 +153,7 @@ export async function writeAgentAudioTapCommand(commandFile: string, value: {
 export async function discoverAgentAudioTapListeners(input: {
   commandFile?: string; now?: number; maximumAgeMs?: number;
 } = {}): Promise<AgentAudioTapListener[]> {
-  const commandFile = input.commandFile ?? path.join(os.homedir(), ".ableton-live-mcp", "agent_audio_tap_command.json");
+  const commandFile = input.commandFile ?? agentAudioTapCommandFile();
   const maximumAgeMs = input.maximumAgeMs ?? 5_000;
   const now = input.now ?? Date.now();
   const directory = path.dirname(commandFile);
@@ -140,7 +161,10 @@ export async function discoverAgentAudioTapListeners(input: {
   const suffix = ".status.json";
   const maximumLiveListeners = 64;
   let names: string[];
-  try { names = await fs.readdir(directory); } catch { return []; }
+  try {
+    await fs.mkdir(directory, { recursive: true });
+    names = await fs.readdir(directory);
+  } catch { return []; }
   const listeners: AgentAudioTapListener[] = [];
   for (const name of names) {
     if (!name.startsWith(prefix) || !name.endsWith(suffix) || name.includes("/")) continue;
@@ -373,7 +397,7 @@ export async function captureArrangementWithAgentAudioTap(input: {
     startBeat: input.window.startBeat,
     endBeat: input.window.endBeat,
   };
-  const commandFile = input.commandFile ?? path.join(os.homedir(), ".ableton-live-mcp", "agent_audio_tap_command.json");
+  const commandFile = input.commandFile ?? agentAudioTapCommandFile();
   const captureDirectory = path.join(input.storageDirectory, "agent-audio-tap-captures");
   const completedPath = path.join(captureDirectory, `${intent.captureId}.wav`);
   const pollIntervalMs = input.receiptPollIntervalMs ?? 100;
@@ -488,9 +512,7 @@ export async function captureMainWithAgentAudioTap(input: {
       !Number.isInteger(settleAttempts) || settleAttempts < 2 || settleAttempts > 120) {
     throw new TypeError("AgentAudioTap capture timing is invalid.");
   }
-  const commandFile = input.commandFile ?? path.join(
-    os.homedir(), ".ableton-live-mcp", "agent_audio_tap_command.json",
-  );
+  const commandFile = input.commandFile ?? agentAudioTapCommandFile();
   const captureDirectory = path.join(input.storageDirectory, "agent-audio-tap-captures");
   const completedPath = path.join(captureDirectory, `${intent.captureId}.wav`);
   const wait = input.wait ?? waitFor;
