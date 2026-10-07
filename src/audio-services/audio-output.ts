@@ -65,8 +65,10 @@ export const AUDIO_OUTPUT_LABELS = Object.fromEntries([
 
 
 /** Plugin artifacts without an output role carry no inferred musical category. */
-export function audioArtifactOutputDescriptor(artifact: { id: string; role?: AudioOutputRole }): AudioOutputDescriptor {
-  return artifact.role === undefined ? { kind: "audio", label: "Audio" } : audioOutputDescriptor(artifact.role)!;
+export function audioArtifactOutputDescriptor(artifact: { id: string; role?: AudioOutputRole | "arrangement_render" | "agent_audio_tap" }): AudioOutputDescriptor {
+  return artifact.role === undefined || artifact.role === "arrangement_render" || artifact.role === "agent_audio_tap"
+    ? { kind: "audio", label: "Audio" }
+    : audioOutputDescriptor(artifact.role)!;
 }
 
 /** An explicit revision may preserve unknown meaning, but cannot turn components into song versions. */

@@ -334,7 +334,7 @@ test("approved artifact tools receive exact staged audio and return only saved M
 
 test("read-only audio artifact tools require only input approval and return ordinary MCP content", async (t) => {
   const h = await audioStorageHarness(t);
-  const source = await h.save();
+  const source = await h.saveResult();
   await installPlugin(h.storage, readOnlyArtifactPackageBytes());
   await setPluginMcpServerApproved(h.storage, "audio-analyzer", "local", true);
   await setPluginEnabled(h.storage, "audio-analyzer", true);

@@ -144,7 +144,8 @@ export interface AgentLoopOptions<ExecutionBindings = undefined> {
   observe(request: AgentObservationRequest): Promise<
     string | {
       content: string;
-      modelInputPart: ModelToolInputPart;
+      artifactRef?: string;
+      modelInputPart?: ModelToolInputPart;
     }
   >;
   preflightActions?(

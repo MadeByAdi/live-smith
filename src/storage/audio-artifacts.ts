@@ -77,7 +77,7 @@ export async function savePluginAudioArtifact(
       throw new AudioStorageError("This Session has reached its audio artifact storage limit.");
     }
     const id = createStorageId("audio_artifact");
-    const parentDescriptor = audioParent?.role === "arrangement_render"
+    const parentDescriptor = audioParent && "role" in audioParent && audioParent.role === "arrangement_render"
       ? { kind: "audio" as const, label: audioParent.label }
       : audioParent && audioArtifactOutputDescriptor(audioParent);
     const version = allocateArtifactVersion(id, [...await listAudioAssetRecords(storageDirectory, sessionId), ...records],

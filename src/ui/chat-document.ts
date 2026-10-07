@@ -157,13 +157,11 @@ function injectSkillContract(script: string): string {
       String(MAX_SKILL_FILE_BYTES),
     )
     .replaceAll(
-      "__MAX_LOCAL_SKILL_ID_LENGTH__",
+      "__MAX_SKILL_ID_LENGTH__",
       String(MAX_SKILL_ID_LENGTH),
     )
-    .replaceAll(
-      "__MAX_SKILL_REFERENCE_ID_LENGTH__",
-      String(MAX_SKILL_REFERENCE_ID_LENGTH),
-    );
+    .replaceAll("__MAX_LOCAL_SKILL_ID_LENGTH__", String(MAX_SKILL_ID_LENGTH))
+    .replaceAll("__MAX_SKILL_REFERENCE_ID_LENGTH__", String(MAX_SKILL_REFERENCE_ID_LENGTH));
 }
 
 export function injectBuiltInSkillDefinitions(

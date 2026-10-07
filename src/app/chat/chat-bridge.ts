@@ -347,6 +347,7 @@ export interface ChatBridgeStream {
 
 export interface ChatBridge {
   url: string;
+  browserUrl: string;
   publishSessionApprovalMode(
     sessionId: string,
     approvalMode: ApprovalMode,
@@ -374,6 +375,7 @@ export interface ChatBridge {
   publishProfileSettingsChange(change: ProfileSettingsChange): void;
   createAudioDownload(sessionId: string, assetId: string, signal: AbortSignal): Promise<string>;
   createMidiDownload(sessionId: string, artifactRef: string, signal: AbortSignal): Promise<string>;
+  waitForFrontendClose(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -716,6 +718,9 @@ export async function createChatBridge(
   options: ChatBridgeOptions,
 ): Promise<ChatBridge> {
   const token = randomUUID();
+  const browserLaunch = randomUUID();
+  const browserCookieName = `LiveSmithBridge-${randomUUID()}`;
+  let browserLaunchAvailable = true;
   let appSandbox: Promise<PluginAppSandbox> | undefined;
   const appSandboxRegistrations = new Map<string, { dispose(): void }>();
   const mediaDownloads = new Map<string, { kind: "audio" | "midi"; sessionId: string; assetId: string; expiresAt: number }>();
@@ -771,6 +776,8 @@ export async function createChatBridge(
   let nextBridgeStateRevision = 1;
   let closing = false;
   let closePromise: Promise<void> | null = null;
+  let resolveFrontendClose!: () => void;
+  const frontendClosed = new Promise<void>((resolve) => { resolveFrontendClose = resolve; });
 
   const retainSendStopTombstone = (
     sendId: string,
@@ -1665,7 +1672,30 @@ export async function createChatBridge(
         return;
       }
 
-      if (tokenForRequest(url) !== token) {
+      let browserCookieAuthorized = false;
+      let browserLaunchAuthorized = false;
+      if (request.method === "GET" && url.pathname === "/chat" && url.searchParams.has("launch")) {
+        const launchValues = url.searchParams.getAll("launch");
+        if (
+          launchValues.length !== 1 ||
+          url.searchParams.size !== 1 ||
+          !browserLaunchAvailable ||
+          launchValues[0] !== browserLaunch
+        ) {
+          response.writeHead(403).end("Forbidden");
+          return;
+        }
+        browserLaunchAvailable = false;
+        browserLaunchAuthorized = true;
+        response.setHeader("Set-Cookie", `${browserCookieName}=${token}; HttpOnly; SameSite=Strict; Path=/`);
+      } else {
+        browserCookieAuthorized = requestHasBridgeCookie(request, browserCookieName, token);
+        if (browserCookieAuthorized && !url.searchParams.has("token")) {
+          url.searchParams.set("token", token);
+        }
+      }
+
+      if (tokenForRequest(url) !== token && !browserLaunchAuthorized) {
         if (attachmentBodyMayBeUnread) request.resume();
         if (skillBodyMayBeUnread) request.resume();
         if (pluginBodyMayBeUnread) request.resume();
@@ -1723,13 +1753,18 @@ export async function createChatBridge(
       }
 
       if (request.method === "GET" && url.pathname === "/chat") {
-        assertExactQueryParameters(url, ["token"], "Chat request");
+        if (!browserLaunchAuthorized) {
+          assertExactQueryParameters(url, ["token"], "Chat request");
+        }
         const signal = beginReadOnlyBuild(response, handlerTerminal);
         const state = await buildBridgeState(stateSnapshotCutRevision, signal);
         if (closing || response.destroyed) return;
         sendHtml(
           response,
-          options.renderHtml(state, { baseUrl: bridgeBaseUrl(server), token }),
+          options.renderHtml(state, {
+            baseUrl: bridgeBaseUrl(server),
+            token: browserCookieAuthorized || browserLaunchAuthorized ? "" : token,
+          }),
         );
         return;
       }
@@ -3035,8 +3070,10 @@ export async function createChatBridge(
 
   return {
     url: `${bridgeBaseUrl(server)}/chat?token=${token}`,
+    browserUrl: `${bridgeBaseUrl(server)}/chat?launch=${browserLaunch}`,
     createAudioDownload: (sessionId, assetId, signal) => createMediaDownload("audio", sessionId, assetId, signal),
     createMidiDownload: (sessionId, assetId, signal) => createMediaDownload("midi", sessionId, assetId, signal),
+    waitForFrontendClose: () => frontendClosed,
     publishSessionApprovalMode: (sessionId, approvalMode, updatedAt) => {
       const published = broadcastStateChange({
         type: "approval_mode_changed",
@@ -3261,6 +3298,7 @@ export async function createChatBridge(
     close: () => {
       if (closePromise) return closePromise;
       closing = true;
+      resolveFrontendClose();
       for (const registration of appSandboxRegistrations.values()) registration.dispose();
       appSandboxRegistrations.clear();
       mediaDownloads.clear();
@@ -3344,6 +3382,12 @@ function waitForSseDrain(response: ServerResponse): Promise<boolean> {
     response.once("close", onClose);
     response.once("error", onClose);
   });
+}
+
+function requestHasBridgeCookie(request: IncomingMessage, cookieName: string, token: string): boolean {
+  const cookie = request.headers.cookie;
+  if (typeof cookie !== "string") return false;
+  return cookie.split(";").some((entry) => entry.trim() === `${cookieName}=${token}`);
 }
 
 function bridgeBaseUrl(server: ReturnType<typeof createServer>): string {

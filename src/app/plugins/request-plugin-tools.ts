@@ -1,4 +1,5 @@
 import { midiArtifactView } from "../midi/midi-artifact-tools.js";
+import { createSessionArtifactToolset, sessionArtifactTools } from "../session/session-artifact-tools.js";
 import type { ArtifactRef } from "../../agent/artifact-contracts.js";
 import type { PluginAudioArtifact } from "../../storage/audio-artifacts.js";
 import type { McpAuthProvider } from "../../plugins/mcp/oauth-contract.js";
@@ -180,6 +181,7 @@ export async function createRequestPluginTools(input: {
   const registryDirectory = input.storageDirectory === undefined
     ? undefined
     : await canonicalStorageDirectory(input.storageDirectory);
+  let hasRejectedReadOnlyAudioArtifactInput = false;
   try {
     if (registryDirectory) {
       const installed = await listInstalledPlugins(input.storageDirectory);
@@ -258,6 +260,15 @@ export async function createRequestPluginTools(input: {
             throwIfAborted(input.signal);
             issues.push(...discovery.issues);
             for (const definition of discovery.tools) {
+              const requiresArtifactInput = definition.artifactContract?.inputs.length &&
+                !admission.approvedArtifactInputServerIds.includes(definition.serverId);
+              const requiresArtifactOutput = definition.artifactContract?.outputs.length &&
+                !admission.approvedArtifactOutputServerIds.includes(definition.serverId);
+              if (requiresArtifactInput && !requiresArtifactOutput &&
+                  definition.artifactContract?.inputs.some((input) => input.kind === "audio") &&
+                  !definition.artifactContract.outputs.length) {
+                hasRejectedReadOnlyAudioArtifactInput = true;
+              }
               if ((definition.artifactContract?.inputs.length &&
                   !admission.approvedArtifactInputServerIds.includes(definition.serverId)) ||
                   (definition.artifactContract?.outputs.length &&
@@ -333,6 +344,13 @@ export async function createRequestPluginTools(input: {
           issues.push(...discovery.issues);
           const routes = new Map<string, McpRoute>();
           for (const definition of discovery.tools) {
+            const requiresArtifactInput = definition.artifactContract?.inputs.length && !connection.artifactInputApproved;
+            const requiresArtifactOutput = definition.artifactContract?.outputs.length && !connection.artifactOutputApproved;
+            if (requiresArtifactInput && !requiresArtifactOutput &&
+                definition.artifactContract?.inputs.some((input) => input.kind === "audio") &&
+                !definition.artifactContract.outputs.length) {
+              hasRejectedReadOnlyAudioArtifactInput = true;
+            }
             if (definition.artifactContract?.inputs.length && !connection.artifactInputApproved ||
                 definition.artifactContract?.outputs.length && !connection.artifactOutputApproved) {
               issues.push({ connectionId: connection.id, serverId: definition.serverId,
@@ -362,7 +380,15 @@ export async function createRequestPluginTools(input: {
         }
       }
     }
-    const registry = new ToolRegistry(toolsets);
+    const artifactReader = createSessionArtifactToolset({ storageDirectory: input.storageDirectory, sessionId: input.sessionId, signal: input.signal });
+    const registry = new ToolRegistry([
+      ...(hasRejectedReadOnlyAudioArtifactInput ? [{
+        id: "live-smith.artifacts.list",
+        tools: () => sessionArtifactTools.filter((tool) => tool.function.name === "list_session_artifacts"),
+        callTool: (call: ModelToolCall) => artifactReader.callTool(call),
+      } satisfies Toolset] : []),
+      ...toolsets,
+    ]);
     const allRoutes = new Map(catalogRoutes.flatMap((routes) => [...routes]));
     const appRoute = (owner: string, name?: string): McpRoute => {
       const source = allRoutes.get(owner);

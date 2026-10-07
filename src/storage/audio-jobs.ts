@@ -268,7 +268,8 @@ function isAudioJob(value: unknown): value is AudioJob {
     Array.isArray(value.outputAssets) && value.outputAssets.length <= MAX_AUDIO_JOB_OUTPUTS &&
     value.outputAssets.every((asset: unknown) => isAudioAsset(asset) &&
       asset.sessionId === value.sessionId && asset.jobId === value.id &&
-      asset.role !== "source" && audioJobOwnsAssetRole(value, asset.role)) &&
+      asset.role !== "source" && audioOutputDescriptor(asset.role) !== undefined &&
+      audioJobOwnsAssetRole(value, asset.role as AudioJobAssetRole)) &&
     new Set(value.outputAssets.map((asset: AudioAsset) => asset.role)).size === value.outputAssets.length;
 }
 

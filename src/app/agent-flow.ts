@@ -32,8 +32,10 @@ import { downloadAudioOutput } from "./audio/audio-generation.js";
 import { audioMessage as m } from "./audio/audio-messages.js";
 import {
   captureArrangementWithAgentAudioTap,
+  captureSessionArrangementWithAgentAudioTap,
   discoverAgentAudioTapListeners,
   formatAgentAudioTapListenersForReasoning,
+  type AgentAudioTapCaptureLifecycleResult,
 } from "./agent-audio-tap.js";
 import { uiMessage, type UiMessage } from "../i18n/ui-message.js";
 import { SunoSessionManager } from "./audio/suno/suno-session-manager.js";
@@ -275,6 +277,7 @@ export interface AgentFlowDependencies extends DialogModelStateDependencies {
   openSunoPlatform?: typeof openSunoPlatform;
   openAudioDownload?: typeof openAudioDownload;
   openMidiDownload?: typeof openAudioDownload;
+  openNonBlockingChat?: (url: string, signal?: AbortSignal) => Promise<void>;
   openAttachment?: (file: Awaited<ReturnType<typeof readSessionAttachment>>, signal: AbortSignal) => Promise<void>;
   verifySunoSession?: SunoSessionVerifier;
   readSunoMusicService?: typeof readSunoMusicService;
@@ -478,10 +481,17 @@ export async function runAgentFlow(
     const remembered = selectionInteractionsBySessionId.get(session.id);
     if (remembered?.selectionContext) {
       const refreshed = remembered.selectionContext.refresh(context);
-      if (
-        !refreshed ||
-        sessionScopeKey(refreshed.scope) !== sessionScopeKey(session.scope)
-      ) return undefined;
+      if (!refreshed) return undefined;
+      const rebound = { ...refreshed, scope: session.scope };
+      selectionInteractionsBySessionId.set(session.id, rebound);
+      return rebound;
+    }
+    if (
+      interaction.selectionContext &&
+      sessionScopeKey(session.scope) === sessionScopeKey(interaction.scope)
+    ) {
+      const refreshed = interaction.selectionContext.refresh(context);
+      if (!refreshed) return undefined;
       const rebound = { ...refreshed, scope: session.scope };
       selectionInteractionsBySessionId.set(session.id, rebound);
       return rebound;
@@ -2357,14 +2367,14 @@ export async function runAgentFlow(
             storageDirectory,
             sessionId: commandInput.sessionId,
             signal,
-            onProgress: (message) => commandContext.progress(message),
+            onProgress: (message: UiMessage) => commandContext.progress(message),
             target: commandInput.kind === "capture_listener_for_analysis"
               ? { kind: "listener", tapId: commandInput.tapId }
               : { kind: "main" },
             window: range === undefined ? undefined : { startBeat: range.start, endBeat: range.end },
             discoverListeners: dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners,
             capture: dependencies.captureArrangementWithAgentAudioTap ?? captureArrangementWithAgentAudioTap,
-            onLifecycleResult: async (result) => {
+            onLifecycleResult: async (result: AgentAudioTapCaptureLifecycleResult) => {
               try {
                 await (dependencies.appendSessionEvent ?? appendSessionEvent)(storageDirectory, commandInput.sessionId, {
                   kind: "tool_result",
@@ -3403,7 +3413,12 @@ export async function runAgentFlow(
         bridge?.publishGlobalSettings(change);
       },
     );
-    await context.ui.showModalDialog(bridge.url, 1040, 720);
+    if (dependencies.openNonBlockingChat) {
+      await dependencies.openNonBlockingChat(bridge.browserUrl);
+      await bridge.waitForFrontendClose();
+    } else {
+      await context.ui.showModalDialog(bridge.url, 1040, 720);
+    }
   } finally {
     attachmentOpener.close();
     unsubscribeApprovalModes?.();

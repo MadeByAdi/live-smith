@@ -174,8 +174,9 @@ export async function readSessionArtifactCatalog(input: SessionInput & { include
       createdAt: artifact.createdAt, sourceLabel: artifact.source?.kind === "model" ? "AI-generated MIDI" : artifact.source?.kind === "host" ? "Live MIDI source" : "Plugin-generated MIDI",
       ...generationAt(`midi:${artifact.id}`, artifact.createdAt),
       version: { ...midiArtifactVersion(artifact), groupLabel: listing.artifacts.find((entry) => entry.id === midiArtifactVersion(artifact).groupId)?.label ?? artifact.label } })),
-    ...assets.filter((asset) => asset.role !== "source" && jobMap.get(asset.jobId)?.outputAssets.some((output) => output.id === asset.id)).map((asset): SessionArtifact => {
-      const job = jobMap.get(asset.jobId)!;
+    ...assets.filter((asset) => asset.role !== "source" && asset.jobId !== undefined &&
+      jobMap.get(asset.jobId)?.outputAssets.some((output) => output.id === asset.id)).map((asset): SessionArtifact => {
+      const job = jobMap.get(asset.jobId as string)!;
       return { ref: { kind: "audio", id: asset.id }, label: `${job.title || asset.label} · ${audioOutputDescriptor(asset.role)!.label}`, createdAt: job.createdAt,
         sourceLabel: [job.provider, job.modelId, job.operation].filter(Boolean).join(" · "),
         ...generationAt(`job:${job.id}`, job.createdAt),
