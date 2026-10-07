@@ -209,8 +209,9 @@ window.LiveSmithFactories.createAudioResults = function createAudioResults({
         if (!audio) {
           audio = document.createElement("audio"); audio.controls = true; audio.preload = "none";
           audio.dataset.audioAssetId = result.asset.id;
-          audio.src = bridgeConfig.baseUrl + "/audio-assets/" + encodeURIComponent(result.asset.id) +
-            "?token=" + encodeURIComponent(bridgeConfig.token) + "&sessionId=" + encodeURIComponent(activeSessionId());
+          const sessionQuery = "sessionId=" + encodeURIComponent(activeSessionId());
+          const tokenQuery = bridgeConfig.token ? "token=" + encodeURIComponent(bridgeConfig.token) + "&" : "";
+          audio.src = bridgeConfig.baseUrl + "/audio-assets/" + encodeURIComponent(result.asset.id) + "?" + tokenQuery + sessionQuery;
           region.append(audio);
         }
         audio.setAttribute("aria-label", t("Local audio preview · {output} · {job}", {

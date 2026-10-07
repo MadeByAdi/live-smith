@@ -15,12 +15,17 @@ const artifacts: SessionArtifact[] = [
     parent: { kind: "midi", id: "midi-a" }, audio: { durationSeconds: 32, mediaType: "audio/wav", jobId: "job-b" } },
 ];
 
-async function setup(defer = false, entries: SessionArtifact[] = artifacts, language: "en" | "zh-CN" = "en") {
+async function setup(
+  defer = false,
+  entries: SessionArtifact[] = artifacts,
+  language: "en" | "zh-CN" = "en",
+  bridge = { baseUrl: "http://bridge.test", token: "test-token" },
+) {
   const state = stateFixture(); state.openSettingsOnLoad = false; state.settings.uiLanguage = language;
   const primaries = new Map<string, { kind: "midi" | "audio"; id: string }>();
   let playCount = 0; let readCount = 0; let continuation: ArtifactSelection["candidate"] = null;
   let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve; });
-  const h = await createDialogHarness(state, undefined, { beforeParse(window) {
+  const h = await createDialogHarness(state, bridge, { beforeParse(window) {
     Object.defineProperty(window.HTMLMediaElement.prototype, "play", { configurable: true, value: async () => { playCount++; } });
   } });
   const withVersions = (entry: SessionArtifact): SessionArtifact => entry.version ? { ...entry,
@@ -88,7 +93,11 @@ test("artifact browsing keeps source selection out of the timeline and prepares 
     assert.match(h.document.querySelector("#artifactLibrary")!.textContent!, /Source artifact: Piano variation/);
     assert.match(h.document.querySelector("#artifactLibrary")!.textContent!, /"seed":12/);
     const audio = h.document.querySelector<HTMLAudioElement>(".artifact-card audio")!;
-    assert.match(audio.src, /\/audio-assets\/audio-b\?token=.*sessionId=/); assert.equal(audio.controls, false);
+    const audioUrl = new URL(audio.src);
+    assert.equal(audioUrl.pathname, "/audio-assets/audio-b");
+    assert.equal(audioUrl.searchParams.get("token"), "test-token");
+    assert.equal(audioUrl.searchParams.get("sessionId"), s.state.activeSessionId);
+    assert.equal(audio.controls, false);
     h.click(".artifact-card .attachment-audio-toggle"); await h.settle(); assert.equal(s.playCount, 1);
     h.input("#prompt", "Keep the dynamics."); action(h, "Create next version");
     await waitForCondition(() => h.document.querySelector<HTMLTextAreaElement>("#prompt")!.value.includes("Piano variation"), "Expected candidate draft");
@@ -107,6 +116,22 @@ test("artifact browsing keeps source selection out of the timeline and prepares 
     h.emitServerEvent({ type: "session_state_invalidated", sessionId: s.state.activeSessionId }); await h.settle();
     assert.doesNotMatch(h.document.querySelector("#artifactLibrary")!.textContent!, /Next request starts from/);
     assert.equal(h.document.querySelector(".artifact-card audio"), activeAudio, "consuming the source does not replace the active player");
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
+test("artifact audio playback URL omits an empty token so browser cookie auth can serve media", async () => {
+  const s = await setup(false, artifacts, "en", { baseUrl: "http://bridge.test", token: "" });
+  const { h } = s;
+  try {
+    await s.open();
+    h.click('button.artifact-open[data-artifact-key="audio:audio-b"]');
+    const audio = h.document.querySelector<HTMLAudioElement>(".artifact-card audio")!;
+    const audioUrl = new URL(audio.src);
+    assert.equal(audioUrl.pathname, "/audio-assets/audio-b");
+    assert.equal(audioUrl.searchParams.has("token"), false);
+    assert.equal(audioUrl.searchParams.get("sessionId"), s.state.activeSessionId);
+    h.click(".artifact-card .attachment-audio-toggle"); await h.settle(); assert.equal(s.playCount, 1);
     assert.deepEqual(h.errors, []);
   } finally { h.close(); }
 });

@@ -284,6 +284,21 @@ test("audio results preview large Arrangement assets using only authenticated se
   } finally { harness.close(); }
 });
 
+test("audio results playback URL omits an empty token so browser cookie auth can serve media", async () => {
+  const state = audioState();
+  state.audioJobs = [job(state.activeSessionId)];
+  const harness = await createDialogHarness(state, { baseUrl: "http://bridge.test", token: "" });
+  try {
+    const player = harness.document.querySelector<HTMLAudioElement>("#audioJobs audio")!;
+    assert.ok(player);
+    const url = new URL(player.src);
+    assert.equal(url.pathname, "/audio-assets/asset-one");
+    assert.equal(url.searchParams.has("token"), false);
+    assert.equal(url.searchParams.get("sessionId"), state.activeSessionId);
+    assert.deepEqual(harness.errors, []);
+  } finally { harness.close(); }
+});
+
 test("completed request state renders new audio results and completed jobs have no Resume control", async () => {
   const state = audioState();
   const harness = await createDialogHarness(state);

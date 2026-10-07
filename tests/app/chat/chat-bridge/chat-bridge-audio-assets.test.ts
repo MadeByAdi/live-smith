@@ -41,6 +41,37 @@ test("audio playback authenticates and serves only validated session references,
   assert.equal(extra.status, 400); await extra.arrayBuffer();
 });
 
+test("audio playback accepts browser-launch cookie auth when token query is absent", async (t) => {
+  const reads: string[] = [];
+  const bytes = new Uint8Array([9, 8, 7]);
+  const bridge = await createChatBridge({
+    buildState: async () => ({} as ChatDialogState), renderHtml: () => "<!doctype html>",
+    handleCommand: async () => ({} as ChatDialogState),
+    handleSend: async () => {},
+    readAudioAsset: async (sessionId, assetId) => {
+      reads.push(`${sessionId}:${assetId}`);
+      if (sessionId !== "session-a" || assetId !== "asset-a") throw new ChatBridgeResourceNotFoundError("Unknown asset");
+      return { bytes, mediaType: "audio/wav" };
+    },
+  });
+  t.after(() => bridge.close());
+  const launched = await fetch(bridge.browserUrl);
+  assert.equal(launched.status, 200); await launched.text();
+  const cookie = launched.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const origin = new URL(bridge.url).origin;
+  const endpoint = `${origin}/audio-assets/asset-a?sessionId=session-a`;
+  const response = await fetch(endpoint, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "audio/wav");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+  assert.deepEqual(reads, ["session-a:asset-a"]);
+  const emptyToken = await fetch(`${endpoint}&token=`, { headers: { cookie } });
+  assert.equal(emptyToken.status, 403);
+  await emptyToken.arrayBuffer();
+});
+
+
 test("audio service revisions survive stale state reads and unrelated global settings updates", async (t) => {
   const settings = freshEmptyAgentSettings();
   const state: Partial<ChatDialogState> = {
