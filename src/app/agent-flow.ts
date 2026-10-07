@@ -350,6 +350,7 @@ export async function runAgentFlow(
   let bindInvocationSelectionToNextSession = Boolean(
     interaction.selectionContext,
   );
+  let invocationSelectionReady = !interaction.selectionContext;
   const withAttachmentMutation = <T>(
     sessionId: string,
     signal: AbortSignal | undefined,
@@ -478,19 +479,17 @@ export async function runAgentFlow(
   const resolveSessionInteraction = (
     session: { id: string; scope: LiveInteractionContext["scope"] },
   ): LiveInteractionContext | undefined => {
+    if (interaction.selectionContext && invocationSelectionReady) {
+      const refreshed = interaction.selectionContext.refresh(context);
+      if (refreshed) {
+        const rebound = { ...refreshed, scope: session.scope };
+        selectionInteractionsBySessionId.set(session.id, rebound);
+        return rebound;
+      }
+    }
     const remembered = selectionInteractionsBySessionId.get(session.id);
     if (remembered?.selectionContext) {
       const refreshed = remembered.selectionContext.refresh(context);
-      if (!refreshed) return undefined;
-      const rebound = { ...refreshed, scope: session.scope };
-      selectionInteractionsBySessionId.set(session.id, rebound);
-      return rebound;
-    }
-    if (
-      interaction.selectionContext &&
-      sessionScopeKey(session.scope) === sessionScopeKey(interaction.scope)
-    ) {
-      const refreshed = interaction.selectionContext.refresh(context);
       if (!refreshed) return undefined;
       const rebound = { ...refreshed, scope: session.scope };
       selectionInteractionsBySessionId.set(session.id, rebound);
@@ -525,15 +524,14 @@ export async function runAgentFlow(
         modalSessionOwner,
       );
       throwIfAborted(signal);
-      if (
-        requestedSessionId === undefined &&
-        bindInvocationSelectionToNextSession &&
-        interaction.selectionContext
-      ) {
-        selectionInteractionsBySessionId.set(activeSession.id, interaction);
-        bindInvocationSelectionToNextSession = false;
-      }
       if (activeSessionId !== requestedSessionId) continue;
+      if (requestedSessionId === undefined && interaction.selectionContext) {
+        invocationSelectionReady = true;
+        if (bindInvocationSelectionToNextSession) {
+          selectionInteractionsBySessionId.set(activeSession.id, interaction);
+          bindInvocationSelectionToNextSession = false;
+        }
+      }
       activeSessionId = activeSession.id;
       return activeSession;
     }

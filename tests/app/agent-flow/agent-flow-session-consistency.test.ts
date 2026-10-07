@@ -279,6 +279,111 @@ test("restoring a historical Session binds only that Session to the current sele
   });
 });
 
+test("current Arrangement selection supersedes an older Clip Session for AgentAudioTap capture", async (t) => {
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "live-smith-current-selection-capture-"),
+  );
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await saveSavedProfile(directory, profile());
+  const guitar = fakeMidiTrack(109n, "9 Guitar");
+  let captureWindow: unknown;
+  let modelLiveContext = "";
+  const context = {
+    application: {
+      song: { handle: { id: 1n }, tracks: [guitar], scenes: [] },
+    },
+    environment: { storageDirectory: directory },
+    getObjectFromHandle: () => guitar,
+    ui: {
+      showModalDialog: async (url: string) => {
+        const dialog = endpoint(url);
+        const initial = await state(dialog);
+        assert.match(initial.contextSummary, /Arrangement selection: beats 116 to 128/);
+        const clipSession = await createSession(directory, {
+          title: "9 Guitar",
+          projectKey: initial.sessions[0]!.projectKey,
+          scope: { kind: "clip", identity: "clip-9-guitar", label: "9 Guitar" },
+        });
+        assert.notEqual(initial.activeSessionId, clipSession.id);
+
+        const selectedResponse = await fetch(dialog.endpoint("/command"), {
+          method: "POST",
+          headers: jsonHeaders("context-command-clip-session"),
+          body: JSON.stringify({
+            kind: "select_session",
+            sessionId: clipSession.id,
+          }),
+        });
+        const selected = await selectedResponse.json() as ChatDialogState;
+        assert.equal(selected.activeSessionId, clipSession.id);
+        assert.match(selected.contextSummary, /Arrangement selection: beats 116 to 128/);
+        assert.deepEqual(selected.liveContext, {
+          sessionId: clipSession.id,
+          availability: "available",
+          value: {
+            origin: "arrangement-selection", objectKind: "other", title: "Arrangement selection",
+            details: ['MIDI track "9 Guitar"'],
+            range: { coordinate: "arrangement-beats", start: 116, end: 128 },
+          },
+        });
+
+        const send = await fetch(dialog.endpoint("/send"), {
+          method: "POST",
+          headers: jsonHeaders("context-send-clip-session"),
+          body: JSON.stringify({
+            prompt: "Capture AgentAudioTap for this selected section",
+            sessionId: clipSession.id,
+          }),
+        });
+        assert.equal(send.status, 200);
+        assert.match(modelLiveContext, /Arrangement selection: beats 116 to 128/);
+
+        const captureResponse = await fetch(dialog.endpoint("/command"), {
+          method: "POST",
+          headers: jsonHeaders("context-command-capture-main"),
+          body: JSON.stringify({
+            kind: "capture_main_for_analysis",
+            sessionId: clipSession.id,
+            startBeat: 4,
+            endBeat: 12,
+          }),
+        });
+        assert.equal(captureResponse.status, 200);
+        assert.deepEqual(captureWindow, { startBeat: 116, endBeat: 128 });
+      },
+    },
+  };
+  const interaction = arrangementSelectionInteractionContext(
+    context as never,
+    {
+      selected_lanes: [guitar.handle],
+      time_selection_start: 116,
+      time_selection_end: 128,
+    } as never,
+  );
+
+  await runAgentFlow(context as never, interaction, {
+    renderHtml: () => "<html></html>",
+    requestModelTurn: async (request) => {
+      modelLiveContext = request.liveContext;
+      return { content: "Selection received.", toolCalls: [] };
+    },
+    discoverAgentAudioTapListeners: async () => [{
+      tapId: "tap_main_123", trackName: "Main", trackType: "main",
+      canonicalParent: "live_set master_track", updatedAt: "2026-10-08T00:00:00.000Z",
+    }],
+    captureArrangementWithAgentAudioTap: async (input) => {
+      captureWindow = input.window;
+      return {
+        artifactRef: "audio_artifact_123",
+        captureId: "tapcapture_123",
+        durationSeconds: 4,
+        channels: 2,
+      };
+    },
+  });
+});
+
 interface DialogEndpoint {
   endpoint(pathname: string): string;
 }
