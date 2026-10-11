@@ -1,5 +1,5 @@
 import createDOMPurify from "dompurify";
-import { Marked, Renderer } from "marked";
+import { Marked, Renderer, Tokenizer } from "marked";
 
 declare global {
   interface Window {
@@ -38,8 +38,8 @@ const allowedTags = [
 ];
 const renderer = new Renderer();
 // Raw HTML and remote images stay visible as inert text instead of becoming DOM.
-renderer.html = ({ text }) => escapeHtml(text);
-renderer.image = ({ text }) => escapeHtml(text);
+renderer.html = ({ text }) => escapeHtml(withoutUnresolvedCitations(text));
+renderer.image = ({ text }) => escapeHtml(withoutUnresolvedCitations(text));
 
 const markdown = new Marked({
   async: false,
@@ -47,7 +47,39 @@ const markdown = new Marked({
   gfm: true,
   renderer,
 });
+markdown.use({
+  tokenizer: {
+    url(source) {
+      let boundary = source.indexOf("\uE200");
+      while (boundary >= 0 && !unresolvedCitationPrefix(source.slice(boundary))) {
+        boundary = source.indexOf("\uE200", boundary + 1);
+      }
+      return Tokenizer.prototype.url.call(this, boundary < 0 ? source : source.slice(0, boundary));
+    },
+  },
+  extensions: [{
+    name: "unresolved-citation",
+    level: "inline",
+    start: source => source.indexOf("\uE200"),
+    tokenizer(source) {
+      const raw = unresolvedCitationPrefix(source);
+      if (raw) return { type: "unresolved-citation", raw };
+      return undefined;
+    },
+    renderer: () => "",
+  }],
+});
 const purifier = createDOMPurify(window);
+
+function unresolvedCitationPrefix(source: string): string | undefined {
+  return /^\uE200cite\uE202[^\uE201]*(?:\uE201|$)/u.exec(source)?.[0] ??
+    ("\uE200cite\uE202".startsWith(source) ? source : undefined);
+}
+
+function withoutUnresolvedCitations(source: string): string {
+  return source.replace(/\uE200[^\uE201]*(?:\uE201|$)/gu,
+    raw => unresolvedCitationPrefix(raw) ? "" : raw);
+}
 
 function renderInto(target: Element, source: string): void {
   const parsed = markdown.parse(

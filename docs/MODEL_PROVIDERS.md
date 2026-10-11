@@ -657,8 +657,16 @@ standalone `POST /alpha/search` protocol, using the same Profile credential,
 account and selected model. The auxiliary request contains the search query,
 explicit search commands and settings; full conversation history and Live tool
 results are not sent to it. The returned text becomes a function result for the
-next model turn. Validated text-result URLs supply search activity; encrypted
-search output is not replayed. Missing or null result metadata is allowed when
+next model turn. Explicit citation markers and source-reference headers in prose
+are expanded into Markdown links using that response's validated text-result URLs
+before replay, because independent searches can reuse reference IDs. The mdast
+parser supplies source positions with standard GFM table and strikethrough
+extensions; code, existing links, reference definitions and ordinary IDs retain
+their literal text. Link labels and destinations encode data symbols so Markdown
+and HTML parsing preserve the original source title and URL. Unresolved citation
+markers are omitted without guessing source associations. Validated text-result
+URLs also supply search activity; encrypted search output is not replayed.
+Missing or null result metadata is allowed when
 the response contains valid output text. The request and output contract follows
 the [Codex search client](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/codex-api/src/endpoint/search.rs)
 and its [tool executor](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/ext/web-search/src/tool.rs).

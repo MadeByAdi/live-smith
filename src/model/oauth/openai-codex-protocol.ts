@@ -62,6 +62,7 @@ import {
 } from "./direct-transport-adapter.js";
 import type { OAuthModelProtocol } from "./protocol.js";
 import { createInternalWebSearchRunner, internalSearchReplayMessages } from "./internal-web-search.js";
+import { normalizeCodexSearchOutput } from "./codex-search-output.js";
 
 const codexBaseUrl = "https://chatgpt.com/backend-api/codex";
 // The catalog is filtered by Codex protocol compatibility, not product version.
@@ -198,11 +199,12 @@ export function createOpenAICodexProtocol(
               (result.results != null && !Array.isArray(result.results))) {
             throw new Error("ChatGPT Codex returned invalid Web Search results.");
           }
+          const normalized = normalizeCodexSearchOutput(result.output, result.results ?? []);
           const activity = normalizeModelHostedWebSearch({
             id, action: "search", status: "completed", queries: [query],
-            sources: (result.results ?? []).filter((item: unknown) => isRecord(item) && item.type === "text_result"),
+            sources: normalized.sources,
           })!;
-          return { content: result.output, toolCalls: [], hostedWebSearches: [activity] };
+          return { content: normalized.content, toolCalls: [], hostedWebSearches: [activity] };
         }),
         request.signal,
       );

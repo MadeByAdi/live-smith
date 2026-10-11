@@ -351,7 +351,9 @@ src/
       dependency and operation-policy wiring.
     client/markdown-renderer.ts
       Shared sanitized Markdown rendering for conversation content and the
-      read-only built-in Skill viewer.
+      read-only built-in Skill viewer. Unresolved provider citation markers,
+      including partial streaming markers, stay out of rendered prose; code
+      spans and fenced code retain their literal content.
     client/wire-contracts/
       Browser-safe validators for untrusted model, Session, Plugin and bridge
       state data. Inputs are unknown; output guards and allowed field names

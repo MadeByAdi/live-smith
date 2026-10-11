@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { ReadableStream } from "node:stream/web";
 import { TextEncoder } from "node:util";
 import test from "node:test";
+import { JSDOM } from "jsdom";
+import { Marked } from "marked";
 
 import type { OAuthCredential } from "../../../src/storage/oauth-credentials.js";
 import { NetworkProxyError } from "../../../src/runtime/network-proxy-error.js";
@@ -151,6 +153,53 @@ test("ChatGPT persists terminal search activity before empty-answer parsing fail
   current.onHostedWebSearch = update => { activity.push(update); };
   await assert.rejects(protocol.createToolTurn(current, credential), /empty response/);
   assert.deepEqual(activity, [{ id: "failed-search", status: "failed", action: "search", queries: ["Live manual"], sources: [] }]);
+});
+
+test("ChatGPT search resolves citation references before replaying each independent result", async () => {
+  const bodies: Record<string, any>[] = [];
+  let searchCount = 0;
+  const protocol = createOpenAICodexProtocol({ fetchImpl: async (input, init) => {
+    if (String(input).endsWith("/alpha/search")) {
+      searchCount++;
+      return new Response(JSON.stringify({
+        output: "Source 【turn0search0】; 120 BPM.citeturn0search0turn0search1turn0search9 See turn0search0.",
+        results: [
+          { type: "text_result", ref_id: "turn0search0", url: `https://example.test/search-${searchCount}`, title: "Song [analysis]" },
+          { type: "text_result", ref_id: "turn0search1", url: "javascript:alert(1)", title: "Unsafe" },
+          { type: "image_result", ref_id: "turn0search9", url: "https://example.test/image", title: "Image" },
+        ],
+      }));
+    }
+    const body = JSON.parse(String(init?.body));
+    bodies.push(body);
+    return streamResponse([{ type: "response.completed", response: { status: "completed", output: bodies.length === 1
+      ? [0, 1].map(index => ({ type: "function_call", call_id: `search-${index}`, name: "live_smith_web_search", arguments: '{"query":"Kids BPM"}' }))
+      : [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Done." }] }],
+    } }]);
+  } });
+  const current = request();
+  current.runtimeProfile.model.advanced.hostedTools = { webSearch: true };
+  current.tools = [{ type: "hosted_web_search", maxUses: 2 }];
+  const turn = await protocol.createToolTurn(current, credential);
+  assert.equal(turn.citations, undefined);
+  current.agentMessages = [{ role: "assistant", content: turn.content, toolCalls: turn.toolCalls, providerState: turn.providerState }];
+  current.tools = [];
+  await protocol.createToolTurn(current, credential);
+  const results = bodies[1]!.input.filter((item: any) => item.type === "function_call_output")
+    .map((item: any) => JSON.parse(item.output));
+  const rendered = results.map((result: any) => new JSDOM(new Marked().parse(result.content) as string));
+  assert.deepEqual(rendered.map((dom: JSDOM) => [...dom.window.document.querySelectorAll("a")].map(link => [link.textContent, link.href])), [
+    [["Song [analysis]", "https://example.test/search-1"], ["Song [analysis]", "https://example.test/search-1"]],
+    [["Song [analysis]", "https://example.test/search-2"], ["Song [analysis]", "https://example.test/search-2"]],
+  ]);
+  for (const dom of rendered) {
+    assert.equal(dom.window.document.body.textContent, "Source Song [analysis]; 120 BPM. Song [analysis] See turn0search0.\n");
+    dom.window.close();
+  }
+  assert.deepEqual(results.map((result: any) => result.sources), [
+    [{ url: "https://example.test/search-1", title: "Song [analysis]" }],
+    [{ url: "https://example.test/search-2", title: "Song [analysis]" }],
+  ]);
 });
 
 for (const failure of ["request", "body", "server", "auth"] as const) test(`ChatGPT standalone search resumes only its pending query after ${failure} failure`, async () => {
