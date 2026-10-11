@@ -49,6 +49,10 @@ export interface LiveContextPresentation {
   };
 }
 
+export type LiveConversationContext = Omit<LiveInteractionContext, "presentation"> & {
+  presentation?: LiveContextPresentation;
+};
+
 export interface LiveInteractionContext {
   summary: string;
   presentation: LiveContextPresentation;

@@ -553,6 +553,10 @@ user/assistant message or Session metadata update. The Session's Updated date
 uses the same activity time.
 
 **Sessions** keep conversation and action history with their Live context.
+If the original Live object is deleted, the Session can still receive messages
+and compact its conversation. Its context is marked unavailable and has no
+default Live target. Live operations that need an object require an explicit
+current target.
 Opening the dialog or choosing New Session does not save an untouched empty
 conversation. Messages, Session settings, and attachments are saved when used.
 With search cleared, the Sessions list keeps empty entries that were active in

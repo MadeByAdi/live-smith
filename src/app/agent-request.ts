@@ -64,7 +64,7 @@ import {
   AgentPlanExecutionError,
   executeAgentPlanWithProgress,
 } from "../live/executor.js";
-import type { LiveInteractionContext } from "../live/context.js";
+import type { LiveConversationContext } from "../live/context.js";
 import { observeLive, readArrangementAudio } from "../live/observer.js";
 import {
   attachmentRequestQuotaIsWithinLimits,
@@ -169,7 +169,7 @@ const maxConsecutiveInvalidToolCalls = 3;
 export async function handleAgentRequest(
   context: Api,
   storageDirectory: string | undefined,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   prompt: string,
   runtimeProfile: RuntimeProfile,
   projectKey: string,
@@ -1097,14 +1097,14 @@ function isAbortCause(error: unknown, signal: AbortSignal): boolean {
 
 export async function preflightAgentPlan(
   context: Api,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   plan: AgentPlan,
   signal: AbortSignal,
   observer: typeof observeLive = observeLive,
   snapshotter: (
     context: Api,
     action: AgentPlan["actions"][number],
-    target: LiveInteractionContext["target"],
+    target: LiveConversationContext["target"],
     requestAudioSources?: RequestAudioSampleSources,
     includePreview?: boolean,
     midiClipStates?: MidiClipPreflightStates,
@@ -1252,14 +1252,14 @@ function normalizedIdentityText(value: string): string {
 
 async function captureAgentPlanPreflightSnapshots(
   context: Api,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   plan: AgentPlan,
   signal: AbortSignal,
   observer: typeof observeLive,
   snapshotter: (
     context: Api,
     action: AgentPlan["actions"][number],
-    target: LiveInteractionContext["target"],
+    target: LiveConversationContext["target"],
     requestAudioSources?: RequestAudioSampleSources,
     includePreview?: boolean,
     midiClipStates?: MidiClipPreflightStates,

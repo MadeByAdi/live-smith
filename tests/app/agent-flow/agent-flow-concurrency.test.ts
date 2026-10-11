@@ -1587,8 +1587,10 @@ test("a post-commit state failure is reconciled as an unknown command outcome", 
   assert.equal((await listSessions(directory)).length, 1);
 });
 
-test("selecting a Track Session refreshes context from that Session's Live object", async () => {
+test("selecting a Track Session refreshes its own context and remains sendable after deletion", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-target-switch-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await saveSavedProfile(directory, profile({ baseUrl: "https://provider.test/v1", apiKey: "test-key", model: "model-a" }));
   const trackA = fakeMidiTrack(101n, "Bass");
   const trackB = fakeMidiTrack(202n, "Lead");
   const context = {
@@ -1628,9 +1630,9 @@ test("selecting a Track Session refreshes context from that Session's Live objec
         const unavailable = await (await fetch(endpoint("/state"))).json() as ChatDialogState;
         assert.match(unavailable.contextSummary, /Live object.*unavailable/i);
         const events = await fetch(endpoint("/events"));
-        const errorEvent = readSsePayload(
+        const doneEvent = readSsePayload(
           events,
-          "error",
+          "done",
           (payload) => payload.sendId === "unavailable-track-send",
         );
         const send = await fetch(endpoint("/send"), {
@@ -1641,22 +1643,17 @@ test("selecting a Track Session refreshes context from that Session's Live objec
           },
           body: JSON.stringify({ prompt: "Change this track", sessionId: leadSession.id }),
         });
-        assert.equal(send.status, 500);
-        const sendBody = await send.json() as {
-          error: string;
-          promptPersistence?: string;
-          sendFailureKind?: string;
-          state?: ChatDialogState;
-        };
-        assert.match(sendBody.error, /no longer available/i);
-        assert.equal(sendBody.promptPersistence, "not_persisted");
-        assert.equal(sendBody.sendFailureKind, "session_unavailable");
-        assert.equal(sendBody.state?.activeSessionId, leadSession.id);
-        assert.match(sendBody.state?.contextSummary ?? "", /Live object.*unavailable/i);
-        const event = await resolvesWithin(errorEvent, "unavailable Track error event");
-        assert.equal(event.promptPersistence, "not_persisted");
-        assert.equal(event.sendFailureKind, "session_unavailable");
+        assert.equal(send.status, 200);
+        const sendBody = await send.json() as { ok: boolean; state: ChatDialogState };
+        assert.equal(sendBody.ok, true);
+        assert.equal(sendBody.state.activeSessionId, leadSession.id);
+        assert.equal(sendBody.state.liveContext.availability, "unavailable");
+        assert.match(sendBody.state.contextSummary, /Live object.*unavailable/i);
+        const event = await resolvesWithin(doneEvent, "unavailable Track completion event");
         assert.equal((event.state as ChatDialogState).activeSessionId, leadSession.id);
+        assert.ok((await loadSessionEvents(directory, leadSession.id)).some((entry) =>
+          entry.kind === "user" && entry.content === "Change this track"
+        ));
       },
     },
   };
@@ -1669,7 +1666,14 @@ test("selecting a Track Session refreshes context from that Session's Live objec
       target: { track: trackA },
       scope: { kind: "track", identity: "101", label: "Bass" },
     },
-    { renderHtml: () => "<html></html>" },
+    {
+      renderHtml: () => "<html></html>",
+      requestModelTurn: async (request) => {
+        assert.match(request.liveContext, /Live object.*unavailable/i);
+        assert.doesNotMatch(request.liveContext, /MIDI track "Bass"|Lead renamed/);
+        return { content: "Choose a current target to edit.", toolCalls: [] };
+      },
+    },
   );
 });
 

@@ -221,6 +221,7 @@ import {
   sessionSummaries,
   projectKeyForContext,
   continuableSessionsForScope,
+  conversationContextForSession,
   withSessionCreationScope,
 } from "./context/session-context.js";
 import {
@@ -764,8 +765,7 @@ export async function createAgentRuntime(
       const catalog = await sunoModelCatalog.view(settings.integrationConnections?.revision);
       throwIfAborted(signal);
       const state: ChatDialogState & { midiContinuation?: MidiContinuationView } = {
-        contextSummary: activeInteraction?.summary ??
-          `The Live object for this session is unavailable: ${activeSession.scope.label}`,
+        contextSummary: conversationContextForSession(activeSession, activeInteraction).summary,
         liveContext: activeInteraction
           ? {
               sessionId: activeSession.id,
@@ -2147,12 +2147,7 @@ export async function createAgentRuntime(
             );
           }
           assertLiveSetCurrent();
-          const sessionInteraction = resolveSessionInteraction(session);
-          if (!sessionInteraction) {
-            throw new ChatBridgeResourceNotFoundError(
-              `The Live object for this Session is no longer available: ${session.scope.label}.`,
-            );
-          }
+          const sessionInteraction = conversationContextForSession(session, resolveSessionInteraction(session));
           const events = await (
             dependencies.loadSessionEvents ?? loadSessionEvents
           )(storageDirectory, session.id);
@@ -3074,13 +3069,7 @@ export async function createAgentRuntime(
           throw new Error("That Session is not available in this Live Set.");
         }
         assertLiveSetCurrent();
-        const sessionInteraction = resolveSessionInteraction(session);
-        if (!sessionInteraction) {
-          sendFailureKind = "session_unavailable";
-          throw new Error(
-            `The Live object for this Session is no longer available: ${session.scope.label}.`,
-          );
-        }
+        const sessionInteraction = conversationContextForSession(session, resolveSessionInteraction(session));
         const modelRequest = await acquireSessionModelRequester(
           session,
           requestSnapshot.settings,

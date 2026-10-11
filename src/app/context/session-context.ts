@@ -2,7 +2,7 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 
 import { EDIT_SCOPES, resolveEditScopes } from "../../agent/edit-scopes.js";
 import type { AgentLoopInitialRecoveryState } from "../../agent/loop.js";
-import type { LiveInteractionContext } from "../../live/context.js";
+import type { LiveConversationContext, LiveInteractionContext } from "../../live/context.js";
 import { throwIfAborted } from "../../runtime/host.js";
 import { listSessionAttachments } from "../../storage/attachments.js";
 import { listAudioJobs } from "../../storage/audio-jobs.js";
@@ -35,6 +35,17 @@ const activationProjectKeys = new WeakMap<
   { songHandleId: bigint; projectKey: string }
 >();
 const sessionCreationFence = new SessionMutationFence();
+
+export function conversationContextForSession(
+  session: Pick<AgentSession, "scope">,
+  interaction: LiveInteractionContext | undefined,
+): LiveConversationContext {
+  return interaction ?? {
+    summary: `The Live object for this Session is unavailable: ${session.scope.label}. No default Live target is available.`,
+    target: {},
+    scope: session.scope,
+  };
+}
 
 export function withSessionCreationScope<T>(
   storageDirectory: string | undefined,
@@ -72,7 +83,7 @@ export function isReusableEmptySessionMetadata(
 
 export async function getOrCreateDefaultSession(
   storageDirectory: string | undefined,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   projectKey: string,
   preferredSessionId?: string | undefined,
   signal?: AbortSignal | undefined,

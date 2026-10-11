@@ -2578,6 +2578,13 @@ every current category. Present scope lists must contain distinct,
 supported values; malformed persisted permissions fail validation rather than
 falling back to All. Deleting a Session removes these settings with the same
 metadata record.
+Live object availability is independent of Session availability. Send and manual
+compaction preserve the saved conversation when the original object or opening
+selection cannot be resolved. `app/context/session-context.ts` supplies a shared
+unavailable-context summary and an empty default target. Explicitly addressed
+Live observations and actions retain their ordinary validation and authorization
+boundaries. Availability resolution never automatically rebinds the Session by
+name or current selection.
 The dialog reserves an active Session ID before the first message, but opening
 a scope or choosing New Session does not persist an untouched empty Session.
 The storage module shares these transient records across dialogs for the same
