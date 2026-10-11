@@ -15,8 +15,8 @@ import {
   clipSlotSelectionInteractionContext,
   objectInteractionContext,
 } from "./live/context.js";
-import { openChatInSystemBrowser } from "./runtime/chat-browser.js";
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
+import { openChatInVst3 } from "./runtime/vst3-handoff.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
@@ -100,7 +100,7 @@ async function askAboutObject(
   await runAgentFlow(
     context,
     objectInteractionContext(context, handle),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }
 
@@ -112,7 +112,7 @@ async function askAboutArrangementSelection(
   await runAgentFlow(
     context,
     arrangementSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }
 
@@ -124,6 +124,6 @@ async function askAboutClipSlotSelection(
   await runAgentFlow(
     context,
     clipSlotSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInSystemBrowser },
+    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }

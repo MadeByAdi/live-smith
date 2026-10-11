@@ -275,6 +275,44 @@
         return attempt;
       }
 
+      function adoptReplayedSendAttempt(payload) {
+        if (
+          !payload?.sessionId ||
+          !payload?.sendId ||
+          sendAttemptsBySession.has(payload.sessionId) ||
+          !isModelTurnEpoch(payload.modelTurnEpoch)
+        ) return null;
+        const attempt = {
+          id: payload.sendId,
+          sessionId: payload.sessionId,
+          causalStateSnapshot: captureCausalState(),
+          ownedSessionActivityIds: new Set([payload.sessionId]),
+          attachments: [],
+          ownedPendingAttachmentIds: new Set(),
+          ownedActiveContextSessionId: payload.sessionId,
+          modelTurnEpoch: 0,
+          resolvedConfirmationGeneration: 0,
+          payload: { prompt: "", sessionId: payload.sessionId },
+          sourceDraft: "",
+          eventIdsAtStart: null,
+          promptEventPersisted: true,
+          queueId: null,
+          progress: payload.progress || window.LiveSmithI18n.message("Working…"),
+          progressIsError: false,
+          queuedFollowUp: false,
+          failureHandled: false,
+          sendOutcomePending: false,
+          resolveSendOutcome: () => {},
+        };
+        sendAttemptsBySession.set(payload.sessionId, attempt);
+        syncSendPresentation(payload.sessionId);
+        return attempt;
+      }
+
+      function activeOrAdoptedModelTurnAttempt(payload) {
+        return transientModelTurnAttempt(payload) || adoptReplayedSendAttempt(payload);
+      }
+
       function advanceModelTurnEpoch(attempt, modelTurnEpoch) {
         if (modelTurnEpoch <= attempt.modelTurnEpoch) {
           return { advanced: false, confirmationChanged: false };
@@ -6850,7 +6888,7 @@
               !Number.isSafeInteger(payload.resolvedConfirmationGeneration) ||
               payload.resolvedConfirmationGeneration < 0
             ) return;
-            const attempt = transientModelTurnAttempt(payload);
+            const attempt = activeOrAdoptedModelTurnAttempt(payload);
             if (!attempt) return;
             const advanced = advanceModelTurnEpoch(
               attempt,

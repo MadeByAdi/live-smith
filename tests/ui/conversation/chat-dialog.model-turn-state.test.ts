@@ -146,6 +146,118 @@ test("a reconnect snapshot replaces same-epoch transient state and restores its 
   }
 });
 
+test("a reopened frontend adopts an active replayed send without posting a duplicate send", async () => {
+  const state = stateFixture();
+  state.openSettingsOnLoad = false;
+  const harness = await createDialogHarness(state);
+  try {
+    const sendId = "replayed-send";
+    harness.emitServerEvent(modelTurnState(sendId, {
+      assistantDraft: "Recovered active draft",
+      progress: "Thinking after reconnect",
+      webSearchUpdates: [],
+    }));
+    harness.flushAnimationFrames();
+
+    assert.equal(harness.calls.some((call) => call.path === "/send"), false);
+    assert.match(streamingText(harness), /Recovered active draft/);
+    assert.equal(
+      harness.document.querySelector("#status")?.textContent,
+      "Thinking after reconnect",
+    );
+
+    harness.emitServerEvent({
+      type: "assistant_delta",
+      sendId,
+      sessionId: "session-1",
+      modelTurnEpoch: 0,
+      delta: " plus live delta",
+    });
+    harness.flushAnimationFrames();
+    assert.match(streamingText(harness), /Recovered active draft plus live delta/);
+
+    harness.emitServerEvent(modelTurnState(sendId, {
+      assistantDraft: "Recovered active draft plus live delta",
+      progress: "Still attached",
+      webSearchUpdates: [],
+    }));
+    harness.flushAnimationFrames();
+    assert.equal(harness.calls.some((call) => call.path === "/send"), false);
+    assert.equal(
+      harness.document.querySelector("#status")?.textContent,
+      "Still attached",
+    );
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    await harness.settle();
+    harness.close();
+  }
+});
+
+test("an adopted replayed send receives pending confirmations and cleans up on completion", async () => {
+  const state = stateFixture();
+  state.openSettingsOnLoad = false;
+  const harness = await createDialogHarness(state);
+  try {
+    const sendId = "replayed-confirm-send";
+    harness.emitServerEvent(modelTurnState(sendId, {
+      assistantDraft: "Ready to apply a replayed change",
+      progress: "Waiting for replayed confirmation",
+      webSearchUpdates: [],
+    }));
+    harness.emitServerEvent({
+      type: "confirm_request",
+      sendId,
+      sessionId: "session-1",
+      modelTurnEpoch: 0,
+      id: "replayed-confirmation",
+      confirmationGeneration: 1,
+      message: "Apply the replayed change?",
+      groups: [{ title: "Tracks", rows: ["Create MIDI track Strings"] }],
+    });
+    assert.match(
+      harness.document.querySelector(".confirm-card")?.textContent ?? "",
+      /replayed change/i,
+    );
+    assert.equal(harness.calls.some((call) => call.path === "/send"), false);
+
+    const doneState = cloneState(state);
+    doneState.events = [{
+      id: "replayed-final-response",
+      createdAt: "2026-08-23T00:01:00.000Z",
+      kind: "assistant",
+      content: "Applied the replayed change.",
+    }];
+    harness.emitServerEvent({
+      type: "done",
+      sendId,
+      sessionId: "session-1",
+      state: doneState,
+    });
+    assert.equal(harness.document.querySelector(".confirm-card"), null);
+    assert.equal(streamingText(harness), "");
+    assert.match(
+      harness.document.querySelector('[data-event-id="replayed-final-response"]')
+        ?.textContent ?? "",
+      /Applied the replayed change/,
+    );
+
+    harness.emitServerEvent({
+      type: "assistant_delta",
+      sendId,
+      sessionId: "session-1",
+      modelTurnEpoch: 0,
+      delta: "late duplicate",
+    });
+    harness.flushAnimationFrames();
+    assert.equal(streamingText(harness), "");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    await harness.settle();
+    harness.close();
+  }
+});
+
 test("model-turn snapshots reject malformed exact or nested wire data atomically", async () => {
   const state = stateFixture();
   state.openSettingsOnLoad = false;
