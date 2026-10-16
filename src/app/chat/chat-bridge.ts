@@ -79,6 +79,7 @@ import {
 import type { GlobalSettingsChange } from "./global-settings-events.js";
 import type { ProfileSettingsChange } from "../model/profile-settings-events.js";
 import type { ActionDiffGroup } from "../../ui/action-diff.js";
+import type { AgentPlan } from "../../agent/actions.js";
 import {
   MAX_TRANSIENT_ASSISTANT_DRAFT_BYTES,
   chatDialogStateForWire,
@@ -335,6 +336,7 @@ export interface ChatBridgeConfirmationRequest {
   groups: ActionDiffGroup[];
   previews?: AgentActionPreview[];
   operationId?: string;
+  plan?: AgentPlan;
 }
 
 export interface ChatBridgeStream {
@@ -553,6 +555,7 @@ type StateChangeSsePayloadBase =
       kind: ChatBridgeConfirmationRequest["kind"];
       message: string;
       groups: ActionDiffGroup[];
+      plan?: AgentPlan;
       previews?: AgentActionPreview[];
       operationId?: string;
       activity: StateChangeActivity;
@@ -1589,6 +1592,7 @@ export async function createChatBridge(
             kind: request.kind,
             message: request.message,
             groups: request.groups,
+            ...(request.plan === undefined ? {} : { plan: request.plan }),
             ...(request.operationId === undefined ? {} : { operationId: request.operationId }),
             ...(request.previews === undefined ? {} : { previews: request.previews }),
             activity: stateChangeActivity(activity),
@@ -1873,6 +1877,7 @@ export async function createChatBridge(
             kind: pending.request.kind,
             message: pending.request.message,
             groups: pending.request.groups,
+            ...(pending.request.plan === undefined ? {} : { plan: pending.request.plan }),
             ...(pending.request.operationId === undefined ? {} : { operationId: pending.request.operationId }),
             ...(pending.request.previews === undefined ? {} : { previews: pending.request.previews }),
             activity: stateChangeActivity(activity ?? {

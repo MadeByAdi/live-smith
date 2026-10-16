@@ -25,17 +25,19 @@ test("every registered action builds complete catalogued messages within the wir
   const actions = agentActionPromptExamples().map((example) =>
     parseAgentAction(JSON.parse(example.slice(example.indexOf(": ") + 2))));
   const original = JSON.stringify(actions);
-  const groups = actionDiffGroups(actions);
-  const rows = groups.flatMap((group) => group.rows);
-  assert.equal(rows.length, actions.length);
-  assert.deepEqual(JSON.parse(JSON.stringify(groups)), groups);
-  for (const [index, row] of rows.entries()) {
-    inspectMessage(row);
-    assert.ok(formatUiMessage(row).startsWith(`${index + 1}. `));
-    assert.doesNotMatch(formatUiMessage(row), /undefined|\[object Object\]/);
+  for (const presentation of ["details", "summary"] as const) {
+    const groups = actionDiffGroups(actions, {}, presentation);
+    const rows = groups.flatMap((group) => group.rows);
+    assert.equal(rows.length, actions.length);
+    assert.deepEqual(JSON.parse(JSON.stringify(groups)), groups);
+    for (const [index, row] of rows.entries()) {
+      inspectMessage(row);
+      assert.ok(formatUiMessage(row).startsWith(`${index + 1}. `));
+      assert.doesNotMatch(formatUiMessage(row), /undefined|\[object Object\]/);
+    }
+    for (const group of groups) inspectMessage(group.title);
+    assert.equal(JSON.stringify(actions), original);
   }
-  for (const group of groups) inspectMessage(group.title);
-  assert.equal(JSON.stringify(actions), original);
 
   function inspectMessage(message: UiMessage | number | boolean, depth = 0): void {
     if (typeof message !== "object") {

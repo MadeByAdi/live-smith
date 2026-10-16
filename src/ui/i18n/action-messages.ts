@@ -5,6 +5,7 @@ export const actionMessages = {
   "Insert Devices": "插入设备",
   "Rack & Samples": "机架与采样",
   "Set Parameters": "设置参数",
+  "Set parameters · {track}.{deviceName}{path} · Parameters: {count}": "设置参数 · {track}.{deviceName}{path} · {count} 个参数",
   "~ {track}.{deviceName}{path}: {values}": "~ {track}.{deviceName}{path}：{values}",
   "Write MIDI": "写入 MIDI",
   "Transform MIDI": "变换 MIDI",

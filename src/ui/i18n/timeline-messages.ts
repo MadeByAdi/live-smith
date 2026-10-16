@@ -52,6 +52,8 @@ export const timelineMessages: Record<string, string> = {
   "In progress": "进行中",
   "Partially completed": "部分完成",
   "Input": "输入",
+  "Input parameters": "输入参数",
+  "Action details": "操作详情",
   "Result": "结果",
   "Approval request": "批准请求",
   "Approval": "批准",

@@ -462,6 +462,10 @@ button.session-row[aria-pressed="true"]:not(:disabled):hover {
 
 .timeline {
   @apply min-h-0 overflow-x-auto overflow-y-scroll overscroll-contain bg-canvas p-4;
+  padding-bottom: calc(var(--spacing-4) + var(--spacing-6));
+  scroll-padding-bottom: calc(var(--spacing-4) + var(--spacing-6));
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--spacing-6)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--spacing-6)), transparent);
 }
 
 .is-scrolling {
@@ -935,6 +939,8 @@ details.timeline-item > summary:hover {
 
 .timeline-activity-group > summary,
 .timeline-activity-step > summary,
+.timeline-activity-input > summary,
+.timeline-activity-tool-details > summary,
 .timeline-item.reasoning > summary {
   @apply relative cursor-pointer list-none rounded-control normal-case;
   letter-spacing: normal;
@@ -942,12 +948,16 @@ details.timeline-item > summary:hover {
 
 .timeline-activity-group > summary::-webkit-details-marker,
 .timeline-activity-step > summary::-webkit-details-marker,
+.timeline-activity-input > summary::-webkit-details-marker,
+.timeline-activity-tool-details > summary::-webkit-details-marker,
 .timeline-item.reasoning > summary::-webkit-details-marker {
   display: none;
 }
 
 .timeline-activity-group > summary::before,
 .timeline-activity-step > summary::before,
+.timeline-activity-input > summary::before,
+.timeline-activity-tool-details > summary::before,
 .timeline-item.reasoning > summary::before {
   content: "";
   position: absolute;
@@ -964,12 +974,16 @@ details.timeline-item > summary:hover {
 
 .timeline-activity-group[open] > summary::before,
 .timeline-activity-step[open] > summary::before,
+.timeline-activity-input[open] > summary::before,
+.timeline-activity-tool-details[open] > summary::before,
 .timeline-item.reasoning[open] > summary::before {
   transform: rotate(90deg);
 }
 
 .timeline-activity-group > summary:hover,
 .timeline-activity-step > summary:hover,
+.timeline-activity-input > summary:hover,
+.timeline-activity-tool-details > summary:hover,
 .timeline-item.reasoning > summary:hover {
   background: rgba(255, 255, 255, 0.045);
 }
@@ -997,7 +1011,9 @@ details.timeline-item.reasoning > summary {
   padding: 4px 8px 4px 18px;
 }
 
-.timeline-activity-step-summary {
+.timeline-activity-step-summary,
+.timeline-activity-input > summary,
+.timeline-activity-tool-details > summary {
   padding: 4px 6px 4px 17px;
 }
 
@@ -1068,6 +1084,31 @@ details.timeline-item.reasoning > summary {
   @apply m-0 whitespace-pre-wrap text-label text-muted font-code;
   overflow-wrap: anywhere;
   line-height: 1.45;
+}
+
+.detail-scroll-region {
+  @apply min-w-0 max-h-80 overflow-auto;
+  overflow-wrap: anywhere;
+}
+
+.timeline-activity-input {
+  display: block;
+}
+
+.timeline-activity-input[hidden] {
+  display: none;
+}
+
+.timeline-activity-input[open] > .detail-scroll-region {
+  margin-top: 2px;
+}
+
+.timeline-action-list {
+  @apply m-0 grid list-none gap-1 p-0;
+}
+
+.timeline-action-list[hidden] {
+  display: none;
 }
 
 .timeline-item.web_search .timeline-content {
@@ -2027,7 +2068,7 @@ details.timeline-item > .timeline-content {
 .piano-roll-scale { @apply text-small text-muted; grid-column: 1 / -1; }
 .plugin-result-load { @apply justify-self-start; }
 .plugin-result-preview { @apply m-0 grid gap-1 pl-4 text-small text-muted; overflow-wrap: anywhere; }
-.app-confirmation-details { @apply max-h-96 overflow-auto text-label; }
+.app-confirmation-details { @apply text-label; }
 .app-confirmation-details h3 { @apply my-2 text-label font-medium; }
 .app-confirmation-details ul { @apply my-2 pl-5; }
 .plugin-parameter-field { @apply grid min-w-0 gap-1; }
@@ -2229,6 +2270,10 @@ details.timeline-item > .timeline-content {
 
 .plugin-description {
   @apply text-muted;
+}
+
+.plugin-server-copy span {
+  @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
 }
 
 .plugin-enabled-toggle {
@@ -2883,12 +2928,13 @@ label {
 
 .app-confirmation-card {
   width: min(360px, 100%);
-  @apply rounded-[8px] border border-[#666] bg-pane-raised p-[14px];
+  max-height: calc(100vh - 32px);
+  @apply flex min-h-0 flex-col overflow-hidden rounded-[8px] border border-[#666] bg-pane-raised p-[14px];
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
 }
 
 .app-confirmation-card h2 {
-  @apply m-0 text-[14px] text-text;
+  @apply m-0 shrink-0 text-[14px] text-text;
   margin-bottom: 7px;
 }
 
@@ -2899,7 +2945,7 @@ label {
 }
 
 .app-confirmation-actions {
-  @apply mt-[14px] grid gap-2;
+  @apply mt-[14px] grid shrink-0 gap-2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

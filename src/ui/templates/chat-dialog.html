@@ -910,8 +910,10 @@
     <div id="appConfirmation" class="app-confirmation-layer" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmationTitle" aria-describedby="appConfirmationMessage" hidden>
       <section class="app-confirmation-card">
         <h2 id="appConfirmationTitle" data-i18n="Confirm action">Confirm action</h2>
-        <p id="appConfirmationMessage"></p>
-        <div id="appConfirmationDetails" class="app-confirmation-details" hidden></div>
+        <div id="appConfirmationBody" class="detail-scroll-region" tabindex="0" role="region" aria-labelledby="appConfirmationTitle">
+          <p id="appConfirmationMessage"></p>
+          <div id="appConfirmationDetails" class="app-confirmation-details" hidden></div>
+        </div>
         <div class="app-confirmation-actions">
           <button id="appConfirmationCancel" class="secondary" type="button" data-i18n="Cancel">Cancel</button>
           <button id="appConfirmationAccept" class="primary" type="button" data-i18n="Continue">Continue</button>

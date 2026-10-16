@@ -25,6 +25,7 @@
       const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const { message } = window.LiveSmithI18n;
       const sessionActivityAt = window.LiveSmithFactories.sessionActivityAt;
+      const createActionDetails = window.LiveSmithFactories.createActionDetails;
       const builtInAudioToolNames = __BUILT_IN_AUDIO_TOOL_NAMES__;
       const sessionActionLabels = new WeakMap();
       const maximumSessionTitleCodePoints = __MAX_SESSION_TITLE_CODE_POINTS__;
@@ -1567,7 +1568,18 @@
       function messageItemForRender(existing, key, snapshot, build, animate) {
         const previous = existing.get(key);
         if (previous && messageRenderSnapshots.get(previous) === snapshot && previous.dataset.locale === window.LiveSmithI18n.locale) return previous;
-        const item = build();
+        let item = build();
+        const previousContent = previous?.querySelector(":scope > .detail-scroll-region");
+        const nextContent = item.querySelector(":scope > .detail-scroll-region");
+        if (previousContent && nextContent) {
+          const open = previous.open;
+          previousContent.replaceChildren(...nextContent.childNodes);
+          for (const attribute of nextContent.attributes) previousContent.setAttribute(attribute.name, attribute.value);
+          reconcileChildNodes(previous, [...item.childNodes].map((child) => child === nextContent ? previousContent : child));
+          for (const attribute of item.attributes) previous.setAttribute(attribute.name, attribute.value);
+          previous.open = open;
+          item = previous;
+        }
         item.dataset.messageKey = key;
         item.dataset.locale = window.LiveSmithI18n.locale;
         messageRenderSnapshots.set(item, snapshot);
@@ -1617,6 +1629,7 @@
         renderReasoningSummary(summary, content, streaming);
         const body = document.createElement("div");
         body.className = "timeline-content";
+        makeDetailScrollable(body, t("Thinking"));
         renderMarkdown(body, content);
         item.append(summary, body);
         return item;
@@ -1715,6 +1728,8 @@
         let reasoningItem = timeline.querySelector(
           ".timeline-item.reasoning.streaming",
         );
+        const reasoningBody = reasoningItem?.querySelector(".timeline-content");
+        const followReasoning = !reasoningBody || reasoningBody.scrollTop + reasoningBody.clientHeight >= reasoningBody.scrollHeight - 48;
         if (reasoningDraft === null) {
           rememberReasoningSummaryFocus(reasoningItem, timeline);
           reasoningItem?.remove();
@@ -1744,6 +1759,10 @@
             );
             messageRenderSnapshots.set(reasoningItem, reasoningDraft);
           }
+        }
+        if (followReasoning && reasoningItem?.isConnected) {
+          const body = reasoningItem.querySelector(".timeline-content");
+          if (body) body.scrollTop = body.scrollHeight;
         }
 
         let assistantItem = timeline.querySelector(
@@ -2024,6 +2043,8 @@
         const desiredNodes = [];
         const focusBeforeRender = document.activeElement;
         const existingReasoningDetails = existingMessages.get("reasoning-streaming");
+        const existingReasoningBody = existingReasoningDetails?.querySelector(".timeline-content");
+        const followReasoning = !existingReasoningBody || existingReasoningBody.scrollTop + existingReasoningBody.clientHeight >= existingReasoningBody.scrollHeight - 48;
         const reasoningDetailsOpen = existingReasoningDetails instanceof HTMLDetailsElement
           ? existingReasoningDetails.open
           : undefined;
@@ -2157,15 +2178,19 @@
               attachments: entry.attachments || [],
             });
           const replacesStreaming = entry.kind === "assistant" && existingMessages.has("streaming");
-          const item = ["user", "assistant"].includes(entry.kind)
-            ? messageItemForRender(
+          const eventKey = `event:${entry.id}`;
+          if (entry.kind === "web_search" && !detailsState.has(entry.id)) {
+            const liveKey = `search:${entry.webSearch.id}`;
+            const liveItem = existingMessages.get(liveKey);
+            if (liveItem) { existingMessages.set(eventKey, liveItem); existingMessages.delete(liveKey); }
+          }
+          const item = messageItemForRender(
                 existingMessages,
-                `event:${entry.id}`,
+                eventKey,
                 JSON.stringify(entry),
                 () => buildTimelineItem(entry),
-                sameSession && !replacesPending && !replacesStreaming,
-              )
-            : buildTimelineItem(entry);
+                ["user", "assistant"].includes(entry.kind) && sameSession && !replacesPending && !replacesStreaming,
+              );
           restoreTimelineItemDetails(
             item,
             entry,
@@ -2186,11 +2211,8 @@
         }
 
         for (const search of webSearchUpdates) {
-          const item = buildWebSearchItem({
-            eventId: "",
-            search,
-            live: true,
-          });
+          const item = messageItemForRender(existingMessages, `search:${search.id}`, JSON.stringify(search),
+            () => buildWebSearchItem({ eventId: "", search, live: true }), false);
           if (
             item.dataset.webSearchId &&
             webSearchDetailsState.has(item.dataset.webSearchId)
@@ -2248,7 +2270,12 @@
         }
         for (const id of activityItems.keys()) if (!visibleActivityIds.has(id)) activityItems.delete(id);
         reconcileChildNodes(timeline, desiredNodes);
-        if (sameSession && focusBeforeRender?.isConnected && timeline.contains(focusBeforeRender) && focusBeforeRender !== document.activeElement) {
+        if (followReasoning && reasoningDraft !== null) {
+          const body = timeline.querySelector(".reasoning.streaming .timeline-content");
+          if (body) body.scrollTop = body.scrollHeight;
+        }
+        const retainedTimelineFocus = sameSession && focusBeforeRender?.isConnected && timeline.contains(focusBeforeRender);
+        if (retainedTimelineFocus && focusBeforeRender !== document.activeElement) {
           focusBeforeRender.focus({ preventScroll: true });
         }
         syncMessageActions();
@@ -2302,7 +2329,7 @@
             );
             (focusedDetails ?? focusedStep)?.querySelector("summary")
               ?.focus({ preventScroll: true });
-          } else if (focusedActivityStepId) {
+          } else if (focusedActivityStepId && !retainedTimelineFocus) {
             const focusedStep = [...timeline.querySelectorAll(
               "details.timeline-activity-step[data-activity-step-id]",
             )].find((details) =>
@@ -2310,7 +2337,7 @@
             );
             focusedStep?.querySelector(":scope > summary")
               ?.focus({ preventScroll: true });
-          } else if (focusedActivityGroupId) {
+          } else if (focusedActivityGroupId && !retainedTimelineFocus) {
             const focusedGroup = [...timeline.querySelectorAll(
               "details.timeline-activity-group[data-activity-group-id]",
             )].find((details) =>
@@ -2414,6 +2441,17 @@
         return group;
       }
 
+      function makeDetailScrollable(content, label, role = "region") {
+        content.classList.add("detail-scroll-region");
+        content.tabIndex = 0;
+        content.setAttribute("role", role);
+        content.setAttribute("aria-label", label);
+      }
+
+      function isActivityInput(event) {
+        return event.kind === "tool_call" || event.kind === "apply_requested" || event.kind === "apply_auto_approved";
+      }
+
       function buildTimelineActivityStep(step, confirm = null) {
         const status = activityStepStatus(step);
         let view = activityItems.get(step.id);
@@ -2437,16 +2475,41 @@
               for (const ref of savedRefs) { const preview = artifactPreviews.render(ref); if (preview) content.push(preview); }
             }
             const eventDetails = [];
-            for (const event of step.events) {
-              const section = document.createElement("section"); section.className = "timeline-activity-detail-section"; section.dataset.eventId = event.id;
-              const label = document.createElement("div"); label.className = "timeline-activity-detail-label"; label.textContent = activityEventLabel(event);
-              const body = document.createElement("div"); body.className = "timeline-activity-detail-content"; body.textContent = event.content || "";
-              section.append(label, body); eventDetails.push(section);
+            const previousSections = new Map([...view.detail.querySelectorAll(".timeline-activity-detail-section[data-event-id]")]
+              .map((section) => [section.dataset.eventId, section]));
+            const resultEvents = step.events.filter((event) => !isActivityInput(event));
+            const inputEvents = step.events.filter(isActivityInput);
+            for (const event of [...resultEvents, ...inputEvents]) {
+              const isInput = isActivityInput(event);
+              let section = previousSections.get(event.id);
+              if (!section) {
+                section = document.createElement(isInput ? "details" : "section");
+                section.className = "timeline-activity-detail-section";
+                section.classList.toggle("timeline-activity-input", isInput);
+                section.dataset.eventId = event.id;
+                const label = document.createElement(isInput ? "summary" : "div");
+                label.className = "timeline-activity-detail-label";
+                const body = document.createElement("div");
+                body.className = "timeline-activity-detail-content";
+                section.append(label, body);
+              }
+              const labelText = event.kind === "tool_call" ? t("Input parameters") : activityEventLabel(event);
+              section.firstElementChild.textContent = labelText;
+              const body = section.lastElementChild;
+              makeDetailScrollable(body, labelText);
+              if (body.textContent !== (event.content || "")) body.textContent = event.content || "";
+              eventDetails.push(section);
             }
             if (savedRefs.length && eventDetails.length) {
-              const details = document.createElement("details");
-              const summary = document.createElement("summary"); summary.textContent = t("Tool details");
-              details.append(summary, ...eventDetails); content.push(details);
+              let details = view.detail.querySelector(":scope > .timeline-activity-tool-details");
+              if (!details) {
+                details = document.createElement("details");
+                details.open = eventDetails.some((section) => section.open || section.contains(document.activeElement));
+              }
+              details.className = "timeline-activity-tool-details";
+              const summary = details.querySelector(":scope > summary") || document.createElement("summary");
+              summary.textContent = t("Tool details");
+              reconcileChildNodes(details, [summary, ...eventDetails]); content.push(details);
             } else {
               content.push(...eventDetails);
             }
@@ -2711,14 +2774,20 @@
           const previews = document.createElement("div");
           const description = document.createElement("p"); description.className = "timeline-activity-detail-content";
           const groups = document.createElement("div");
+          const actions = createActionDetails();
+          const plan = document.createElement("details"); plan.className = "timeline-activity-input";
+          const planSummary = document.createElement("summary"); planSummary.className = "timeline-activity-detail-label";
+          const planContent = document.createElement("div"); planContent.append(description, groups, actions.element);
+          plan.append(planSummary, planContent);
           const outcome = document.createElement("div"); outcome.className = "timeline-activity-detail-content"; outcome.setAttribute("role", "status");
           const buttons = document.createElement("div"); buttons.className = "confirm-buttons";
           const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary"; cancel.dataset.confirmCancel = "";
           const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary";
-          buttons.append(cancel, apply); root.append(previews, description, groups, outcome, buttons);
-          view = { root, previews, description, groups, outcome, buttons, cancel, apply, previewKey: "" }; operationReviews.set(id, view);
+          buttons.append(cancel, apply); root.append(outcome, previews, plan, buttons);
+          view = { root, previews, description, groups, actions, plan, planSummary, planContent, outcome, buttons, cancel, apply, previewKey: "" }; operationReviews.set(id, view);
         }
         const proposed = events.find((event) => event.applyOperation?.status === "proposed");
+        const actionPlan = proposed?.applyOperation?.plan || confirm?.plan;
         const latest = [...events].reverse().find((event) => event.applyOperation);
         const previews = proposed?.applyOperation?.previews || confirm?.previews || [];
         const previewKey = JSON.stringify(previews);
@@ -2726,17 +2795,26 @@
         view.previews.hidden = previews.length === 0;
         refreshActionPreviews?.(view.previews);
         view.description.textContent = proposed?.content || confirm?.message || "";
-        view.description.hidden = !view.description.textContent || Boolean(confirm?.groups?.length);
+        view.description.hidden = Boolean(actionPlan) || !view.description.textContent || Boolean(confirm?.groups?.length);
         view.groups.replaceChildren();
-        for (const group of confirm?.groups || []) {
+        for (const group of actionPlan ? [] : confirm?.groups || []) {
           const heading = document.createElement("div"); heading.className = "confirm-group-title"; heading.textContent = window.LiveSmithI18n.format(group.title);
           const list = document.createElement("ul"); list.className = "confirm-rows";
           for (const row of group.rows) { const item = document.createElement("li"); item.textContent = window.LiveSmithI18n.format(row); list.append(item); }
           view.groups.append(heading, list);
         }
         view.groups.hidden = view.groups.childElementCount === 0;
+        view.actions.element.hidden = !actionPlan;
+        if (actionPlan) view.actions.render(actionPlan);
+        view.planSummary.textContent = t("Action details");
+        makeDetailScrollable(view.planContent, t("Action details"));
+        view.plan.hidden = view.description.hidden && view.groups.hidden && view.actions.element.hidden;
+        const wasPending = view.root.hasAttribute("data-pending-confirmation");
+        if (confirm && !wasPending) view.plan.open = true;
+        else if (!confirm && wasPending) view.plan.open = false;
         view.outcome.textContent = latest?.kind === "apply_result" ? latest.content : "";
         view.outcome.hidden = !view.outcome.textContent;
+        makeDetailScrollable(view.outcome, t("Apply result"), "status");
         view.cancel.textContent = t("Cancel"); view.apply.textContent = t("Apply"); view.buttons.hidden = !confirm;
         view.cancel.disabled = view.apply.disabled = Boolean(confirm && isConfirmationLocked?.());
         view.root.toggleAttribute("data-pending-confirmation", Boolean(confirm));
@@ -2776,8 +2854,11 @@
         message.textContent = confirm.message || "";
         card.setAttribute("aria-describedby", message.id);
 
-        card.append(title, message);
+        card.append(title);
         for (const preview of confirm.previews || []) card.append(renderActionPreview(preview));
+        const review = document.createElement("div");
+        makeDetailScrollable(review, t("Proposed changes"));
+        review.append(message);
 
         for (const group of groups) {
           const heading = document.createElement("div");
@@ -2790,8 +2871,9 @@
             item.textContent = window.LiveSmithI18n.format(row);
             list.append(item);
           }
-          card.append(heading, list);
+          review.append(heading, list);
         }
+        card.append(review);
 
         const buttons = document.createElement("div");
         buttons.className = "confirm-buttons";
@@ -2834,6 +2916,7 @@
         const summaryLimit = 96;
         const content = document.createElement("div");
         content.className = "timeline-content";
+        if (collapsed) makeDetailScrollable(content, eventLabel(event));
         const detailLines = contentLines.slice(1);
         const visibleContent = collapsed &&
             contentLines.length > 1 &&
@@ -2918,6 +3001,7 @@
 
         const contentElement = document.createElement("div");
         contentElement.className = "timeline-content";
+        makeDetailScrollable(contentElement, item.getAttribute("aria-label"));
         appendWebSearchQueries(contentElement, queries);
         appendWebSearchSources(
           contentElement,

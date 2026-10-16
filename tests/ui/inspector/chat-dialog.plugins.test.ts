@@ -419,7 +419,7 @@ test("Plugin ZIP is inspected and reviewed before installation writes anything",
       "Expected Plugin install review.",
     );
     assert.equal(harness.calls.some((call) => call.path === "/plugins"), false);
-    const review = harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "";
+    const review = harness.document.querySelector("#appConfirmation")?.textContent ?? "";
     assert.match(review, /Install music-tools 1\.2\.0/);
     assert.match(review, new RegExp(digest));
     assert.match(review, /converter.*\.\/bin\/converter/s);
@@ -449,13 +449,15 @@ test("Plugin ZIP is inspected and reviewed before installation writes anything",
   }
 });
 
-test("compatible local MCP launch is visible at install and approval review without environment values", async () => {
+test("long local MCP launch values remain complete in install, inspector, and approval details", async () => {
+  const args = ["--no-warnings", "/opt/plugin/server.mjs", ...Array.from({ length: 62 }, (_, index) =>
+    `argument-${index}-${"x".repeat(390)}-end-${index}`)];
   const bytes = zipSync({
     ".codex-plugin/plugin.json": strToU8(JSON.stringify({
       name: "launch-review", version: "1.0.0", mcpServers: "./.mcp.json",
     })),
     ".mcp.json": strToU8(JSON.stringify({ mcpServers: {
-      local: { command: "/opt/tools/node", args: ["--no-warnings", "/opt/plugin/server.mjs"],
+      local: { command: "/opt/tools/node", args,
         cwd: "/opt/plugin", env: { ACCESS_TOKEN: "private-access-value", MODE: "production" } },
     } })),
   });
@@ -464,22 +466,69 @@ test("compatible local MCP launch is visible at install and approval review with
     harness.dropPluginFile(pluginFile(harness, bytes));
     await waitForCondition(() => harness.document.querySelector<HTMLElement>("#appConfirmation")?.hidden === false,
       "Expected installation review.");
-    const review = harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "";
+    const installMessage = harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "";
+    const review = harness.document.querySelector("#appConfirmationDetails")?.textContent ?? "";
+    assert.ok(installMessage.length < 500);
+    assert.doesNotMatch(installMessage, /argument-0-|\/opt\/tools\/node/);
+    assert.ok(review.includes(JSON.stringify(args)), "The install review retains every complete argument");
     for (const detail of ["/opt/tools/node", "--no-warnings", "/opt/plugin/server.mjs", "/opt/plugin", "ACCESS_TOKEN", "MODE"]) {
       assert.ok(review.includes(detail), `Install review omitted ${detail}`);
     }
     assert.doesNotMatch(review, /private-access-value/u);
+    assert.equal(harness.calls.some((call) => call.path === "/plugins"), false);
     await harness.acceptAppConfirmation();
     await waitForPluginIdle(harness);
+    harness.click('.plugin-server-details[data-server-id="local"] > summary');
+    const argumentValue = harness.document.querySelector<HTMLElement>('dd[aria-label="local · Arguments"]');
+    assert.ok(argumentValue);
+    assert.equal(argumentValue.textContent, JSON.stringify(args));
+    assert.equal(argumentValue.getAttribute("role"), "region");
+    assert.equal(argumentValue.tabIndex, 0);
+    argumentValue.focus();
+    argumentValue.scrollTop = 120;
+    argumentValue.scrollLeft = 48;
+    assert.equal(harness.document.activeElement, argumentValue);
+    const settings = harness.readBootstrappedClientStateReference().settings;
+    harness.emitServerEvent({
+      type: "global_settings_changed",
+      commandId: "peer-plugin-locale",
+      defaultFollowUpBehavior: settings.defaultFollowUpBehavior,
+      defaultFollowUpBehaviorRevision: settings.defaultFollowUpBehaviorRevision,
+      showContextUsage: settings.showContextUsage,
+      contextUsageVisibilityRevision: settings.contextUsageVisibilityRevision,
+      uiLanguage: "zh-CN",
+      uiLanguageRevision: "1",
+    });
+    await harness.settle();
+    const translatedArguments = harness.document.querySelector<HTMLElement>('dd[aria-label="local · 参数"]');
+    assert.ok(translatedArguments);
+    assert.equal(translatedArguments.textContent, JSON.stringify(args));
+    assert.equal(harness.document.activeElement, translatedArguments);
+    assert.equal(translatedArguments.scrollTop, 120);
+    assert.equal(translatedArguments.scrollLeft, 48);
     harness.click('[data-plugin-id="launch-review"] .plugin-server-approval');
     await waitForCondition(() => harness.document.querySelector<HTMLElement>("#appConfirmation")?.hidden === false,
       "Expected process approval review.");
-    const approval = harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "";
+    const approvalMessage = harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "";
+    const approval = harness.document.querySelector("#appConfirmationDetails")?.textContent ?? "";
+    assert.ok(approvalMessage.length < 500);
+    assert.doesNotMatch(approvalMessage, /argument-0-|\/opt\/tools\/node/);
+    assert.ok(approval.includes(JSON.stringify(args)), "The approval review retains every complete argument");
     for (const detail of ["/opt/tools/node", "--no-warnings", "/opt/plugin/server.mjs", "/opt/plugin", "ACCESS_TOKEN", "MODE"]) {
       assert.ok(approval.includes(detail), `Approval review omitted ${detail}`);
     }
     assert.doesNotMatch(approval, /private-access-value/u);
-    await harness.cancelAppConfirmation();
+    assert.equal(commandCalls(harness).filter((call) =>
+      (call.body as { kind?: string }).kind === "set_plugin_mcp_server_approved").length, 0);
+    await harness.acceptAppConfirmation();
+    await waitForPluginIdle(harness);
+    assert.deepEqual(commandCalls(harness).at(-1)?.body, {
+      kind: "set_plugin_mcp_server_approved",
+      pluginId: "launch-review",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      serverId: "local",
+      approved: true,
+    });
     assert.deepEqual(harness.errors, []);
   } finally { harness.close(); }
 });
@@ -545,7 +594,7 @@ test("Plugin controls and review copy follow the selected UI language", async ()
       "替换已安装的插件？",
     );
     assert.match(
-      harness.document.querySelector("#appConfirmationMessage")?.textContent ?? "",
+      harness.document.querySelector("#appConfirmationDetails")?.textContent ?? "",
       /替换 music-tools 1\.2\.0.*格式：Agent Plugin.*内容：1 个技能/s,
     );
     await harness.cancelAppConfirmation();

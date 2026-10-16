@@ -2942,6 +2942,19 @@ on tool results. The timeline uses this field directly; historical results with
 no reliable outcome remain readable and display as unconfirmed. Existing Apply
 operation metadata retains its own lifecycle.
 
+Apply proposal metadata optionally carries the validated `AgentPlan` snapshot,
+including ordered actions and declared target references. Agent, MIDI import,
+and parameter-application paths persist this snapshot before approval. Storage
+and browser boundaries validate it with the canonical plan validator. The
+timeline uses it for per-action parameter disclosures in Manual and automatic
+approval histories; older proposals retain their text summaries. These snapshots
+are presentation data, while execution continues to use the admitted runtime
+plan, preflight bindings, Edit Scope checks, and mutation queue.
+Manual confirmation publications also carry this plan for direct MIDI and
+parameter commands. Chat history and command approval share the ordered action
+renderer; confirmation replies contain only the opaque confirmation ID and
+approval decision.
+
 `agent-flow.ts` produces an unversioned domain state. At the WebView boundary,
 each runtime bridge stamps every full `ChatBridgeState` exactly once with its own
 monotonic decimal publication revision; the matching HTTP and SSE payload share

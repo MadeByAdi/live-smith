@@ -1216,7 +1216,7 @@ test("Web Search result rows hide provider call IDs and do not repeat hostname t
   }
 });
 
-test("the timeline preserves persisted event chronology", async () => {
+test("the timeline preserves conversation chronology with result-first tool details", async () => {
   const state = stateFixture();
   state.events = [
     {
@@ -1300,12 +1300,16 @@ test("the timeline preserves persisted event chronology", async () => {
       [
         "event-research-user",
         "event-research-search",
-        "event-research-tool-call",
         "event-research-tool-result",
+        "event-research-tool-call",
         "event-research-tool-error",
         "event-research-search-2",
         "event-research-assistant-2",
       ],
+    );
+    assert.deepEqual(
+      Array.from(harness.readBootstrappedClientStateReference().events, (event) => event.id),
+      state.events.map((event) => event.id),
     );
     assert.deepEqual(harness.errors, []);
   } finally {

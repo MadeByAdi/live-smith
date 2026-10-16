@@ -7,13 +7,15 @@ import { createConnectionState } from "./connection-state.js";
 import { createWireValidators } from "./wire-contracts.js";
 import { createSessionSearch } from "./session-search.js";
 import { sessionActivityAt } from "../../app/session/session-activity.js";
+import { createActionDetails } from "./action-details.js";
 
 const browser = window as typeof window & {
-  LiveSmithFactories?: { sessionActivityAt?: typeof sessionActivityAt; createSessionSearch?: typeof createSessionSearch; createActionPreview?: typeof createActionPreview; sessionInspectorTabs?: typeof sessionInspectorTabs; sessionShortcutIds?: typeof sessionShortcutIds; createMidiContinuation?: typeof createMidiContinuation; createCreativeBriefEditor?: typeof createCreativeBriefEditor; createAudioConnectionEditor?: typeof createAudioConnectionEditor; createWireValidators?: typeof createWireValidators; createConnectionState?: typeof createConnectionState };
+  LiveSmithFactories?: { createActionDetails?: typeof createActionDetails; sessionActivityAt?: typeof sessionActivityAt; createSessionSearch?: typeof createSessionSearch; createActionPreview?: typeof createActionPreview; sessionInspectorTabs?: typeof sessionInspectorTabs; sessionShortcutIds?: typeof sessionShortcutIds; createMidiContinuation?: typeof createMidiContinuation; createCreativeBriefEditor?: typeof createCreativeBriefEditor; createAudioConnectionEditor?: typeof createAudioConnectionEditor; createWireValidators?: typeof createWireValidators; createConnectionState?: typeof createConnectionState };
 };
 browser.LiveSmithFactories ??= {};
 browser.LiveSmithFactories.createSessionSearch = createSessionSearch;
 browser.LiveSmithFactories.sessionActivityAt = sessionActivityAt;
+browser.LiveSmithFactories.createActionDetails = createActionDetails;
 browser.LiveSmithFactories.createActionPreview = createActionPreview;
 browser.LiveSmithFactories.createCreativeBriefEditor = createCreativeBriefEditor;
 browser.LiveSmithFactories.createMidiContinuation = createMidiContinuation;

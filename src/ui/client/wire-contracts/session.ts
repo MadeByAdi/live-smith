@@ -8,6 +8,7 @@ import type { ConversationScope, ModelCitation, ModelContextUsage, ModelHostedWe
 import type { AvailableSkillSummary } from "../../../skills/builtins.js";
 import type { PersistedSessionAttachmentRef, SessionAttachmentRef } from "../../../storage/attachments.js";
 import type { ActionDiffGroup } from "../../action-diff.js";
+import { validateAgentPlan, type AgentPlan } from "../../../agent/actions.js";
 import type { ChatLiveContext, ChatSessionActivity, ChatSessionEvent, ChatSessionSummary } from "../../chat-state.js";
 import {
   WIRE_MAX_ACTIVE_SKILL_COUNT,
@@ -74,6 +75,12 @@ export function isWireActionDiffGroups(value: unknown): value is ActionDiffGroup
 
 export function wireActionDiffGroupsEqual(left: unknown, right: unknown): boolean {
   return sameJsonData(left, right);
+}
+
+export function isWireActionPlan(plan: unknown, kind: unknown): plan is AgentPlan | undefined {
+  if (plan === undefined) return true;
+  if (kind !== "apply") return false;
+  try { validateAgentPlan(plan); return true; } catch { return false; }
 }
 
 export function isWireCitation(value: unknown): value is ModelCitation {

@@ -270,7 +270,10 @@ function createArtifactLibraryView(deps: Dependencies) {
         midiPreview.append(pianoRoll.element);
         omitted = element("p", "field-hint"); midiPreview.append(omitted);
         const parts = element("details", "artifact-details"); parts.append(element("summary", "", () => t("Source parts")));
-        for (const part of midi.parts) parts.append(element("p", "field-hint", () => `${part.sourceTrackIndex + 1} · ${part.sourceTrackName || "MIDI"} · ${t("Channel")} ${part.channel} · ${part.noteCount} · ${part.durationBeats}`));
+        const partList = element("div", "detail-scroll-region"); partList.tabIndex = 0; partList.setAttribute("role", "region");
+        bindings.attribute(partList, "aria-label", () => t("Source parts"));
+        for (const part of midi.parts) partList.append(element("p", "field-hint", () => `${part.sourceTrackIndex + 1} · ${part.sourceTrackName || "MIDI"} · ${t("Channel")} ${part.channel} · ${part.noteCount} · ${part.durationBeats}`));
+        parts.append(partList);
         const add = button("Add to Live", () => {
           if (!current() || busy || operationPending()) return;
           deps.resultActions.openMidiImport({ sessionId: sessionId!, artifacts: [{ artifactRef: artifact.ref.id, label: artifactLabel(artifact) }],

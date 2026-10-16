@@ -130,6 +130,42 @@ test("MIDI artifacts retain tool input, warnings and structured results in a sec
   } finally { h.close(); }
 });
 
+test("an arriving artifact keeps open input visible and preserves tool-details focus on refresh", async () => {
+  const state = stateFixture(); state.openSettingsOnLoad = false;
+  const call = event("call", "tool_call", '{"requestedBars":16}', { name: "external_midi_generator" });
+  state.events = [call];
+  const h = await createDialogHarness(state);
+  const original = h.window.fetch;
+  Object.defineProperty(h.window, "fetch", { configurable: true, value: async (input: string, init?: RequestInit) => {
+    if (new URL(String(input)).pathname === "/session-artifact") return { ok: true, json: async () => ({ sessionId: "session-1", artifact: saved }) };
+    return original(input, init);
+  } });
+  try {
+    h.click('[data-activity-step-id="call"] > summary');
+    h.click('[data-event-id="call"] > summary');
+    const input = h.document.querySelector<HTMLDetailsElement>('details[data-event-id="call"]')!;
+    const inputSummary = input.querySelector<HTMLElement>(":scope > summary")!;
+    inputSummary.focus();
+    const result = event("result", "tool_result", "Saved MIDI", { name: "external_midi_generator", outcome: "success", artifacts: [saved.ref] });
+    await publish(h, [call, result]);
+    assert.equal(h.document.querySelector('[data-event-id="call"]'), input);
+    for (let details: HTMLDetailsElement | null = input; details; details = details.parentElement?.closest("details") ?? null) {
+      assert.equal(details.open, true, "An artifact arriving must keep the input being read visible");
+    }
+    assert.equal(h.document.activeElement, inputSummary);
+    const toolDetails = input.parentElement as HTMLDetailsElement;
+    const summary = toolDetails.querySelector<HTMLElement>(":scope > summary")!;
+    summary.focus();
+    await publish(h, [call, { ...result, content: "Saved MIDI with details" }]);
+    assert.equal(h.document.activeElement, summary, "Refreshing must keep focus on the same tool-details summary");
+    summary.click();
+    assert.equal(toolDetails.open, false);
+    await publish(h, [call, { ...result, content: "Saved MIDI with final details" }]);
+    assert.equal(toolDetails.open, false, "A later refresh must respect a user-closed tool disclosure");
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
 test("cached pages retain saved MIDI actions and viewport, while final pagehide disposes them", async () => {
   const state = stateFixture(); state.openSettingsOnLoad = false;
   const h = await createDialogHarness(state, { baseUrl: "http://bridge.test", token: "test-token", hostMode: "browser" } as never);

@@ -105,7 +105,7 @@ export async function runParameterApplication(input: Dependencies & ApplicationC
       },
     });
     await appendSessionEvent(input.storageDirectory, input.sessionId, { kind: "apply_requested", content: summarizeActionPlan(plan),
-      applyOperation: { id: operationId, status: "proposed", ...(guard.previews ? { previews: guard.previews } : {}) } });
+      applyOperation: { id: operationId, status: "proposed", plan, ...(guard.previews ? { previews: guard.previews } : {}) } });
     const decision = await input.confirm(plan, guard, operationId);
     throwIfAborted(input.signal);
     if (!decision.confirmed) {

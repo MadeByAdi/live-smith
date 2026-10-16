@@ -1161,7 +1161,7 @@ async function executeToolCall(
       await emitTraceEvent(options, {
         kind: "apply_requested",
         content: summary,
-        applyOperation: { id: operationId, status: "proposed",
+        applyOperation: { id: operationId, status: "proposed", plan,
           ...(revalidateActions.previews ? { previews: revalidateActions.previews } : {}) },
       });
       if (options.hasPendingSteering?.()) {

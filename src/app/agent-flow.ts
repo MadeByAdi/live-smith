@@ -1715,7 +1715,7 @@ export async function createAgentRuntime(
               confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
                 if (!commandContext.requestConfirmation) throw new Error("Device parameter confirmation is unavailable.");
                 return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
-                  groups: actionDiffGroups(plan.actions, plan.targets), ...(guard.previews ? { previews: guard.previews } : {}) });
+                  groups: actionDiffGroups(plan.actions, plan.targets), plan, ...(guard.previews ? { previews: guard.previews } : {}) });
               }),
             });
             status = uiMessage(result === "applied" ? "Device parameters applied." : result === "restored" ? "Previous device parameters restored."
@@ -1750,7 +1750,7 @@ export async function createAgentRuntime(
             confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
               if (!commandContext.requestConfirmation) throw new Error("MIDI import confirmation is unavailable.");
               return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
-                groups: actionDiffGroups(plan.actions, plan.targets),
+                groups: actionDiffGroups(plan.actions, plan.targets), plan,
                 ...(guard.previews === undefined ? {} : { previews: guard.previews }),
               });
             }),
@@ -3134,7 +3134,7 @@ export async function createAgentRuntime(
                   kind: "apply",
                   operationId,
                   message: plan.message,
-                  groups: actionDiffGroups(plan.actions, plan.targets),
+                  groups: actionDiffGroups(plan.actions, plan.targets), plan,
                   ...(guard.previews === undefined ? {} : { previews: guard.previews }),
                 }),
               ),

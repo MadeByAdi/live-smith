@@ -246,8 +246,15 @@ unsent drafts and does not resend prompts or commands.
   the composer. Input support depends on the model and connection.
 - **Keep work moving.** Queue a follow-up for the next turn, steer the response
   already in progress, or stop it. Long runs of tool and Apply activity collapse
-  into one expandable timeline item so the conversation stays readable. When a
-  provider returns a visible reasoning stage or summary, Live Smith shows it in
+  into one expandable timeline item so the conversation stays readable. Expanded
+  tool and Apply cards show results first and keep input parameters and past
+  action details folded. Approval reviews show the full proposed changes above
+  the decision controls. Manual and automatically approved plans list actions in
+  execution order; each action expands to its complete parameters and referenced
+  target. Parameter-write summaries show the target and parameter count; names
+  and values appear in the expanded details. Saved plans retain these details in
+  chat history. Long technical details scroll within their card. When a provider
+  returns a visible reasoning stage or summary, Live Smith shows it in
   a separate Thinking item. Visible content is expandable; a stage with no text
   shows Thinking while in progress and disappears when complete. See
   [visible reasoning output](docs/MODEL_PROVIDERS.md#visible-reasoning-output)

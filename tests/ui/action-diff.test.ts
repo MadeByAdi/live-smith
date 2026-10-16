@@ -80,6 +80,25 @@ test("actionDiffGroups preserves authored order and original action numbers", ()
   );
 });
 
+test("compact parameter summaries show operation, resolved target and count while detailed rows retain values", () => {
+  const actions = [
+    { type: "create_midi_track" as const, ref: "lead", name: "Lead" },
+    { type: "rename_track" as const, trackRef: "lead", newName: "Main Lead" },
+    { type: "set_device_parameter" as const, trackRef: "lead", deviceName: "Operator", parameterName: "Volume", value: 0.5 },
+    { type: "set_device_parameters" as const, trackRef: "bus", deviceName: "Auto Filter", deviceIndex: 0,
+      values: Array.from({ length: 70 }, (_, index) => ({ parameterIndex: index, parameterName: `Parameter ${index}`, value: 0.7 })) },
+  ];
+  const targets = { bus: { trackName: "Bus" } };
+  const rows = boundActionDiffGroups(actions, targets, "summary").flatMap((group) => group.rows).map(formatUiMessage);
+  assert.match(rows[2]!, /^3\. Set parameters.*Main Lead.*Operator.*Parameters: 1$/);
+  assert.match(rows[3]!, /^4\. Set parameters.*Bus.*Auto Filter\[0\].*Parameters: 70$/);
+  assert.doesNotMatch(rows[2]!, /Volume|0\.5/);
+  assert.doesNotMatch(rows[3]!, /Parameter 0|0\.7|…/);
+  const detailed = actionDiffGroups(actions, targets).flatMap((group) => group.rows);
+  assert.match(detailed[2]!, /Volume = 0\.5/);
+  assert.match(detailed[3]!, /Parameter 69 = 0\.7/);
+});
+
 test("actionDiffGroups includes every supported mutating action", () => {
   const groups = actionDiffGroups([
     { type: "create_midi_track", name: "Future Bass" },

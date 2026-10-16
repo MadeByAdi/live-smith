@@ -1,4 +1,5 @@
 export const mainMessages: Record<string, string> = {
+  "Plugin {pluginId} will connect to MCP server {serverId}. Header values and URL details remain hidden.": "插件 {pluginId} 将连接到 MCP 服务器 {serverId}。请求头值和 URL 细节保持隐藏。",
   "No saved artifacts yet.": "尚无已保存的产物。",
   "Save device parameter snapshot": "保存设备参数快照",
   "Filter parameters": "筛选参数",

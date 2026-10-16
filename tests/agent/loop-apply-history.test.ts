@@ -32,6 +32,9 @@ test("manual approval preserves proposal and links the confirmed operation to it
   assert.ok("applyOperation" in proposal && proposal.applyOperation);
   assert.equal(proposal.applyOperation.id, operationId);
   assert.deepEqual(proposal.applyOperation.previews, [preview]);
+  assert.deepEqual(proposal.applyOperation.plan, {
+    message: "Tempo", actions: [{ type: "set_tempo", tempo: 125 }],
+  });
   assert.ok("applyOperation" in result && result.applyOperation);
   assert.deepEqual(result.applyOperation, { id: operationId, status: "applied" });
   assert.equal(preview.status, "proposed");
@@ -49,6 +52,7 @@ test("automatic approval, refusal, failures and partial mutations retain distinc
     });
     const operations = events.flatMap((event) => "applyOperation" in event && event.applyOperation ? [event.applyOperation] : []);
     assert.equal(operations[0]?.status, "proposed", mode);
+    assert.deepEqual(operations[0]?.plan?.actions, [{ type: "set_tempo", tempo: 125 }], mode);
     assert.equal(new Set(operations.map((operation) => operation.id)).size, 1, mode);
     assert.equal(operations.at(-1)?.status, mode === "automatic" ? "applied" : mode === "cancel" ? "cancelled" : mode === "partial" ? "partial" : "failed", mode);
     assert.equal(operations.some((operation) => operation.status === "approved"), mode === "automatic");

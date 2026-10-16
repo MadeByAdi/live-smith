@@ -30,6 +30,7 @@
         wireUtf8ByteLength,
         isWireUiMessage,
         isWireActionDiffGroups,
+        isWireActionPlan,
         wireActionDiffGroupsEqual,
         isWireWebSearch,
         isWireSessionEvent,
@@ -2736,11 +2737,12 @@
         const deferred = pendingPeerCommand?.command?.id === payload.commandId
           ? pendingPeerCommand : null;
         const attempt = deferred?.command ?? activeCommandAttempt;
-        if (!hasOnlyWireKeys(payload, ["type", "commandId", "sessionId", "id", "kind", "message", "groups", "previews", "operationId"]) ||
+        if (!hasOnlyWireKeys(payload, ["type", "commandId", "sessionId", "id", "kind", "message", "groups", "previews", "operationId", "plan"]) ||
             !attempt || attempt.stopRequested || attempt.stopping || attempt.id !== payload.commandId || attempt.sessionId !== payload.sessionId ||
             (!deferred && !attempt.remote && activeSessionId() !== payload.sessionId) || !isWireCorrelationId(payload.id) || payload.kind !== "apply" ||
             typeof payload.message !== "string" || !payload.message || !isWireActionDiffGroups(payload.groups) ||
             !isWireActionPreviews(payload.previews, payload.kind, payload.groups) ||
+            !isWireActionPlan(payload.plan, payload.kind) ||
             (payload.operationId !== undefined && !isWireStorageId(payload.operationId)) || attempt.confirmation?.id === payload.id) return;
         if (deferred) {
           deferred.confirmation = payload;
@@ -2751,7 +2753,7 @@
         attempt.confirmation = { id: payload.id, controller };
         void (async () => {
           const apply = await confirmAction({ title: window.LiveSmithI18n.message("Confirm action"),
-            message: payload.message, groups: payload.groups, previews: payload.previews,
+            message: payload.message, groups: payload.groups, previews: payload.previews, plan: payload.plan,
             acceptLabel: window.LiveSmithI18n.message("Apply"), signal: controller.signal });
           if (controller.signal.aborted || activeCommandAttempt !== attempt) return;
           try {
@@ -7443,6 +7445,7 @@
                 "groups",
                 "previews",
                 "operationId",
+                "plan",
                 "activity",
                 "bridgeStateRevision",
               ]) ||
@@ -7458,6 +7461,7 @@
                 ? !isWireActionDiffGroups(payload.groups)
                 : !Array.isArray(payload.groups) || payload.groups.length !== 0) ||
               !isWireActionPreviews(payload.previews, payload.kind, payload.groups) ||
+              !isWireActionPlan(payload.plan, payload.kind) ||
               (payload.operationId !== undefined && (payload.kind !== "apply" || !isWireStorageId(payload.operationId)))
             ) return;
             const activity = stateChangeActivity(payload, true);
@@ -7508,6 +7512,7 @@
               payload.message !== pending.message ||
               !wireActionDiffGroupsEqual(payload.groups, pending.groups) ||
               !sameJsonData(payload.previews, pending.previews) ||
+              !sameJsonData(payload.plan, pending.plan) ||
               payload.operationId !== pending.operationId
             )) return;
             if (
@@ -7552,6 +7557,7 @@
               message: payload.message,
               groups: payload.groups || [],
               ...(payload.previews === undefined ? {} : { previews: payload.previews }),
+              ...(payload.plan === undefined ? {} : { plan: payload.plan }),
               ...(payload.operationId === undefined ? {} : { operationId: payload.operationId }),
             });
             if (applySendActivity(

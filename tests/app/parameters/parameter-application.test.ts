@@ -46,6 +46,14 @@ test("capture and preview are read-only; one approved bulk apply and guarded res
   assert.equal((await h.receipt()).status, "restored");
   const events = await loadSessionEvents(h.directory, h.session.id);
   assert.equal(events.filter((event) => event.kind === "apply_requested").length, 2);
+  const proposed = events.filter((event) => event.kind === "apply_requested");
+  const action = proposed[0]?.applyOperation?.plan?.actions[0];
+  assert.ok(action?.type === "set_device_parameters");
+  assert.equal(action.values.length, 70);
+  assert.ok(action.values.every((parameter) => parameter.value === 0.75));
+  const restoration = proposed[1]?.applyOperation?.plan?.actions[0];
+  assert.ok(restoration?.type === "set_device_parameters");
+  assert.ok(restoration.values.every((parameter) => parameter.value === 0.25));
   assert.equal(events.at(-1)!.applyOperation!.status, "applied");
 });
 

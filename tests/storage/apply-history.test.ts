@@ -5,8 +5,26 @@ import * as path from "node:path";
 import test from "node:test";
 import { appendSessionEvent, loadSessionEvents, type SessionEventInput } from "../../src/storage/events.js";
 import type { MidiActionPreview } from "../../src/agent/action-preview.js";
+import type { AgentPlan } from "../../src/agent/actions.js";
 
 const makePreview = (): MidiActionPreview => ({ kind: "midi-notes", actionIndex: 0, status: "proposed", targetLabel: "Piano", range: { coordinate: "clip-beats", start: 0, end: 4 }, before: { notes: [], totalNoteCount: 0, omittedNoteCount: 0 }, after: { notes: [{ pitch: 60, startTime: 0, duration: 4, velocity: 96 }], totalNoteCount: 1, omittedNoteCount: 0 } });
+const makePlan = (): AgentPlan => ({ message: "Create notes", targets: { piano: { trackName: "Piano" } }, actions: [
+  { type: "set_tempo", tempo: 125 },
+  { type: "create_midi_clip", trackRef: "piano", startBeat: 0, durationBeats: 4,
+    notes: Array.from({ length: 604 }, (_, index) => ({ pitch: 48 + index % 24, startTime: index / 604 * 3, duration: 0.125, velocity: 96 })) },
+] });
+
+for (const persisted of [false, true]) test(`full ordered plans survive ${persisted ? "disk reload" : "memory snapshot"} and caller mutations`, async (t) => {
+  const directory = persisted ? await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-apply-plan-")) : undefined;
+  if (directory) t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const plan = makePlan();
+  const saved = await appendSessionEvent(directory, "session-plan", { kind: "apply_requested", content: "Create notes",
+    applyOperation: { id: "apply-plan", status: "proposed", plan } });
+  plan.actions.reverse();
+  saved.applyOperation!.plan!.actions.reverse();
+  const events = await loadSessionEvents(directory, "session-plan");
+  assert.deepEqual(events[0]?.applyOperation?.plan, makePlan());
+});
 
 test("proposal snapshots and outcome correlation survive disk reload", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-apply-history-"));
@@ -59,6 +77,9 @@ test("storage rejects invalid outcome claims and malformed previews", async () =
     { kind: "apply_requested", applyOperation: { id: "apply-1", status: "proposed", previews: [{ ...makePreview(), status: "applied" }] } },
     { kind: "apply_requested", applyOperation: { id: "../unsafe", status: "proposed" } },
     { kind: "apply_requested", applyOperation: { id: "apply-1", status: "proposed", previews: [{ ...makePreview(), after: { notes: [], totalNoteCount: 1, omittedNoteCount: 0 } }] } },
+    { kind: "apply_requested", applyOperation: { id: "apply-1", status: "proposed", plan: { message: "Invalid", actions: [] } } },
+    { kind: "apply_requested", applyOperation: { id: "apply-1", status: "proposed", plan: { message: "Invalid", actions: [{ type: "set_tempo", tempo: "125" }] } } },
+    { kind: "apply_result", applyOperation: { id: "apply-1", status: "applied", plan: makePlan() } },
   ];
   for (const input of invalid) {
     await assert.rejects(appendSessionEvent(undefined, "session-invalid-history", { content: "Summary", ...input } as SessionEventInput), /invalid/);
