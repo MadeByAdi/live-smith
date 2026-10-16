@@ -1,7 +1,7 @@
 # Third-Party Notices for Live Smith
 
-The production bundle includes or may include code from the following
-document-parser, Markdown-renderer, sanitizer, and network packages.
+This file lists third-party components used in Live Smith's production bundle
+and their license notices.
 
 ## Document parser
 
@@ -47,8 +47,7 @@ SOFTWARE.
 `xlsx` 0.20.3 is Copyright (C) 2012-present SheetJS LLC and distributed under
 Apache-2.0. The embedded officeparser distribution also contains PDF.js,
 Copyright 2012 Mozilla Foundation, under Apache-2.0. The Apache License is
-reproduced in the DOMPurify section below. PDF parsing and OCR are not invoked
-by this worker's supported input paths.
+reproduced in the DOMPurify section below.
 
 The bundled `ieee754` component is Copyright (c) 2008, Fair Oaks Labs, Inc.,
 Copyright (c) 2013, Feross Aboukhadijeh and distributed under BSD-3-Clause:

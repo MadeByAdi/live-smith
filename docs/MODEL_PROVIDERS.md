@@ -1,10 +1,10 @@
 # Model Profiles and Connection Backends
 
-This reference owns model connection configuration, Integration Connection
+This reference describes model connection configuration, Integration Connection
 contracts, OAuth credential lifecycle, capability evidence, and provider request
-behavior. See the
-[README](../README.md) for product workflow, [Architecture](ARCHITECTURE.md) for
-cross-module ownership, and [Development](DEVELOPMENT.md) for verification.
+behavior. See the [README](../README.md) for the product overview, the
+[user guide](USER_GUIDE.md) for workflows, [Architecture](ARCHITECTURE.md) for
+module ownership, and [Development](DEVELOPMENT.md) for verification.
 
 Every Profile selects one explicit connection kind:
 
@@ -14,40 +14,42 @@ Every Profile selects one explicit connection kind:
   Live Smith owns browser/device authorization, private token persistence,
   refresh, logout, and direct HTTP requests to the provider product backend.
 
-No subscription connection starts, bundles, discovers, or requires Codex CLI,
-Claude Code, Gemini CLI, Antigravity, or another provider runtime.
+Subscription connections run inside Live Smith and use direct HTTP requests.
+They operate independently of installed Codex CLI, Claude Code, Gemini CLI, and
+Antigravity runtimes.
 
 ## Network routing
 
-The global network setting is independent of Profiles and has three explicit
-modes: no proxy, System proxy (static macOS routes or the current Windows
-user's static settings), or one credential-free Manual proxy URL. The selected
-route is resolved at request time and is shared by Direct API
-discovery/generation, OAuth login, refresh, catalog and product traffic, and
-built-in Plugin HTTP or WebSocket traffic. It never changes which
-provider or protocol a Profile owns.
+The global network setting applies independently of Profiles:
 
-System mode reads static HTTP, HTTPS, and SOCKS routes from macOS. On Windows it
-uses one fixed, read-only `reg.exe query` and recognizes the current user's
-`ProxyEnable`, `ProxyServer`, `ProxyOverride`, `AutoConfigURL`, and `AutoDetect`
-Internet Settings values when present. It never invokes a shell or writes the
-registry. It does not read machine-scoped or connection-specific Windows
-settings. Loopback targets remain direct. PAC/WPAD is not evaluated. A non-empty
-`AutoConfigURL` or enabled `AutoDetect` value returned by the queried key is
-rejected; automatic settings outside that key cannot supply a route to this
-static reader. When the reader finds no applicable static route, System mode is
-direct. Manual mode accepts a concrete proxy URL, not a PAC/WPAD URL. Windows
-System mode accepts static HTTP and HTTPS destination entries as ordinary HTTP
-proxy transports. It rejects an unqualified SOCKS entry whenever HTTP or HTTPS
-would need that fallback because Live Smith supports SOCKS5, not Windows'
-SOCKS4 system syntax. Choose Manual mode for an HTTPS proxy transport or
-SOCKS5. Proxy credentials never enter dialog state. No proxy is the migration
-default, so upgrading does not silently change an existing connection's route.
+| Mode | Route |
+| --- | --- |
+| No proxy | Direct connections; also the default for migrated settings |
+| System proxy | Static macOS routes or the current Windows user's static settings |
+| Manual proxy | One HTTP, HTTPS, or SOCKS5 proxy URL without embedded credentials |
 
-Manual and System modes never fall back to a direct route when an applicable
-proxy hop fails. Pre-response proxy failures become fixed credential-free
-diagnostics; loopback and system-exception direct routes keep ordinary
-connection semantics.
+The route is resolved for each Direct API discovery or generation request,
+OAuth login, refresh, catalog or product request, and built-in Plugin HTTP or
+WebSocket request. Profile provider and protocol selection stay independent of
+this setting. Loopback targets remain direct in every mode.
+
+System mode reads static HTTP, HTTPS, and SOCKS routes on macOS. On Windows it
+uses a fixed, read-only `reg.exe query` of the current user's Internet Settings
+key, recognizing `ProxyEnable`, `ProxyServer`, `ProxyOverride`, `AutoConfigURL`,
+and `AutoDetect`. Its scope is that key; machine and connection-specific
+settings are outside this reader. A non-empty `AutoConfigURL` or enabled
+`AutoDetect` value causes an unsupported-configuration error because PAC/WPAD
+evaluation is unavailable. An absent static route uses a direct connection.
+
+Windows HTTP and HTTPS destination entries use ordinary HTTP proxy transports.
+A SOCKS fallback needed by either destination causes an error. Manual mode
+supports HTTPS proxy transports and SOCKS5, with `socks://` accepted as a SOCKS5
+alias. Manual URLs must identify a concrete
+proxy server. All configured proxy URLs exclude embedded credentials.
+
+An applicable proxy failure stops the request with a fixed, credential-free
+diagnostic. Direct routes selected for loopback or system exceptions retain
+ordinary connection behavior.
 
 ## Connection backends
 
@@ -62,42 +64,38 @@ The supported protocol pairs are:
 | OpenAI | Chat Completions |
 | Anthropic | Messages |
 
-There are no endpoint or vendor presets. An OpenAI- or Anthropic-compatible
-service is configured with the protocol it actually implements. Environment
-variables and `.env` files are not credential or endpoint fallbacks.
+Configure an OpenAI- or Anthropic-compatible service with its actual protocol,
+base URL, and API key. Profiles provide these values explicitly; endpoint
+presets and environment-variable fallbacks are unavailable.
 
 #### Errors, bounds, cancellation, and recovery
 
-Non-2xx response bodies are untrusted. OpenAI-compatible, Anthropic, and Google
-paths may decode at most 64 KiB of JSON only to retain strictly bounded canonical
-error types, codes, reasons, quota identifiers, and retry delays; remote messages
-and arbitrary metadata are never returned or logged. Malformed error envelopes
-fall back to the protocol and numeric HTTP status. Request bodies, authorization
-headers, API keys, OAuth tokens, and credential-bearing causes never enter
-Session events or WebView state.
+Non-success provider JSON is untrusted and passes through a single diagnostic
+reader limited to 64 KiB and a short read deadline. OpenAI-compatible,
+Anthropic, and Google adapters retain only validated error types, codes,
+reasons, quota identifiers, and retry delays. Missing, malformed, or stalled
+bodies use the protocol and numeric HTTP status. Remote messages, arbitrary
+metadata, request bodies, authorization headers, credentials, and raw causes
+stay outside Session events, dialog state, and logs.
 
 Successful JSON responses have a 16 MiB byte budget. SSE events must reach a
 delimiter within 1 MiB. Discovery accepts at most 1,000 unique bounded model
 records and at most 20 pages. Cancellation requests stream cleanup once and
-does not wait indefinitely on a provider-controlled cancel promise.
+releases local ownership independently of the provider's cleanup promise.
 
 A logical response may retry only when its active transport or OAuth product
 protocol classifies a rejected Fetch, rejected body read, early clean EOF, or
 documented transient HTTP/provider failure as retryable. Provider-requested
 waits up to five minutes act as a lower bound on the local backoff; a longer
 delay stops automatic retry and asks the user to try again later.
-The retry does not restart `/send`, append the prompt twice, replay an accepted
-client tool, or repeat a Live mutation. Authentication, quota/account limits,
+A retry resumes the logical response while preserving the accepted prompt,
+client tool results, and Live mutations. Authentication, quota/account limits,
 policy or validation failures, malformed protocol data, and local
 request-construction failures remain fatal.
 Before each logical model request, the bridge checkpoints its transient
 assistant, visible-reasoning, and in-flight search projection. A physical retry
 rolls back only output from that failed request attempt, so an earlier
 output-limit continuation prefix remains visible and reconnectable.
-Non-success provider JSON is read through one size- and time-bounded diagnostic
-path. Validated safe identifiers can refine the error; a missing, malformed, or
-stalled body falls back to the HTTP status without blocking cancellation or
-exposing provider messages.
 
 OpenAI-compatible generation retries HTTP 408, 409, 429, and 5xx plus fixed
 transient stream codes; on 429 and decoded 4xx responses, a structured quota,
@@ -110,9 +108,8 @@ Anthropic stream retries are limited to
 
 ### OAuth subscriptions
 
-An OAuth subscription Profile has no endpoint, API key, token, client secret,
-or provider-specific request fields. The selected provider fixes its product
-backend:
+An OAuth subscription connection stores its provider identity. Its endpoint,
+authentication, and request fields are supplied by the selected backend:
 
 | Provider | Authorization | Product request backend |
 | --- | --- | --- |
@@ -120,11 +117,10 @@ backend:
 | Anthropic | Claude browser PKCE | Anthropic Messages with OAuth identity |
 | Google | Antigravity browser PKCE | Antigravity streamGenerateContent |
 
-OAuth traffic is not silently rerouted to a saved Direct API Profile. Direct
-API billing and subscription-account usage therefore remain distinct
-connections. Anthropic currently assigns third-party OAuth Messages traffic to
-Claude Extra Usage when that account feature is enabled; this is separate from
-an Anthropic Console API key balance and from the plan's base allowance.
+OAuth requests use the selected subscription connection. Direct API requests
+use their own saved Profile and API key. The provider determines account access,
+usage limits, and billing for each connection. Successful sign-in confirms
+credential readiness; model availability and usage allowance depend on the account.
 
 #### Credential ownership
 
@@ -138,16 +134,15 @@ It stores discriminated credentials in exact Profile-ID/provider slots:
 - Google: access token, refresh token, expiry, Antigravity companion project ID,
   and an optional account label.
 
-Access and refresh credentials never enter Profiles, Session model selections,
-model caches, Session events, model requests as data, bridge command bodies,
-dialog state, or logs. Antigravity's one-time authorization code crosses only
-its strict, bounded submit command and is not stored, logged, or projected into
-state. The browser receives only credential-free auth state: signed out,
-pending authorization URL and optional device code, signed in account label and
-service label, or a fixed unavailable description with an optional trusted
-account-verification URL. An unavailable account keeps an explicit Sign out
-action so a revoked or malformed refresh credential can be cleared before
-starting a new authorization.
+Access and refresh credentials remain private to OAuth storage and authenticated
+provider requests. Profiles, Session selections and events, model caches,
+bridge commands, dialog state, and logs contain only credential-free state.
+Antigravity's one-time code passes through its dedicated bounded submit command
+and stays transient. The dialog receives signed-out state, a pending
+authorization URL and optional device code, signed-in account and service labels,
+or a fixed unavailable description with an optional trusted verification URL.
+Unavailable accounts retain **Sign out** so the saved credential can be cleared
+before a new authorization.
 
 Credential-store schema v1 used provider-global slots. Before the first OAuth
 operation in a process, and before any Profile Save or Delete that changes OAuth
@@ -165,21 +160,18 @@ former Gemini CLI OAuth client because they cannot be refreshed as Antigravity
 credentials. OpenAI and Anthropic Profile tuples survive that migration;
 Google subscription Profiles require one new Antigravity sign-in.
 
-While one Profile is being edited, signing in to another provider writes a
-separate provisional tuple and does not overwrite the saved provider's refresh
-token. Saving an OAuth connection retains only its selected provider tuple;
-saving Direct API or deleting the Profile removes every tuple for that Profile.
-Discarding, replacing, or closing a Draft reconciles any provider authorized by
-that modal against authoritative saved settings: the saved provider remains,
-while foreign-provider and never-saved Profile tuples are removed. Direct-only
-Draft changes do not enter OAuth storage. Discarding the Draft therefore cannot
-sign the saved provider out or leave an unreachable refresh token behind.
-If settings commit but backend retirement or tuple cleanup cannot be confirmed,
-the exact Profile remains in a process-wide per-storage reconciliation set that
-survives modal closure. State hydration retries that cleanup from authoritative
-saved settings. Until it succeeds, the command reports the committed settings
-and an explicit reconciliation warning instead of claiming an ordinary failure
-or silently reusing the old credential.
+Signing in to another provider while editing a Profile creates a separate
+provisional tuple and preserves the saved provider's credential. Saving an
+OAuth connection retains its selected provider tuple; saving Direct API or
+deleting the Profile removes all of that Profile's tuples. Discarding,
+replacing, or closing a Draft reconciles provisional credentials against saved
+settings, retaining the saved provider and removing credentials without a saved
+owner. Direct-only Draft changes stay outside OAuth storage.
+
+If settings commit while backend or credential cleanup remains unconfirmed,
+Live Smith reports the committed settings with a reconciliation warning. A
+process-wide set retains the affected Profile across modal closure, and later
+state hydration retries cleanup against saved settings.
 
 #### Login and refresh lifecycle
 
@@ -194,15 +186,12 @@ denial, cancellation, timeout, or backend shutdown. Accepted unrelated sockets
 are retired on completion. The terminal callback response has up to one second
 to flush before a non-reading peer is released.
 
-The dialog does not depend on popup support in Ableton's embedded WebView.
-After login acquisition returns a validated pending HTTPS URL, the Extension
-Host launches it through a fixed system browser command: `/usr/bin/open` on
-macOS or the System32 URL handler on Windows. A rejected launch cancels the
-browser command but keeps the provider-owned pending attempt, PKCE state,
-callback or authorization-code wait, and verified URL active. The dialog marks
-that launch failure;
-selecting the link retries the same Host browser command and a successful retry
-clears the marker, while the address remains available to copy manually.
+The Extension Host opens each validated pending HTTPS URL in the system browser
+through `/usr/bin/open` on macOS or the System32 URL handler on Windows. If that
+command fails, the pending authorization, PKCE state, callback or code wait, and
+URL remain available. The dialog marks the launch failure and lets the user
+retry the same browser command or copy the URL. A successful launch clears the
+marker.
 Pending auth states that do not require local input are checked automatically
 with bounded backoff; ChatGPT still requires entering its device code before
 that check can complete, while Antigravity waits for the pasted authorization
@@ -211,44 +200,29 @@ launches, cancels an unfinished launch, and waits for it to settle before OAuth
 cleanup completes. Sign-out, replacement, or completed account reconciliation
 likewise cancels that Profile connection's unfinished browser launch.
 
-One Profile/provider backend owns an in-flight login from adapter acquisition
-through credential commit, plus one refresh single-flight. Login ownership is
-installed before provider setup begins, so caller abort, logout, and close can
-cancel a late-returning browser or device attempt and await its completion.
-Concurrent requests waiting on an expired credential share the same rotating
-refresh operation. A caller may cancel its wait without canceling a refresh
-already owned by another request. Sign-in, logout, and backend close retire the
-current credential generation, abort and settle any detached refresh, and
-reject a late refresh result before it can write. Credential persistence checks
-that ownership again after entering the serialized storage transaction, making
-the check and commit one ordered operation. Logout also cancels pending
-authorization and removes only that Profile's matching provider credential.
-Once logout starts, its settle-and-delete cleanup remains manager-owned even if
-the caller cancels its wait; close and later operations wait for that cleanup,
-so an already-started credential write cannot outlive a confirmed retirement.
-An operation resumed after waiting for logout rechecks caller cancellation
-before acquiring new login, read, or refresh ownership.
-Provider refresh failures are replaced at the credential boundary with a fixed
-provider-context error; raw Fetch errors and their credential-bearing request
-data never propagate.
-Every close caller shares the same completion through the credential manager,
-native backend, and backend registry; registry close also waits for OAuth slots
-already undergoing invalidation and for every Profile/provider cleanup before
-reporting one cleanup failure.
+Each Profile/provider backend owns one in-flight login through credential
+commit and one shared refresh operation. Ownership begins before provider
+setup, so cancellation, logout, and close can also settle a late-returning
+authorization attempt. Concurrent requests share refresh; each caller can
+cancel its own wait independently.
 
-The auth/send fence is Profile-scoped because one Profile owns one editable
-connection lifecycle. It tags pending login ownership, live auth activity, and
-credential-free generations by provider. This prevents a provider switch,
-Profile Save, or Delete from racing another provider operation for the same
-Profile, while different Profile IDs remain independent even when they use the
-same provider. Provider-local generations invalidate only that tuple's modal
-catalog and stale auth projection. Auth state is cached as one atomic
-Profile/provider/generation entry, so delayed reads from independent Profiles
-cannot exchange account projections. Profile lifecycle paths acquire the
-Profile fence before the request-configuration fence, including recovery of an
-unknown settings outcome. Direct API hydration and sends do not enter this
-fence; ordinary Direct Profile mutations use only the cheap in-process Profile
-gate unless OAuth state for that Profile actually needs retirement.
+Sign-in, logout, and close retire the credential generation and settle pending
+refresh work. Persistence checks generation ownership inside its serialized
+transaction before writing. Logout also cancels pending authorization and
+deletes the matching Profile/provider credential. Its cleanup continues even
+when the requesting caller cancels its wait; later operations and close await
+that cleanup, then recheck cancellation before starting work. All close callers
+share the same completion, and registry closure awaits every connection's
+cleanup. Refresh failures expose only a fixed provider-context error.
+
+The Profile auth/send fence serializes authorization, sends, provider switches,
+Save, and Delete for one Profile. Separate Profile IDs remain independent,
+including those using the same provider. Auth projections and modal catalogs
+are keyed by Profile, provider, and credential generation. Lifecycle operations
+acquire the Profile fence before the request-configuration fence, including
+recovery of an unknown settings outcome. Direct API hydration and sends use
+their ordinary configuration path; Direct API mutations enter OAuth cleanup
+only when that Profile has OAuth state to retire.
 
 #### Provider request mapping
 
@@ -275,20 +249,19 @@ the authoritative `response.failed` event; that terminal's fixed error code
 separates transient provider failures from context, usage, and policy failures
 without returning the provider message. If the stream instead ends after a
 well-formed canonical `error` event, Live Smith preserves and classifies that
-bounded provider error. A clean stream with neither a terminal nor a canonical
-error remains connection loss, while malformed error events fail closed.
-Generation HTTP 408, 409, 429, and 5xx responses use the same bounded
-provider-retry path; catalog loading remains an explicit read operation rather
-than an accepted model turn.
+provider error. A clean stream lacking both events is treated as connection
+loss; a malformed error event is a protocol failure.
+Generation HTTP 408, 409, 429, and 5xx responses use the same provider-retry path.
+Catalog loading remains a separate read operation.
 Device login reads ChatGPT account identity from the ID token, with an access
 token claim as fallback. If neither `expires_in` nor a JWT expiry is available,
 the token remains usable until the bounded HTTP 401 refresh path replaces it.
 The same account identity loads the bounded `/codex/models` catalog and exposes
 only account picker-visible entries; `supported_in_api` does not exclude a
 ChatGPT-only subscription model. Its `client_version` is a separately pinned
-Codex catalog compatibility version, never the Live Smith package version, and
-is updated only after validating the decoder against the target catalog. Codex
-turn-state returned in HTTP headers or `response.metadata` remains scoped to one
+Codex catalog compatibility version, updated after validating the decoder
+against the target catalog. Codex turn-state returned in HTTP headers or
+`response.metadata` remains scoped to one
 local agent turn. The first non-empty value is captured as soon as its response
 arrives and is replayed on both connection retries and subsequent tool-loop
 requests; later values cannot replace it. The provider-neutral reconnect layer
@@ -305,7 +278,7 @@ Messages. OAuth is never sent in `x-api-key`.
 Google OAuth uses Antigravity's installed-app client, hosted callback, and
 the Cloud, account, Code logging, experiment/config, AI Code, and OpenID scopes
 required by the product. It first resolves the account's managed companion
-project and fails closed if Antigravity does not return one. If Google reports
+project and stops setup if that project is absent. If Google reports
 `VALIDATION_REQUIRED`, Live Smith exposes only its allowlisted
 `accounts.google.com` verification URL and a fixed local description; after
 verification, starting sign-in again completes setup.
@@ -326,18 +299,15 @@ feedback, malformed or unknown terminals, exhausted daily quota or model
 account quota, and required account validation remain fatal. Temporary model
 capacity, per-minute quota hints, transient rate, abort, timeout, unavailable,
 and server failures retry. Safe canonical status/reason/finish values remain in
-errors; raw provider messages and credential-bearing metadata do not. An empty
-HTTP 429 uses a bounded one-minute rate-limit delay instead of immediately
-exhausting the retry loop. Retry
-progress and final exhaustion preserve that safe normalized cause and the
-scheduled wait instead of replacing it with a generic failure label.
+errors; raw provider messages and credential-bearing metadata do not. An
+HTTP 429 with an empty body uses a one-minute rate-limit delay. Retry progress
+and final exhaustion preserve the normalized cause and scheduled wait.
 
 The adapter owns Google content-role mapping, function declarations,
 function-call/result replay, thought signatures, thinking levels or budgets,
 usage projection, bounded citation/grounding-source normalization, SSE parsing,
-and fixed safe errors. Present malformed tool arguments, candidate parts,
-citations, usage, or conflicting terminals fail explicitly instead of being
-discarded or coerced. Provider-supplied
+and fixed safe errors. Malformed tool arguments, candidate parts, citations,
+usage, or conflicting terminals cause a protocol failure. Provider-supplied
 function-call IDs are replayed on both call and result; a Live Smith ID
 synthesized for an ID-less call remains internal and is omitted from both
 Google wire parts. Omitted function-call arguments serialize as an explicit
@@ -383,12 +353,13 @@ flags. Anthropic discovery consumes its official input and reasoning capability
 objects. Missing fields remain unverified instead of being inferred from a
 model name. Every catalog is decoded through the same normalized
 `DiscoveredModelInfo` contract before it can reach Profile or Session selection.
-Exact MIME and wildcard entries are retained in bounded provider evidence. A
-coarse Live Smith image or audio capability becomes supported only when the
-catalog covers every format that the corresponding attachment type can emit;
-partial or coarse-only provider support remains visible without authorizing an
-incompatible format. Usable capabilities are also intersected with the selected
-wire protocol: Chat supports image/audio, Responses and Messages support
+Direct OpenAI-compatible and Antigravity discovery retain exact MIME and
+wildcard entries as provider evidence. Their image/audio capabilities require
+MIME coverage for every format that the attachment type can emit; partial
+format coverage and coarse positive flags remain informational. ChatGPT's
+catalog uses its `input_modalities`; Anthropic's catalog uses its input
+capability objects and returned modalities. Usable capabilities are also
+intersected with the selected wire protocol: Chat supports image/audio, Responses and Messages support
 image/PDF, and Antigravity supports image/audio/PDF. A positive thinking flag or
 scalar is retained as provider evidence but does not expose an explicit
 reasoning control unless the catalog also defines a complete encodable strategy.
@@ -407,11 +378,12 @@ A Profile stores:
 
 - an ID, user-visible name, and one discriminated connection;
 - one or more model configurations and one default model;
-- per-model generation parameters and capability evidence allowed by that
+- per-model generation parameters and advanced settings allowed by that
   connection.
 
-Direct API model configurations may store maximum output tokens, temperature,
-reasoning, capability overrides, hosted-tool policy, and Extra Body.
+Direct API model configurations require a maximum output-token count. They may
+also store temperature, reasoning, capability overrides, hosted-tool policy,
+and Extra Body. Discovery evidence is stored separately from Profile settings.
 Direct and subscription model configurations may both store a local context
 window and automatic compaction threshold. Subscription model configurations
 also store reasoning settings and the Web Search opt-in: output-token
@@ -421,8 +393,8 @@ capability overrides remain rejected.
 The configured context window supplies the denominator when provider metadata
 is absent or intentionally overridden. A blank auto-compaction threshold uses
 90% of the effective context window; without either a known window or an
-explicit threshold, automatic compaction remains unavailable instead of
-guessing a provider limit. The threshold must stay below an explicitly
+explicit threshold, automatic compaction remains unavailable. The threshold
+must stay below an explicitly
 configured or resolved window.
 
 Automatic compaction uses the same active model connection as generation. It
@@ -435,25 +407,25 @@ model, account generation, and requester; its optional instructions only add
 one-time preservation priorities and are not stored as a user turn. Retry and
 reconnect notices are transient command progress, and the user may request Stop
 until checkpoint persistence begins. This common request path covers Direct API
-plus OpenAI, Anthropic, and Google subscriptions; Live Smith does not depend on
-an OpenAI-only compact endpoint.
+plus OpenAI, Anthropic, and Google subscriptions.
 
-Schema version 7 stores `oauth-subscription`. A schema-v6
+Settings schema v7 introduced `oauth-subscription`. A schema-v6
 `codex-subscription` Profile migrates to
 `{ kind: "oauth-subscription", provider: "openai" }`. The migration does not
 copy or import credentials from Codex or any other application.
 
 A Session model selection stores only Profile ID, model ID, and an optional
 reasoning-effort override. Send admission resolves the complete current model
-from the active saved Profile; unsaved draft connection data cannot enter a
-model request.
+from the active saved Profile. Draft connection data stays in the editor until
+saved.
 
 ## API behavior
 
 ### Visible reasoning output
 
-Reasoning visibility is an output-protocol fact, not a model-name inference and
-not a guarantee implied by the configured reasoning effort. ChatGPT subscription
+Visible reasoning depends on the output returned by the provider. Model names
+and reasoning-effort settings alone provide no visibility guarantee. ChatGPT
+subscription
 requests ask for `reasoning.summary: "auto"` when the resolved model supports
 reasoning and reasoning is not disabled. Anthropic Messages requests use
 `display: "summarized"` with explicitly enabled adaptive or budget thinking;
@@ -463,8 +435,8 @@ OpenAI-compatible Direct API requests retain their configured summary policy
 through Extra Body. Google Antigravity retains backend-default thinking;
 `includeThoughts` is not enabled by this adapter because its support in the
 subscription product protocol is unverified. Live Smith normalizes reasoning
-stages and visible text returned by the selected
-backend: OpenAI Responses reasoning summary or reasoning-text events and items,
+stages and visible text returned by the selected backend: OpenAI Responses
+reasoning summary or reasoning-text events and items,
 OpenAI-compatible Chat Completions plaintext or structured reasoning fields,
 Anthropic thinking blocks and deltas, and Google parts explicitly marked
 `thought: true`.
@@ -473,14 +445,13 @@ An explicit stage with no visible text shows Thinking while in progress.
 Visible text streams into that item and the accepted result is stored as a
 separate collapsed Session event before the assistant answer. Completed
 reasoning events with empty or whitespace-only content are omitted from the
-timeline, including saved history. A backend that
-returns neither a stage nor visible text produces no Thinking item. Anthropic
+timeline, including saved history. Backends that return neither a stage nor
+visible text omit the Thinking item. Anthropic
 signatures and redacted payloads, OpenAI encrypted reasoning, Google thought
 signatures, and unknown provider fields remain opaque replay state and are
-never projected into Session text or the WebView. Provider SDKs expose wrappers
-around these same wire fields; Live Smith decodes them in its existing bounded
-HTTP/SSE transports so Fetch, cancellation, proxy, retry, and redaction remain
-under the Extension Host compatibility boundary.
+kept out of Session text and the WebView. Live Smith decodes these wire fields
+in its HTTP/SSE transports, which share the Extension Host's Fetch,
+cancellation, proxy, retry, and redaction behavior.
 
 ### OpenAI Responses
 
@@ -519,9 +490,8 @@ request segment so the earlier reasoning prefix remains intact, including when
 the later segment needs a physical retry.
 Encrypted and unknown detail types remain opaque, while a detail-only response
 still supplies a stage signal. The complete raw assistant message remains the
-authoritative replay state. A
-`length` response preserves
-its raw assistant message but exposes no executable tool calls. Its continuation
+authoritative replay state. A `length` response preserves its raw assistant
+message and withholds tool calls from execution. Its continuation
 replays that assistant message followed by a fixed user continuation marker, or
 by a fixed non-execution result for every complete or partial function call.
 Ordinary `tool_calls` responses remain paired with their real client results.
@@ -538,14 +508,12 @@ from streaming `thinking_delta` events or non-streaming `thinking` blocks
 enters its content. Multiple visible thinking blocks in one assistant turn use
 content-block index order and the same blank-line boundaries in streaming and
 terminal projections. `signature_delta` and `redacted_thinking` payloads remain
-replay-only. Canonical refusal and
-truncation stop reasons preserve the
+replay-only. Canonical refusal and truncation stop reasons preserve the
 returned content, citations, and usage. Successful JSON responses and streaming
 `message_start` envelopes require
 `type: "message"` and `role: "assistant"`. A 200 `type: "error"` envelope is
 classified through the same bounded safe-error contract as other Anthropic
-failures. Every stream content block started after `message_start` must close
-exactly once before `message_stop`; an unclosed tool block is never executable.
+failures.
 `max_tokens` also preserves replay blocks; the following request ends with a
 local continuation marker, or with
 `is_error` results for every returned client tool so none can execute. An
@@ -558,7 +526,7 @@ because a client result or text marker would close the provider-owned server
 turn incorrectly.
 Context-window termination retains no unusable replay state. Malformed known
 content blocks, their known fields, stream-delta shapes, or events for an
-already closed block fail explicitly, while unknown object block types remain
+already closed block cause a protocol failure. Unknown object block types remain
 opaque replay data.
 Streaming must begin with exactly one canonical `message_start`, whose `content`
 is empty. Every returned content block must then pass through its own start,
@@ -567,7 +535,7 @@ unclosed tool block can never become executable.
 
 ### Follow-ups and steering
 
-Queue and steering are local Session behavior, not provider features. A queued
+Queue and steering are implemented by the local Session. A queued
 follow-up begins a new send only after the active send is terminal. Steering is
 inserted only at the next safe model boundary and discards obsolete transient
 provider output without replaying accepted client tools or Live mutations.
@@ -580,10 +548,11 @@ override. OAuth capabilities resolve from the conservative fallback and the
 current signed-in provider catalog; central model-name policy is not treated as
 OAuth evidence.
 
-Evidence remains `supported`, `unsupported`, or `unverified`. A fallback may
-keep a protocol usable without claiming provider verification. Subscription
-catalog evidence is account/auth-generation scoped and cannot be restored from
-the persistent Direct API model cache.
+Temperature, reasoning, and binary-input evidence remains `supported`,
+`unsupported`, or `unverified`. Token-limit evidence uses `verified`,
+`configured`, or `unverified`. A fallback keeps a protocol usable while retaining
+unverified evidence. Subscription catalog evidence is scoped to its account and
+auth generation and stays separate from the persistent Direct API model cache.
 
 Google catalog models advertise the context/output limits, thinking support,
 legacy input flags, and supported MIME types returned for that exact account.
@@ -596,24 +565,24 @@ does not yet define a video attachment part.
 
 ## Input mapping
 
-Images are supported only when the saved runtime capability and evidence allow
-them. Direct API input evidence may include explicit per-model capability
-overrides; subscription input evidence comes from the current account catalog.
-OpenAI Responses uses image data URLs, Anthropic uses base64 image source
-blocks, and Antigravity uses inline data parts. Native PDF input uses OpenAI
-Responses, Anthropic Messages, or Antigravity inline data only when the resolved
-runtime capability and evidence support PDF input.
+Binary input requires the resolved runtime capability and supporting evidence.
+Direct API evidence can include explicit per-model overrides; subscription
+evidence comes from the current account catalog. The selected protocol must
+also support the input type:
 
-Audio input uses OpenAI Chat Completions or Antigravity inline data only when
-the resolved runtime capability and evidence support audio input. Catalog-derived
-audio evidence requires coverage of both WAV and MP3. Other subscription
-backends, OpenAI Responses, and Anthropic Messages reject audio locally. Plain
+| Connection | Native input types | Wire representation |
+| --- | --- | --- |
+| Direct OpenAI Responses or ChatGPT OAuth | Images, PDF | Image data URLs and file data |
+| Direct OpenAI Chat Completions | Images, WAV/MP3 audio | Image data URLs and `input_audio` parts |
+| Direct Anthropic Messages or Claude OAuth | Images, PDF | Base64 image and document source blocks |
+| Google Antigravity OAuth | Images, WAV/MP3 audio, PDF | Inline data parts |
+
+Catalog-derived audio evidence requires coverage of both WAV and MP3. Plain
 text, code, rich documents, spreadsheets, presentations, and MIDI are extracted
-locally into bounded untrusted text and do not require native provider document
-or audio support. Additional browser-decodable images are normalized to PNG
-before upload. Audio stays in its original WAV/MP3 representation; unsupported
-audio formats require explicit export before attachment. Image conversion codec
-availability is a local WebView property; it does not change provider capability
+locally into bounded untrusted text. Additional browser-decodable images are
+normalized to PNG before upload. Audio stays in its original WAV/MP3 format;
+other formats require an explicit export before attachment. Image conversion
+depends on codecs in the local WebView, independently of provider capability
 evidence.
 
 Modern Office and OpenDocument use bundled parser workers without an installed
@@ -636,9 +605,10 @@ model usage normally. Native audio or MIDI input capability is unnecessary: the
 host reads symbolic notes and saves the returned tracks as Standard MIDI.
 
 Continuation requests admit only the Session artifact list, MIDI inspection and
-MIDI save tools at execution. They omit hosted web search and cannot invoke Live actions, recovery
-operations or unrelated paid Plugin tools. A local conditioning Plugin/MCP source
-runs through its own approved artifact contract without a chat-model request.
+MIDI save tools at execution. Hosted Web Search, Live actions, recovery
+operations, and unrelated paid Plugin tools are excluded. A local conditioning
+Plugin/MCP source runs through its own approved artifact contract without a
+chat-model request.
 The ordered-buffer workflow and persistence boundaries are described in
 [Architecture](ARCHITECTURE.md#bounded-midi-continuation).
 
@@ -719,12 +689,13 @@ uses the Antigravity product backend.
 
 ## External audio tools
 
-External audio tools are provided by immutable built-in Plugins and configured
-independently of chat Profiles in **Settings → Extensions → Audio services**. Add a named
-Connection, select its Plugin, enter the required credential, and save it before
-use. Up to 20 Connections can coexist, including multiple accounts for the same
-Plugin. The list shows each Plugin and its saved or draft status. Select a row to
-expand its editor; model overrides are optional disclosure controls. Each
+External audio tools are provided by built-in Plugins and configured
+independently of chat Profiles in **Settings → Extensions → Audio services**.
+Add a named Connection, select its Plugin, enter the required credential, and
+save it before use. Audio services share the limit of 20 Integration Connections
+with other Plugin and standalone MCP connections. Multiple accounts for one
+Plugin can coexist. The list shows each Plugin and its saved or draft status.
+Select a row to expand its editor; optional model overrides use a disclosure. Each
 Connection has its own enable switch and write-only secret field. An omitted
 replacement preserves secrets only for the same Connection and Plugin; switching
 Plugins never inherits them. Clearing a key or removing a saved Connection
@@ -733,8 +704,8 @@ Connection leaves its Session results intact but makes remote recovery through i
 unavailable.
 
 Saves check the collection revision so a stale editor cannot overwrite a changed
-connection. Configuration requires private persistent extension storage;
-there is no environment-variable fallback. Settings schema 10 stores built-in entries as
+connection. Configuration requires private persistent extension storage.
+Settings schema 10 stores built-in entries as
 `id`, `name`, `pluginId`, `enabled`, public `configuration`, and private `secrets`.
 Historical schema-8 `audioServices` and the older single LALAL.AI service are
 migrated on read without rewriting their file. The next authorized settings write
@@ -743,10 +714,10 @@ persists only `integrationConnections`.
 Tools expose only enabled, configured connections that support the requested
 operation. Every new model tool request selects an exact `connectionId`; the chat
 model receives a user-defined label and non-secret selected model ID when present,
-but never receives a key, callback secret, provider endpoint, or generic HTTP
-execution tool. Namespaced built-in tool definitions and strict argument parsing
-come from the selected Plugin rather than a central Provider operation switch.
-The chat model needs function-tool support, not native audio generation support.
+while credentials, callback secrets, and provider endpoints remain private.
+The selected Plugin supplies namespaced tool definitions and strict argument
+parsing for its supported operations.
+The chat model needs function-tool support to request these operations.
 Saved-job listing and recovery remain available to the model when no Integration
 Connection is enabled; only new remote operations depend on enabled Connections.
 When the active Profile has verified audio-input support on a protocol that can
@@ -758,6 +729,10 @@ Changing that connection before upload or paid submission stops the operation;
 send a new request to use the changed configuration. Editing another connection
 does not invalidate this request.
 
+Provider request and replay tests cover local protocol handling. Live access,
+model entitlements, quotas, billing, and regional availability depend on the
+selected provider account and require checks with that account.
+
 ### Music and sound effects
 
 ElevenLabs supports `generate_music` and `generate_sound_effect` using its official
@@ -765,28 +740,29 @@ ElevenLabs supports `generate_music` and `generate_sound_effect` using its offic
 [sound-effect](https://elevenlabs.io/docs/api-reference/text-to-sound-effects/convert)
 REST endpoints. Prompt character limits count Unicode code points, including
 supplementary characters as one, consistently from the chat tool to the adapter.
-Music accepts a description, an instrumental flag, and an optional
-3–600 second duration. The integration defaults to `music_v2`; an optional saved
+Music accepts a description of up to 4,100 Unicode code points, an instrumental
+flag, and an optional 3–600 second duration. The integration defaults to
+`music_v2`; an optional saved
 music model ID replaces that value. Sound effects accept a description, a
 0.5–30 second duration, and a loop flag, and use `eleven_text_to_sound_v2`
 independently of the music model setting. Both return MP3 audio that is inspected
 and stored as a Session result. No provider SDK runtime is bundled.
 
 These requests can consume the selected account's paid allowance. API access and
-charges are governed by the provider account, not the selected chat Profile.
-An ElevenLabs request returns audio directly, rather than a resumable task ID.
+charges are governed by the selected ElevenLabs account.
+An ElevenLabs request returns audio directly and has no resumable task ID.
 Stopping an incomplete response does not confirm service-side cancellation or a
 refund. A lost response is never regenerated automatically; a complete local
 file that outlives a job-record failure can be recovered without another request.
 
 ### Google Lyria through the Gemini API
 
-**Google Lyria (Gemini API)** is a separate API-key audio connection. It uses
-Gemini Developer API billing and credentials; a Google OAuth subscription
-Profile does not supply this key or grant Lyria access. Create the key in
+**Google Lyria (Gemini API)** uses a separate API-key audio connection with
+Gemini Developer API billing. Create its key in
 [Google AI Studio](https://aistudio.google.com/apikey). The connection accepts
-text prompts through the existing `generate_music` tool and does not currently
-send image prompts or expose returned lyric/structure text.
+text prompts of up to 4,100 Unicode code points through `generate_music`.
+Google OAuth Profiles, image prompts, and returned lyric/structure text are
+outside this connection's input and output contract.
 
 The default `lyria-3.5` model calls the official
 [Interactions API](https://ai.google.dev/gemini-api/docs/music-generation) once
@@ -807,8 +783,7 @@ the key only in the `x-goog-api-key` handshake header, waits for setup to
 complete, sends one weighted prompt, and collects a bounded duration before
 issuing `STOP`. Omitted duration defaults to 30 seconds; explicit values may be
 3–600 seconds. The provider's raw 48 kHz, stereo, 16-bit PCM is copied only up
-to the requested frame count and wrapped in a standard WAV container. This is a
-generation transport, not an interactive steering or live-performance UI.
+to the requested frame count and wrapped in a standard WAV container.
 Lyria RealTime is instrumental-only, so vocal requests are excluded from the
 tool schema and rejected again before submission.
 
@@ -816,10 +791,8 @@ All Lyria output is subject to provider safety filtering and SynthID
 watermarking. Batch generation is single-turn, and the realtime model remains
 experimental. Requests can consume Gemini API quota or paid usage. Stop,
 timeouts, connection loss, and a lost response do not establish provider-side
-cancellation or a refund, and Live Smith never retries an unknown generation
-automatically. Synthetic request and WebSocket replay tests do not establish
-live key access, billing, regional availability, quota, or current model
-entitlement.
+cancellation or a refund. Unknown generation outcomes require an explicit new
+submission.
 
 ### Mureka official API
 
@@ -829,23 +802,25 @@ authentication documented in its
 from chat-model Profiles and sends authenticated metadata requests only to
 `https://api.mureka.ai`.
 
-The connection exposes prompt-based `generate_music`. Vocal music uses the
-official [Prompt to song](https://platform.mureka.ai/docs/api/operations/post-v1-song-easy-generate.html)
-endpoint; instrumental music uses the separate
-[Generate instrumental](https://platform.mureka.ai/docs/api/operations/post-v1-instrumental-generate.html)
-endpoint. Live Smith requests one non-streaming choice and applies a common
-1,024-Unicode-code-point prompt limit, matching the narrower instrumental
-contract. Requesting one choice avoids silently purchasing the provider's
-documented default of two when the user asked for one result. It does not expose
-custom lyrics, styles, reference audio, vocal cloning, streaming playback, an
-explicit duration, or other Mureka operations through this tool.
+The connection exposes three tools:
+
+| Tool | Input and result | API route |
+| --- | --- | --- |
+| `generate_music` | A description of up to 1,024 Unicode code points; one vocal or instrumental result | [Prompt to song](https://platform.mureka.ai/docs/api/operations/post-v1-song-easy-generate.html) or [Generate instrumental](https://platform.mureka.ai/docs/api/operations/post-v1-instrumental-generate.html) |
+| `generate_lyrics` | A brief of up to 8,000 code points; a generated title and editable lyrics | [Generate lyrics](https://platform.mureka.ai/docs/api/operations/post-v1-lyrics-generate.html) |
+| `generate_song_from_lyrics` | Literal lyrics of up to 5,000 code points, an optional style prompt of up to 1,024 code points, and optional male/female vocal gender; one rendered song | [Lyrics to song](https://platform.mureka.ai/docs/api/operations/post-v1-song-generate.html) |
+
+Audio generation explicitly requests one non-streaming choice with `n: 1`.
+Lyric generation returns text to Session tool history and can consume the
+connection's API allowance. An unconfirmed lyric response remains an unknown
+outcome and requires an explicit new submission. Reference audio, vocal cloning,
+streaming playback, and explicit audio duration are outside these tool contracts.
 
 The optional model field suggests `auto`, `mureka-7.6`, `mureka-o2`,
-`mureka-8`, `mureka-9`, and `mureka-9.5`, following the current official
-generation schemas. Blank uses `auto`. Because the official instrumental
-schema does not include `mureka-o2`, Live Smith rejects that combination before
-creating an audio job or sending a paid request; the same saved model remains
-usable for prompt-to-song generation.
+`mureka-8`, `mureka-9`, and `mureka-9.5`. Blank uses `auto`. These are the model
+IDs supported by this adapter. Instrumental generation excludes `mureka-o2`;
+the adapter rejects that combination before creating a job or sending a paid
+request. The same saved model remains usable for vocal song generation.
 
 An accepted task is persisted before polling the matching song or instrumental
 [query endpoint](https://platform.mureka.ai/docs/api/operations/get-v1-song-query-%7Btask_id%7D.html).
@@ -866,11 +841,6 @@ no cancellation request, so Stop ends the local wait without claiming remote
 cancellation or a refund. Resume queries the original task and never resubmits
 generation automatically.
 
-Synthetic request-capture tests cover the documented request, polling, response,
-download, cancellation, storage, and recovery boundaries. They do not establish
-that a real Mureka account has access to a selected model, sufficient credits,
-or current regional availability.
-
 ### Suno Platform official API
 
 **Suno Platform (official API)** is a first-party API-key connection. Open
@@ -884,29 +854,23 @@ The implemented flow submits `POST /v0/audio`, persists its returned task ID,
 polls `GET /v0/audio/{id}`, and saves the completed HTTPS audio result locally.
 Description mode lets Suno choose lyrics and style. Custom mode maps literal
 lyrics, style, optional title, an existing supported voice ID, and the
-instrumental flag. Instrumental description requests use the custom style form
-without inventing lyrics. The current Platform contract does not expose a model
-selector or duration through Live Smith. Cover and Mashup are advertised by the
-Platform but do not yet have chat-tool input contracts here.
+instrumental flag. Instrumental description requests send the supplied prompt
+as style text. Model, duration, Cover, and Mashup controls are outside this
+adapter's tool contract.
 
-Suno's public page confirms the official REST product but keeps the endpoint
-reference behind account access. The implemented request shape follows the
-available partner-facing `/v0/audio` contract and is covered by synthetic
-request-capture tests; without a configured Platform key, those tests do not
-establish live account access or current quota. Paid submissions, unknown
-outcomes, HTTP failures, and Stop are never automatically retried.
+Suno's public page describes the REST product; its detailed endpoint reference
+requires account access. The adapter implements the `/v0/audio` request and
+polling contract described above. Paid submissions, unknown outcomes, HTTP
+failures, and Stop require explicit user action before another submission.
 
 ### Suno through a third-party API
 
-**Suno via SunoAPI.org (third-party)** is a separate connection, not Suno's
-official API or a Suno subscription login. It uses a SunoAPI.org API key and
+**Suno via SunoAPI.org (third-party)** uses a separate SunoAPI.org API key and
 that service's [published generation protocol](https://docs.sunoapi.org/suno-api/generate-music).
 An enabled connection also requires a user-owned callback URL accepted by that
-provider.
-The provider requires this address when submitting full-song generation even
-when the desktop client retrieves results by polling. Live Smith does not host
-the callback or verify ownership/reachability; do not enter a placeholder or an
-address belonging to someone else. HTTP and HTTPS callbacks may contain a
+provider, including when the desktop client retrieves results by polling.
+Supply a callback endpoint you control; hosting and reachability remain the
+endpoint owner's responsibility. HTTP and HTTPS callbacks may contain a
 provider-required query token, custom port, IP literal, or local hostname.
 Malformed URLs, fragments, embedded credentials, whitespace, and values that
 reflect the API key are rejected. Live Smith never contacts the callback URL.
@@ -914,12 +878,13 @@ reflect the API key are rejected. Live Smith never contacts the callback URL.
 The connection exposes prompt-based `generate_music` in non-custom mode, with an
 instrumental flag and up to 3,000 prompt characters. The integration defaults to
 `V6`; a saved supported model ID can select another published version. The model
-field suggests the current published IDs while remaining editable.
+field lists the adapter's supported IDs and also accepts typed input, which is
+validated against that same list.
 Explicit duration, custom lyric mode, covers and extensions are not part of this
 operation. Returned task IDs are persisted before polling. One or two final
-tracks are saved as music results; Resume uses the original task, not a new
-generation. The first completed response binds each result role to its remote
-track ID. Resume rejects changed track identities while allowing reordered
+tracks are saved as music results; Resume queries the original task. The first
+completed response binds each result role to its remote track ID. Resume
+rejects changed track identities while allowing reordered
 responses and refreshed download URLs. The published protocol has no
 cancellation operation, so Stop ends the local wait without claiming a refund
 or remote cancellation.
@@ -930,19 +895,20 @@ They never carry the API key, Cookie, referrer, or browser credentials and never
 follow redirects. Malformed, embedded-credential, credential-reflecting, non-HTTP,
 and fragment-bearing URLs are rejected.
 
-A Suno Pro/Premier subscription is not a credential for the SunoAPI.org connector.
-Website subscription sign-in is a separate connection, described below.
+SunoAPI.org requires its own API key. The Suno.com website connection below uses
+a separately imported account session.
 
 ### Suno.com website sign-in
 
-**Suno.com subscription (experimental)** uses the ordinary `suno.com` account, not Suno
-Platform or SunoAPI.org. It requires no browser extension or particular browser.
+**Suno.com subscription (experimental)** uses a `suno.com` account through
+manual session Cookie import. It operates independently of Suno Platform and
+SunoAPI.org and works with the user's chosen browser.
 On macOS and Windows, the website action opens `https://suno.com/create` using
 the system default browser and its existing login state. Google login and
 sign-in verification remain there, under the user's control. Generation
 verification uses the separate in-app workflow below.
 
-This is a manual Cookie import, not an automatic OAuth callback:
+To import the session Cookie:
 
 1. Add a Suno connection in **Settings → Extensions → Audio services** and open Suno.
    Opening the website does not require saving the connection first.
@@ -964,40 +930,34 @@ This is a manual Cookie import, not an automatic OAuth callback:
    tools. An enabled connection without a saved Cookie remains unavailable to
    chat requests. Multiple named Suno accounts can be enabled independently.
 
-Treat the Cookie like a password. Enter it only in the local settings form,
-never in a chat message, terminal command, screenshot or shared file. The app
-sends the normalized Cookie only to the fixed Suno authentication host for
-verification and short-lived API token exchange, and stores it in private local files, not in the model's context,
-public settings or UI state. Local files are access-restricted but are not
-additionally encrypted by Live Smith. Each saved audio connection owns its own
-Cookie, so multiple Suno accounts can coexist without new browser profiles.
+Treat the Cookie like a password and enter it only in the local settings form.
+The app sends the normalized Cookie only to fixed Suno authentication hosts for
+verification and short-lived API token exchange. Its private local record stays
+outside model context, public settings, and dialog state. Files have restricted
+access permissions and remain unencrypted by Live Smith. Each saved audio connection
+owns its own Cookie, so multiple Suno accounts can coexist with the browser
+profiles already in use.
 To connect a different account, log into it in the browser/profile of your choice
 and explicitly import its own Cookie into a different named connection.
 
 Successful verification displays account identity. Open dialogs share verification
-results within one extension activation, including failures; closing a dialog
-does not discard that evidence. After the extension host restarts, a saved
-connection is not presented as freshly verified until checked again.
-Expired sessions require a fresh Cookie import; network failures are not reported
-as successful sign-in. Website traffic uses the browser's network configuration;
+results, including failures, for one extension activation. That evidence survives
+dialog closure. After the extension host restarts, saved connections require a
+new check to show verified status. Expired sessions require a fresh Cookie import.
+Website traffic uses the browser's network configuration;
 app verification and music requests use Live Smith's saved API proxy setting.
 
-Disconnect removes only that connection's local Cookie. It does not sign out the
-browser or revoke the remote Suno session. Removing the connection or changing
+**Clear local Cookie** removes only that connection's local Cookie. The browser
+login and remote Suno session remain active. Removing the connection or changing
 its provider also clears its saved Cookie; cleanup failure prevents the ownership
 change. A later settings-write failure can leave the old connection disconnected.
 Closing Live Smith does not close the browser. Legacy managed browser directories
 are not read, imported or deleted by this workflow.
 
-The experimental tools use the Suno.com account directly. No official Suno SDK
-or OAuth grant is implied, and no SDK dependency is bundled. The adapter maps a
-bounded subset of the current Suno web client's `v2-web` request contract, which
-is unofficial and may change. Synthetic protocol tests do not establish
-that a particular live account can generate. Cookie identity alone does not
-prove plan entitlements, sufficient credits or freedom from security challenges.
-Before enabling it, review [Suno's current terms](https://suno.com/terms). Live
-Smith does not represent this unofficial protocol as authorized or stable, and
-website or policy changes may make it unavailable for an account.
+The experimental adapter implements a bounded subset of the unofficial Suno web
+client's `v2-web` contract. Generation availability depends on account
+entitlements, credits, security checks, and [Suno's terms](https://suno.com/terms).
+Website and policy changes can make this connection unavailable.
 
 - `generate_music`: description mode (up to 3000 characters), or `options.mode:
   "custom"` with literal lyrics (up to 5000, empty for instrumentals), title
@@ -1005,7 +965,7 @@ website or policy changes may make it unavailable for an account.
   (0–100), male or female vocal gender, a 10–480 second duration on catalog
   models that report version 6 support, and an existing Persona ID. Account model
   limits can be lower and are checked before submission. Sliders, vocal gender,
-  and duration map to structured fields rather than prompt suffixes. Instrumental
+  and duration map to structured request fields. Instrumental
   and lyric intent are separate from a style description.
 - `inspect_music_service`: current account model/credit catalog, one bounded
   library page (20 songs with opaque pagination), or one Persona by ID. It does
@@ -1076,14 +1036,14 @@ Use **Music version → Load versions** in a saved Suno connection to read that
 account's catalog directly; no chat request or generation credits are required,
 and a saved connection can remain disabled during setup. **Follow account
 default** uses its current usable default; choosing a named version fixes that
-connection's model after **Save audio settings**. Unavailable or unknown-access
-versions cannot be selected from the catalog. A saved ID missing from a newly
-loaded catalog remains visible instead of silently changing the selection.
+connection's model after **Save**. Only versions with known usable access can be
+selected from the catalog. A saved ID missing from a newly loaded catalog
+remains visible for explicit review.
 **Advanced model ID** retains explicit ID entry; **Discard** restores the saved
 connection without a settings write. Catalogs stay in the current dialog and
 are invalidated by explicit authentication lifecycle changes or a different
-account, not by a verified automatic Cookie rotation, and are not persisted to disk.
-There is no model-name guessing or fallback to a different account/provider.
+account. A verified automatic Cookie rotation preserves the catalog. Catalogs
+stay in memory and selections remain scoped to the same connection.
 Every Suno.com API request carries a fresh bounded `browser-token`, the imported
 device identifier when available (otherwise a generated private UUID persisted
 with that connection), and the Suno Origin/Referer used by the web client. `__client`
@@ -1095,17 +1055,17 @@ atomically save the verified rotation without replacing a concurrent reimport.
 Generation requests to the website's shared generation endpoint are preceded by
 account/parameter validation and a CAPTCHA check. An explicit no-challenge
 response or a fresh result from the requested official component permits
-submission. A challenge waits for manual action in the owned verification
-window. There is no browser/device impersonation, CAPTCHA
-solver, challenge bypass, or automatic replay of a paid submission. Stop allows
-a bounded receipt-read grace period; it is not a remote cancellation or refund.
+submission. A challenge waits for the user to complete the requested component
+in Live Smith's verification window. Paid submissions run once. Stop allows a
+bounded grace period to preserve a returned receipt; remote cancellation and
+refunds remain provider decisions.
 
 HTTP failures retain the numeric status and, when available, a bounded,
 structured provider diagnostic: error codes/types and validation field paths.
-Arbitrary provider messages, rejected input and server debug data are never
-exposed. An unavailable error body or an interrupted diagnostic read does not
-erase an already received HTTP rejection, and a diagnostic never authorizes a
-generation retry.
+Arbitrary provider messages, rejected input, and server debug data stay private.
+An already received HTTP rejection remains authoritative even when its error
+body is unavailable or interrupted. A diagnostic supplies information only;
+another generation submission requires explicit user action.
 
 #### Online preview, file downloads and Live import
 
@@ -1116,11 +1076,11 @@ Sessions. A generated song can be ready for online listening without a local aud
 asset. The result card offers an explicitly opened Suno embedded player at
 `https://suno.com/embed/{clip_id}`.
 Each job shows a creation time, chronological number and newest marker; the optional
-custom title is retained without lyrics or other prompt content. One result row per
-version switches its single Preview control between open and closed. Downloaded
+custom title is retained without lyrics or other prompt content. Each version's
+row has a Preview control that opens or closes playback. Downloaded
 versions use local playback in that same row. Generation completion and local
-download count are displayed separately, with earlier failures identified as
-earlier tasks rather than the latest result.
+download count are displayed separately. Earlier failed tasks retain their own
+chronological position.
 The player loads only when requested and remains owned by Suno, inside a
 sandboxed cross-origin frame with no referrer. Live Smith passes no Cookie or API
 token to it and does not capture its playback data. The player uses the host
@@ -1140,11 +1100,10 @@ download distinction in its [download FAQ](https://help.suno.com/en/articles/136
 
 Downloaded audio becomes a verified local Session asset, with local playback
 and a separate **Export MP3/WAV** button. Export opens the system default
-browser with a two-minute link for this file only, not the dialog's control
-credential. Local export remains available while the Session's model request
-runs. Keep Live Smith open until the browser finishes the download; no
-Suno request or additional download allowance is needed. Repeating a saved output's download reuses that
-asset without a provider request. Importing into Live requires this local asset
+browser with a two-minute credential limited to that file. Local export remains
+available while the Session's model request runs. Keep Live Smith open until
+the browser finishes the download. Exporting or downloading an already saved
+output reuses the local asset. Importing into Live requires this local asset
 and remains a separate scoped Apply operation. When asked, a verified audio-input
 Profile can also receive the exact local WAV or MP3 through
 `listen_to_audio_asset`, subject to the request's binary-count and byte limits.
@@ -1155,8 +1114,8 @@ used as either a Live import source or model input.
 #### In-app human verification and selected-output download
 
 On macOS 14 or later, a challenged music generation or extension opens Live
-Smith's native verification window. It loads an actual `https://suno.com`
-document, not a local page with a substituted hostname, and uses only the
+Smith's native verification window. It loads an `https://suno.com` document and
+uses only the
 component requested by the generation check: hCaptcha version 1 or Turnstile
 version 2. Click **Start verification** and complete any challenge yourself.
 The opaque result travels only through a private process pipe and transient
@@ -1173,9 +1132,8 @@ and proof lifetime are rechecked before submission. The helper follows the
 selected API proxy mode; explicit No proxy uses an authenticated local CONNECT
 tunnel without intercepting HTTPS. Closing/cancelling the window, loading
 failure or an expired result does not submit generation. A silent component has
-a bounded wait and supports manual retry; there is no automatic paid retry.
-Callback success is not itself evidence of server acceptance: the validated
-generation receipt is authoritative. Unknown challenge versions and unsupported
+a bounded wait and supports manual retry. The validated generation receipt
+confirms server acceptance. Unknown challenge versions and unsupported
 hosts fail before submitting to the shared generation endpoint. Get Whole Song
 and completed replacement concatenation use the website's direct `concat/v2`
 flow after source validation, without a generation CAPTCHA preflight. Remaster
@@ -1189,8 +1147,7 @@ with the user's confirmation it can authorize one locked song through
 `POST /api/download/authorize`, then recheck that same song's permission. A
 missing or uncertain authorization response is never replayed automatically.
 The adapter requests the prepared MP3 through
-`GET /api/download/clip/{clip_id}?format=mp3`, rather than treating the song's
-playback URL as a file download. Preparation and transfer have a cancellable
+`GET /api/download/clip/{clip_id}?format=mp3`. Preparation and transfer have a cancellable
 ten-minute deadline; only the Suno CDNs and the exact
 `suno-data-uploads.s3.amazonaws.com` bucket returned by authorized MP3 preparation
 are accepted over HTTPS, without API credentials or redirects.
@@ -1200,8 +1157,7 @@ with a recoverable error instead of falling back to an alternate media endpoint.
 If one song's download fails, its remote identity and already-saved sibling
 results remain available. Retry that song's explicit download to check its
 permission and collect it without another generation. **Resume** checks remote
-generation state; it does not spend download allowance. This is a human-assisted workflow, not
-unattended CAPTCHA automation or full website parity.
+generation state and preserves download allowance.
 
 Suno returns individual clip IDs. All acknowledged IDs and their output roles
 are saved before polling. Missing/pending clips remain pending; successful clips
@@ -1222,7 +1178,7 @@ LALAL.AI uses its Public API v1 connection for the separation operation.
 `separate_stems` accepts a non-empty selection of vocals, drums, bass, piano,
 electric guitar, and acoustic guitar. LALAL.AI processes the selected stems and
 also returns the remaining mix. Its multistem endpoint charges processing minutes
-for each requested stem, rather than once for the input file. The adapter follows
+for each requested stem. The adapter follows
 the [official OpenAPI contract](https://www.lalal.ai/api/v1/openapi.json): octet-stream
 upload, multistem submission, task-state checks, and cancellation of an exact task.
 Requests use the existing global network proxy route. No provider SDK or local
@@ -1239,8 +1195,9 @@ not audio bytes. With a verified audio-input Profile, the model may call
 analyze, compare, or transcribe that audio.
 
 Audio processing files are limited to 128 MiB and 15 minutes each, with a 1 GiB
-total and 40 processing jobs per Session. Composer audio attachments use the same per-file size and duration bounds.
-Inline model input has a separate 128 MiB host request budget; remote provider
+total and 40 processing jobs per Session. Composer audio attachments use the
+same per-file size and duration bounds. Inline model input allows at most two
+audio parts within a shared 128 MiB binary request budget; remote provider
 limits may be lower. Original WAV/MP3 bytes reach the selected protocol adapter,
 which owns their wire encoding. LALAL.AI keeps WAV sources lossless
 and requests MP3 output for MP3 sources so a valid long compressed input is not
@@ -1274,17 +1231,18 @@ they remain usable, but missing files cannot be safely matched to new remote
 results; Resume retains the existing files and explains that limitation. An old
 job with no saved outputs can acknowledge its first identity mapping.
 Metadata is committed before its audio file, and an incomplete file
-is not presented as an available result. LALAL.AI currently limits status checks
-to 24 hours after task creation, so remote recovery can expire even though downloaded local results
-remain available.
+is not presented as an available result. LALAL.AI's
+[status API](https://www.lalal.ai/api/v1/openapi.json) retains a task for 24 hours
+after it finishes. Remote recovery can therefore expire while downloaded local
+results remain available.
 Status polling is coordinated by credential owner within one storage scope, with
 a small margin below LALAL.AI's published 30-checks-per-minute account limit.
 Provider-confirmed terminal failures and failed sibling outputs are retained as
 terminal state and are not presented as recoverable work.
 
-Stop and window closure interrupt local processing. A bounded cancellation
-request is attempted for an accepted remote task; this does not claim that the
-service has stopped until its status confirms cancellation. After restart, a
+Stop and window closure interrupt local processing. Providers with a cancellation
+operation receive a bounded cancellation request for an accepted task. Remote
+cancellation remains unconfirmed until the provider reports it. After restart, a
 recoverable job can be explicitly resumed using its original Integration
 Connection. Each job retains its Plugin/tool identity, original Connection ID,
 and credential-owner fingerprint. Changing a Connection key or selecting another
@@ -1296,8 +1254,8 @@ up to three seconds to receive its task receipt before aborting the request.
 This preserves a returned task ID for cancellation and recovery, without
 continuing the separation workflow. An absent receipt remains an unknown outcome.
 
-Neither generation nor separation creates tracks or modifies Clips. Import uses the saved
-audio result as a SampleSource and retains the existing approval policy, complete
+Generation and separation save results to the Session. A separate Live import
+uses the saved audio result as a SampleSource and retains the approval policy, complete
 Edit Scope checks, mutation queue, and state revalidation. Creating tracks also
 requires Structure scope. Source timing metadata describes the original snapshot;
 it does not establish sample-accurate alignment or authorize an edit to a changed
@@ -1317,10 +1275,3 @@ Provider failures are redacted with both the active Direct API secret set and
 the send-scoped OAuth credential. Errors retain useful provider/protocol/status
 context without returning authorization headers, tokens, request bodies, or raw
 credential-bearing causes.
-
-## Running
-
-No environment variable selects a provider or supplies OAuth credentials. Run
-Live Smith normally, create an Account subscription Profile, choose ChatGPT,
-Claude, or Google Antigravity, and use the in-dialog sign-in action. Direct API
-keys remain configured only in explicit Direct API Profiles.
