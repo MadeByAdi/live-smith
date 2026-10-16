@@ -3,6 +3,7 @@ import test from "node:test";
 import { pluginToolCallName } from "../../../src/plugins/mcp/package.js";
 import { pluginParameterPanel } from "../../../src/plugins/parameter-panel.js";
 import type { SessionToolCatalog } from "../../../src/ui/chat-state.js";
+import { job } from "../support/chat-dialog.audio-test-helpers.js";
 import { cloneState, commandCalls, createDialogHarness, stateFixture, waitForCondition } from "../support/chat-dialog.test-harness.js";
 
 function toolsState() {
@@ -81,6 +82,7 @@ test("a Plugin identity shared with an object prototype field retains its named 
     h.click('[data-plugin-id="constructor"] .tool-entry > summary');
     h.input('.plugin-parameters input[type="number"]', "6");
     const result = cloneState(state);
+    result.sessionToolCatalog = loaded;
     result.events.push({ id: "constructor-tool-result", createdAt: "2026-10-02T00:01:00.000Z",
       kind: "tool_result", name: toolName,
       content: JSON.stringify({ content: [{ type: "text", text: "Audio analysis complete." }] }) });
@@ -88,12 +90,13 @@ test("a Plugin identity shared with an object prototype field retains its named 
     h.click('.plugin-parameters button[type="submit"]');
     await h.settle();
     await waitForCondition(() => Boolean(h.document.querySelector(".plugin-result-summary")),
-      "Expected the saved named MCP tool result after directory refresh.");
+      "Expected the saved named MCP tool result without directory rediscovery.");
     assert.deepEqual(commandCalls(h).map((call) => call.body), [{
       kind: "run_plugin_tool", sessionId: state.activeSessionId,
       toolName, signature: panel.signature, arguments: { window: 6 },
     }]);
     assert.equal(h.document.querySelector(".plugin-result-summary")?.textContent, "Audio analysis complete.");
+    assert.equal(h.calls.filter(call => call.path === "/session-tools").length, 1);
     assert.deepEqual(h.errors, []);
   } finally { h.close(); }
 });
@@ -155,7 +158,7 @@ test("a source change removes stale MCP tools and automatically reloads the dire
   } finally { h.close(); }
 });
 
-test("send completion refreshes an invalidated directory after foreground work finishes", async () => {
+test("ordinary send completion retains the discovered directory", async () => {
   const state = toolsState();
   state.openSettingsOnLoad = false;
   state.sessionToolCatalog = catalog(state.activeSessionId);
@@ -175,18 +178,39 @@ test("send completion refreshes an invalidated directory after foreground work f
       content: "Inspected", createdAt: "2026-09-25T00:01:00.000Z" };
     h.emitServerEvent({ type: "session_event", sendId, sessionId: state.activeSessionId, event });
     const done = cloneState(state);
-    delete done.sessionToolCatalog;
     done.events = [event];
     h.setServerState(done);
     h.emitServerEvent({ type: "done", sendId, sessionId: state.activeSessionId, state: done });
     heldSend = false;
     h.releaseHeldSend();
     await h.settle();
-    assert.ok(h.document.querySelector('[data-tool-source="live"] .tool-entry'));
+    assert.match(h.document.querySelector('[data-tool-source="mcp"]')?.textContent ?? "", /analyze_audio/);
     assert.equal(h.document.querySelector("#loadSessionToolsButton")?.textContent, "Reload tools");
-    assert.equal(h.calls.filter((call) => call.path === "/session-tools").length, 1);
+    assert.equal(h.calls.filter((call) => call.path === "/session-tools").length, 0);
     assert.deepEqual(h.errors, []);
   } finally { if (heldSend) h.releaseHeldSend(); h.close(); }
+});
+
+test("existing audio job progress retains the directory across state invalidations", async () => {
+  const state = toolsState();
+  state.sessionToolCatalog = catalog(state.activeSessionId);
+  state.audioJobs = [job(state.activeSessionId, { status: "running", outputs: [] })];
+  const h = await createDialogHarness(state);
+  try {
+    h.click("#sessionInspectorScope"); h.click("#toolsTab");
+    for (const status of ["ready", "completed"] as const) {
+      const changed = cloneState(state);
+      changed.audioJobs![0]!.status = status;
+      changed.events.push({ id: status, kind: "tool_result", name: "inspect_audio_job",
+        content: JSON.stringify({ status }), createdAt: "2026-10-18T00:00:00.000Z" });
+      h.setServerState(changed);
+      h.emitServerEvent({ type: "session_state_invalidated", sessionId: state.activeSessionId });
+      await h.settle();
+      assert.match(h.document.querySelector('[data-tool-source="mcp"]')?.textContent ?? "", /analyze_audio/);
+    }
+    assert.equal(h.calls.filter((call) => call.path === "/session-tools").length, 0);
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
 });
 
 test("background Session progress does not discard a newly loaded active directory", async () => {

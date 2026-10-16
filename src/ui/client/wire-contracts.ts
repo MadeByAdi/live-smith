@@ -7,8 +7,9 @@ import { createPluginValidators } from "./wire-contracts/plugins.js";
 import { createStateValidators } from "./wire-contracts/state.js";
 import { isUiLanguage } from "../../i18n/languages.js";
 import { isEditScopes as isWireEditScopes } from "../../agent/edit-scopes.js";
+import { sessionToolCatalogOwner } from "../tool-catalog-owner.js";
 
 export function createWireValidators(dependencies: Parameters<typeof createPluginValidators>[0]) {
   const plugins = createPluginValidators(dependencies);
-  return { ...primitives, ...models, ...session, ...plugins, ...createStateValidators(plugins), isInterfaceMode, isUiLanguage, isSessionTabs, isWireEditScopes };
+  return { ...primitives, ...models, ...session, ...plugins, ...createStateValidators(plugins), isInterfaceMode, isUiLanguage, isSessionTabs, isWireEditScopes, sessionToolCatalogOwner };
 }

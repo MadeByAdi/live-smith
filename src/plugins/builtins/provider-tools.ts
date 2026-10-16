@@ -50,6 +50,8 @@ const sourceSchema = {
       },
       required: ["kind", "startBeat", "endBeat"],
     },
+    { type: "object", properties: { kind: { const: "session_audio_attachment" }, attachmentId: { type: "string", minLength: 1 } },
+      required: ["kind", "attachmentId"], additionalProperties: false },
   ],
 };
 const soundEffectDurationSchema = { type: "number", minimum: 0.5, maximum: 30 };

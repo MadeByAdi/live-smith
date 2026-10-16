@@ -7,6 +7,10 @@ import { retrieveMusic } from "../../../../src/app/audio/audio-generation.js";
 import { captureIntegrationConnections, integrationConnectionFingerprint } from "../../../../src/app/plugins/integration-connections.js";
 import { saveIntegrationConnection } from "../../plugins/support/integration-connection-test-helpers.js";
 import { waveBytes } from "../../../storage/support/audio-storage-test-helpers.js";
+import { refreshSessionToolCatalogSuggestions } from "../../../../src/app/session/session-tool-catalog.js";
+import type { SessionToolCatalog } from "../../../../src/ui/chat-state.js";
+import { Buffer } from "node:buffer";
+import { MAX_AUDIO_PARAMETER_SUGGESTIONS } from "../../../../src/plugins/builtins/parameter-panel.js";
 
 const authorize = async <T>(_signal: AbortSignal, operation: () => Promise<T>): Promise<T> => operation();
 const currentClip = "cccccccc-3333-4333-8333-333333333333";
@@ -14,6 +18,58 @@ const persona = "dddddddd-4444-4444-8444-444444444444";
 const legacyClip = "eeeeeeee-5555-4555-8555-555555555555";
 const queryName = "builtin_suno_inspect_music_service";
 const lyricName = "builtin_suno_inspect_lyric_models";
+
+test("local suggestions refresh a discovery snapshot without replacing definitions or MCP groups", async (t) => {
+  const h = await retrievalHarness(t);
+  const initial = await loadAudioParameterGroups(h.directory, h.session.id);
+  const catalog: SessionToolCatalog = { sessionId: h.session.id, loadedAt: "2026-10-18T00:00:00.000Z",
+    modelToolsSupported: true, truncated: false, issues: [], groups: [...initial.groups,
+      { kind: "mcp", serverId: "analysis", tools: [{ name: "analyze_audio", description: "Analyze audio" }] }],
+  };
+  const serialized = JSON.stringify(catalog);
+  await appendSessionEvent(h.directory, h.session.id, { kind: "tool_result", name: queryName,
+    content: JSON.stringify({ query: "library", provenance: { connectionId: connection.id, accountId: "user_fixture" },
+      clips: [{ id: currentClip, title: "Current clip" }] }),
+  });
+  const refreshed = await refreshSessionToolCatalogSuggestions(h.directory, catalog);
+  const before = catalog.groups.flatMap(group => group.tools).find(tool => tool.name.endsWith("cover_music"))!.audioPanel!;
+  const after = refreshed.groups.flatMap(group => group.tools).find(tool => tool.name.endsWith("cover_music"))!.audioPanel!;
+  assert.deepEqual(after.suggestions?.clips, [{ id: currentClip, label: "Current clip" }]);
+  assert.equal(after.signature, before.signature);
+  assert.deepEqual(after.schema, before.schema);
+  assert.equal(refreshed.loadedAt, catalog.loadedAt);
+  assert.deepEqual(refreshed.groups.at(-1), catalog.groups.at(-1));
+  assert.equal(JSON.stringify(catalog), serialized, "Projection must preserve the reusable discovery snapshot.");
+  assert.deepEqual(h.calls, { prepare: 0, submit: 0, inspect: 0, downloads: [] });
+});
+
+test("suggestion expansion obeys the panel budget and later projections recover trimmed forms", async (t) => {
+  const h = await retrievalHarness(t);
+  const catalog: SessionToolCatalog = { sessionId: h.session.id, loadedAt: "2026-10-18T00:00:00.000Z",
+    modelToolsSupported: true, truncated: false, issues: [],
+    groups: (await loadAudioParameterGroups(h.directory, h.session.id)).groups,
+  };
+  const add = (value: Record<string, unknown>) => appendSessionEvent(h.directory, h.session.id, {
+    kind: "tool_result", name: queryName,
+    content: JSON.stringify({ ...value, provenance: { connectionId: connection.id, accountId: "user_fixture" } }),
+  });
+  const clips = Array.from({ length: MAX_AUDIO_PARAMETER_SUGGESTIONS }, (_, i) => ({
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-${i.toString().padStart(12, "0")}`, title: "🎵".repeat(160),
+  }));
+  const models = clips.map((_, i) => ({ id: `model-${i}`, name: "🎵".repeat(160), canUse: true }));
+  await add({ query: "library", clips });
+  await add({ query: "catalog", models, remasterModels: models });
+  const expanded = await refreshSessionToolCatalogSuggestions(h.directory, catalog);
+  const panels = (value: SessionToolCatalog) => value.groups.flatMap(group => group.tools).flatMap(tool => tool.audioPanel ? [tool.audioPanel] : []);
+  assert.equal(expanded.truncated, true);
+  assert.ok(panels(expanded).length < panels(catalog).length);
+  assert.ok(panels(expanded).reduce((size, panel) => size + Buffer.byteLength(JSON.stringify(panel)), 0) <= 256 * 1024);
+  await add({ query: "library", clips: clips.map(clip => ({ ...clip, title: "Clip" })) });
+  await add({ query: "catalog", models: [], remasterModels: [] });
+  const reduced = await refreshSessionToolCatalogSuggestions(h.directory, catalog);
+  assert.equal(reduced.truncated, false);
+  assert.equal(panels(reduced).length, panels(catalog).length);
+});
 
 test("host suggestions bind jobs and query provenance to the current account and configuration", async (t) => {
   const h = await retrievalHarness(t);

@@ -410,6 +410,52 @@ directions.
 
 ## Plugins and MCP connections
 
+### 对外 MCP 服务
+
+在 **Settings → Extensions → MCP → External tool access** 中启用本机服务，
+选择端口并保存。默认地址为 `http://127.0.0.1:17853/mcp`。
+运行状态会显示监听是否成功；端口占用时可修改端口后重新保存。
+
+选择 **Add external client**，填写名称并选择一个已有 Session，或新建外部工具
+Session。新 Session 使用全部编辑范围和 Manual 审批。选择 **Create access
+credential** 后复制配置到支持 Streamable HTTP 和 Bearer Header 的 MCP 客户端。
+访问凭据仅在创建或轮换后显示一次。**Rotate credential** 立即替换旧凭据；
+**Revoke access** 撤销访问并停止该客户端尚未结束的操作。
+
+每个客户端授权绑定一个 Session。聊天界面切换 Session 时，该绑定保持稳定。
+外部客户端可以先调用 `livesmith_get_context`，读取 Session、编辑范围、审批策略
+和附件入口。工具目录包含当前启用的 Live、Artifact、音频服务、Plugin 和外部
+MCP 工具，调用这些工具可独立于内部模型 Profile 进行。音频服务和 Plugin 继续
+使用其原有连接授权与额度。
+
+Plugin 启停、连接或授权变化时，服务会发送工具目录变更通知。客户端可据此重新
+读取目录；使用固定工具快照的客户端需要重新连接后发现新工具。普通执行进度和
+历史更新沿用当前目录。工具调用始终按最新的启用状态与授权校验。
+
+Live 修改通过 `apply_live_actions` 提交完整方案。Manual、Low Risk 和 Accept
+Everything 使用现有规则；所有模式均执行 Scope 校验、预检查和执行前状态复查。
+需要确认时，系统浏览器打开对应 Session，用户通过现有 Apply 预览决定。
+关闭浏览器后，审批仍保留在 Session 中，可再次打开处理。
+
+需要审批或较长时间的调用会返回操作 ID。使用 `livesmith_get_operation` 查询结果，
+省略 ID 可查看最近 20 项；使用 `livesmith_cancel_operation` 停止后续工作。
+客户端断连后，已接受的操作继续保留。重新连接时先查询记录，再决定后续调用。
+宿主重启后的未完成记录显示为 Interrupted；音频任务可使用原有恢复工具继续查询。
+Live 的已完成步骤和部分失败记录保留在历史中。结果尚未确认的 Live 修改需要先
+通过 `inspect_live_set` 重新观察，再通过 `resolve_live_recovery` 和界面确认恢复决定，
+之后可继续提交修改。
+
+资源通过 `livesmith://sessions/<sessionId>/artifacts/<kind>/<id>` 访问。
+较大的资源返回同一服务上的下载地址，下载请求使用相同 Bearer 凭据。
+新文件通过 `livesmith_get_context` 返回的上传入口提交；音频附件可使用
+`{"kind":"session_audio_attachment","attachmentId":"..."}` 作为工具来源。
+上传和读取沿用 Session 文件格式、大小和完整性校验。
+外部上传记录在对应操作中；聊天消息使用用户明确选择的附件。
+
+切换 Live Set 后，旧绑定可查询历史和已保存资源。当前工程的 Live 读写使用为该
+工程创建的客户端授权。服务仅监听本机回环地址，凭据只授予绑定 Session 的工具
+与资源访问。Profile 登录、连接设置和审批策略仍通过 Live Smith 界面管理。
+
 ### Installing Plugins
 
 **Plugins** are installed packages that can contribute namespaced Skills and MCP

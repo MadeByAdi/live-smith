@@ -193,13 +193,18 @@ test("Stop still cancels a persisted remote ticket when interruption bookkeeping
 test("audio progress uses the send channel without a same-Session blocking state refresh", async (t) => {
   const h = await harness(t);
   let invalidations = 0;
+  let toolInvalidations = 0;
   const messages: string[] = [];
-  const unsubscribe = subscribeSessionStateInvalidations(h.directory, () => { invalidations++; });
+  const unsubscribe = subscribeSessionStateInvalidations(h.directory, change => {
+    if (change.target === "tools") toolInvalidations++;
+    else invalidations++;
+  });
   try {
     const job = await separateAudioStems({ ...h.context, onProgress: (message) => { messages.push(formatUiMessage(message)); } }, "splitter", ["vocals"], h.source);
     assert.equal(job.status, "completed");
     assert.ok(messages.length >= 3);
     assert.equal(invalidations, 0);
+    assert.equal(toolInvalidations, 1, "only the first job changes recovery-tool availability");
   } finally { unsubscribe(); }
 });
 

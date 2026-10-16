@@ -4,10 +4,10 @@ import type { AudioAsset, AudioJob, SunoUploadMutationStage, SunoUploadReceipt }
 import { AudioSubmissionNotStartedError, MAX_AUDIO_ASSET_DURATION_SECONDS, SUNO_UPLOAD_MUTATIONS } from "../../../audio-services/contracts.js";
 import { createSunoUploadAdapter, type SunoUploadAdapter, type SunoUploadSpec } from "../../../audio-services/suno/suno-upload.js";
 import { readAudioAsset, saveAudioAsset } from "../../../storage/audio-assets.js";
-import { createAudioJob, loadAudioJob, updateAudioJob } from "../../../storage/audio-jobs.js";
+import { loadAudioJob, updateAudioJob } from "../../../storage/audio-jobs.js";
 import { throwIfAborted } from "../../../runtime/host.js";
 import type { AudioProcessingContext, AudioProcessingSnapshot } from "../audio-processing.js";
-import { acquireAudioJob } from "../audio-job-runtime.js";
+import { acquireAudioJob, createSessionAudioJob } from "../audio-job-runtime.js";
 import { integrationConnectionFingerprint, resolveIntegrationConnection, type RuntimeIntegrationConnection } from "../../plugins/integration-connections.js";
 import { persistRotatedSunoSession } from "./suno-session-manager.js";
 import { providerFetchForStorage } from "../../network.js";
@@ -30,7 +30,7 @@ export async function uploadSunoMusic(
   const settings = await connection(context, connectionId);
   const adapter = options.adapter ?? context.pluginOverrides?.uploadAdapter ?? uploadAdapter(context, settings);
   const limits = await adapter.limits(context.signal);
-  const job = await createAudioJob(context.storageDirectory, context.sessionId, {
+  const job = await createSessionAudioJob(context.storageDirectory, context.sessionId, {
     provider: "suno", serviceId: connectionId, connectionFingerprint: integrationConnectionFingerprint(settings), operation: "upload_music", stems: [],
   });
   const release = acquireAudioJob(context.storageDirectory, job.id);

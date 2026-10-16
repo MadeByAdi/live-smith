@@ -1,3 +1,5 @@
+import { isToolOperationSnapshot } from "../../../agent/tool-operation.js";
+import { isMcpToolActor } from "../../../agent/tool-actor.js";
 import { isToolResultOutcome } from "../../../agent/tool-outcome.js";
 import { isCreativeBrief } from "../../../agent/creative-brief.js";
 import { isAttachmentProvenance } from "../../../attachments/provenance.js";
@@ -297,6 +299,7 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
   if (
     !isWireRecord(value) ||
     !hasOnlyWireKeys<NonNullable<ChatSessionEvent>>(value, [
+      "operation", "toolActor", "toolOperationId",
       "id",
       "createdAt",
       "kind",
@@ -317,6 +320,7 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
     !isWireStorageId(value.id) ||
     typeof value.createdAt !== "string" ||
     !includes([
+      "operation",
       "user",
       "assistant",
       "reasoning",
@@ -330,6 +334,8 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
       "candidate",
       "error",
     ], value.kind) ||
+    (value.kind === "operation" ? !isToolOperationSnapshot(value.operation) : value.operation !== undefined) ||
+    (value.toolActor === undefined ? value.toolOperationId !== undefined : !isMcpToolActor(value.toolActor) || !isWireStorageId(value.toolOperationId)) ||
     typeof value.content !== "string" ||
     (value.kind === "candidate" ? !isArtifactSelection(value.candidateSelection) : value.candidateSelection !== undefined) ||
     (value.parentCandidate !== undefined && ((value.kind !== "user" && value.kind !== "tool_call") || !isArtifactRef(value.parentCandidate))) ||

@@ -29,7 +29,7 @@ const callbackPath = "/mcp/oauth/callback";
 // The SDK propagates fetch TypeErrors instead of treating them as absent optional discovery.
 class McpOAuthFetchError extends TypeError {}
 const keyFor = (directory: string, id: string) => JSON.stringify([directory, id]);
-const notify = (directory: string) => invalidateGlobalState(directory, { source: changeSource });
+const notify = (directory: string) => invalidateGlobalState(directory, { source: changeSource, target: "all" });
 
 async function ownedRecord(
   transaction: StorageTransactionContext, directory: string, owner: McpOAuthOwner, generation: string,

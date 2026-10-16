@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { audioParameterGroups } from "../../../src/plugins/builtins/parameter-panel.js";
 import { audioState } from "../support/chat-dialog.audio-test-helpers.js";
-import { commandCalls, createDialogHarness, waitForCondition } from "../support/chat-dialog.test-harness.js";
+import { cloneState, commandCalls, createDialogHarness, waitForCondition } from "../support/chat-dialog.test-harness.js";
 
 function panelState() {
   const connection = { id: "suno-studio", name: "Suno Studio", provider: "suno" as const, enabled: true, apiKeyConfigured: false };
@@ -135,6 +135,70 @@ test("the composed dialog accepts owner-projected suggestions with 160-codepoint
     assert.ok(h.document.querySelector('.audio-parameter-dialog button[type="submit"]'));
     assert.deepEqual(h.errors, []);
   } finally { h.close(); }
+});
+
+test("updated local suggestions render with the same discovery time and no directory request", async () => {
+  const state = panelState();
+  const h = await createDialogHarness(state);
+  try {
+    h.click("#sessionInspectorScope"); h.click("#toolsTab");
+    const changed = cloneState(state);
+    const clipId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const tool = changed.sessionToolCatalog!.groups.flatMap(group => group.tools)
+      .find(entry => entry.name === "builtin_suno_cover_music")!;
+    tool.audioPanel!.suggestions = { clips: [{ id: clipId, label: "Newly observed clip" }] };
+    h.setServerState(changed);
+    h.emitServerEvent({ type: "session_state_invalidated", sessionId: state.activeSessionId });
+    await h.settle();
+    h.click('.tool-group[data-connection-id="suno-studio"] > summary');
+    const entry = '[data-tool-key$=":builtin_suno_cover_music"]';
+    h.click(entry + " > summary"); h.click(entry + " .audio-open-panel");
+    assert.equal(h.document.querySelector<HTMLOptionElement>(".audio-parameter-dialog datalist option")?.value, clipId);
+    assert.equal(h.calls.filter(call => call.path === "/session-tools").length, 0);
+    assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
+for (const newer of [true, false]) test(`concurrent suggestions follow the ${newer ? "later" : "already current"} state cut`, async () => {
+  const state = panelState();
+  const withSuggestion = (label: string) => {
+    const changed = cloneState(state);
+    changed.sessionToolCatalog!.groups.flatMap(group => group.tools)
+      .find(tool => tool.name === "builtin_suno_cover_music")!.audioPanel!.suggestions = {
+        clips: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", label }],
+      };
+    return changed;
+  };
+  const h = await createDialogHarness(state);
+  const openSuggestion = () => {
+    const group = '.tool-group[data-connection-id="suno-studio"]';
+    const entry = '[data-tool-key$=":builtin_suno_cover_music"]';
+    if (!h.document.querySelector<HTMLDetailsElement>(group)!.open) h.click(group + " > summary");
+    if (!h.document.querySelector<HTMLDetailsElement>(entry)!.open) h.click(entry + " > summary");
+    h.click(entry + " .audio-open-panel");
+    return h.document.querySelector<HTMLOptionElement>(".audio-parameter-dialog datalist option")?.label;
+  };
+  let held = true;
+  try {
+    h.click("#sessionInspectorScope"); h.click("#toolsTab");
+    h.holdNextCommandResponse();
+    h.select("#approvalMode", "low-risk");
+    await waitForCondition(() => commandCalls(h).length === 1, "Expected held command response.");
+    h.setServerState(withSuggestion("First response"));
+    h.queueNextStatePublication("4", "3");
+    h.emitServerEvent({ type: "profile_settings_changed", commandId: "peer-refresh" });
+    await waitForCondition(() => h.calls.some(call => call.path === "/state"), "Expected concurrent state read.");
+    await h.settle();
+    assert.equal(openSuggestion(), "First response");
+    h.click(".audio-parameter-header button");
+    h.setServerState(withSuggestion("Delayed response"));
+    h.queueNextStatePublication("6", newer ? "5" : "1");
+    h.releaseHeldCommandResponse(); held = false;
+    await h.settle();
+    assert.equal(openSuggestion(), newer ? "Delayed response" : "First response");
+    assert.equal(h.calls.filter(call => call.path === "/session-tools").length, 0);
+    assert.deepEqual(h.errors, []);
+  } finally { if (held) h.releaseHeldCommandResponse(); h.close(); }
 });
 
 test("audio field help comes only from its declared schema while suggestions remain available", async () => {

@@ -4,7 +4,6 @@ import test, { type TestContext } from "node:test";
 import { createParameterArtifactToolset } from "../../../src/app/parameters/parameter-artifact-tools.js";
 import { createSessionArtifactToolset } from "../../../src/app/session/session-artifact-tools.js";
 import { listSessionArtifacts, readSessionArtifact, selectSessionArtifact } from "../../../src/app/session/session-artifacts.js";
-import { runtimeProfileForSavedProfile } from "../../../src/app/model/model-request.js";
 import { readDeviceParameterArtifact, listDeviceParameterArtifacts } from "../../../src/storage/device-parameter-artifacts.js";
 import { createSession } from "../../../src/storage/sessions.js";
 import { createHostAbortController } from "../../../src/runtime/host.js";
@@ -20,10 +19,7 @@ async function setup(t: TestContext) {
   const session = await createSession(directory, { title: "Read only", projectKey: "set", scope: { kind: "selection", identity: "set", label: "Set" }, editScopes: [] });
   const h = deviceParameterFixture(90);
   const input = { context: h.context, storageDirectory: directory, sessionId: session.id, projectKey: "set", signal: createHostAbortController().signal,
-    assertLiveSetCurrent() {}, target: {}, runtimeProfile: runtimeProfileForSavedProfile({ id: "profile", name: "Profile", defaultModel: "model",
-      connection: { kind: "direct-api", apiFamily: "openai", apiMode: "chat-completions", baseUrl: "https://example.test/v1", apiKey: "fixture-key" },
-      models: [{ model: "model", parameters: { maxOutputTokens: 4096, reasoning: { mode: "default" } }, advanced: {} }],
-    }) };
+    assertLiveSetCurrent() {}, target: {}, actor: { kind: "model" as const, profileId: "profile", model: "model" } };
   const tools = createParameterArtifactToolset(input);
   const call = (name: string, args: unknown) => tools.callTool({ id: "call", name, arguments: JSON.stringify(args) });
   return { ...h, input, tools, call };

@@ -5,6 +5,8 @@ import { loadAgentSettings } from "../storage/settings.js";
 import { createSystemBrowserOpener } from "../runtime/system-browser.js";
 import { projectKeyForContext } from "./context/session-context.js";
 import { createAgentRuntime, runAgentFlow, type AgentFlowDependencies, type AgentRuntime } from "./agent-flow.js";
+import { interactionContextForScope } from "../live/context.js";
+import { listSessions } from "../storage/sessions.js";
 
 type Api = ExtensionContext<"1.0.0">;
 type WindowDependencies = AgentFlowDependencies & { openBrowser?: (url: string) => Promise<void> };
@@ -25,6 +27,23 @@ export function createWindowHostController(context: Api, dependencies: WindowDep
     await previous?.runtime.close();
   };
   return {
+    async openSession(sessionId: string): Promise<void> {
+      await serialize(async () => {
+        const projectKey = projectKeyForContext(context);
+        const session = (await listSessions(context.environment.storageDirectory, projectKey)).find(entry => entry.id === sessionId && !entry.archivedAt);
+        if (!session) throw new Error("Open the Live Set containing this Session to review its operation.");
+        if (browser && browser.projectKey !== projectKey) await closeBrowser();
+        if (!browser) {
+          const interaction = interactionContextForScope(context, session.scope) ?? {
+            scope: session.scope, target: {}, summary: "External tools are bound to this Live Set. Observe explicit targets before editing.",
+            presentation: { origin: "object" as const, objectKind: "other" as const, title: session.title || "Live Set", details: [] },
+          };
+          browser = { key: `external:${sessionId}`, projectKey,
+            runtime: await createAgentRuntime(context, interaction, { ...dependencies, initialSessionId: sessionId }, "browser") };
+        } else await browser.runtime.reopen(sessionId);
+        await openBrowser(browser.runtime.url);
+      });
+    },
     async open(interaction: LiveInteractionContext): Promise<void> {
       const assertLiveSetCurrent = createLiveSetGuard(context);
       const projectKey = projectKeyForContext(context);

@@ -1,3 +1,5 @@
+import { isMcpToolActor, type ToolActor } from "../agent/tool-actor.js";
+import { openVerifiedFileStream, type SessionFileExport } from "./file-export.js";
 import { allocateArtifactVersion, artifactVersion, isArtifactLabel, isArtifactVersion, type ArtifactPluginSource, type ArtifactVersion } from "../agent/artifact-contracts.js";
 import { isMidiContinuationBuffer, type MidiContinuationBuffer } from "../agent/midi-continuation-contracts.js";
 import type { NoteDescription } from "@ableton-extensions/sdk";
@@ -50,7 +52,7 @@ export function midiArtifactVersion(artifact: MidiArtifact): MidiArtifactVersion
 }
 
 export type MidiArtifactHostSource =
-  | { kind: "model"; profileId: string; model: string }
+  | ToolActor
   | { kind: "host"; operation: "live-midi-context" | "midi-conditioning-context" };
 
 export type MidiArtifactSource =
@@ -305,6 +307,19 @@ export async function readMidiArtifact(
   return { artifact: cloneArtifact(artifact), bytes, parsed };
 }
 
+export async function midiArtifactExport(storageDirectory: string, sessionId: string, artifactId: string): Promise<SessionFileExport> {
+  requireSafeStorageId(sessionId, "Session ID"); requireSafeStorageId(artifactId, "MIDI artifact ID");
+  await requireSession(storageDirectory, sessionId);
+  const directory = await bindSessionDirectory(storageDirectory, sessionId);
+  if (!directory) throw new MidiArtifactStorageError();
+  const artifact = await readMetadata(directory, artifactId);
+  if (!artifact || artifact.sessionId !== sessionId) throw new MidiArtifactStorageError();
+  return { fileName: `${artifact.label}.mid`, mediaType: "audio/midi", byteLength: artifact.byteLength,
+    open: signal => openVerifiedFileStream({ path: blobPath(directory, artifactId), byteLength: artifact.byteLength, sha256: artifact.sha256, signal,
+      assertCurrent: async () => { await assertDirectory(directory); if (JSON.stringify(await readMetadata(directory, artifactId)) !== JSON.stringify(artifact)) throw new MidiArtifactStorageError(); } }),
+  };
+}
+
 export async function deleteSessionMidiArtifacts(
   storageDirectory: string | undefined,
   sessionId: string,
@@ -498,7 +513,7 @@ function validArtifactSource(value: { pluginId?: unknown; connectionId?: unknown
     const source = value.source;
     return source.kind === "host"
       ? Object.keys(source).length === 2 && ["live-midi-context", "midi-conditioning-context"].includes(String(source.operation))
-      : source.kind === "model" && Object.keys(source).length === 3 && isSafeStorageId(source.profileId) &&
+      : isMcpToolActor(source) || source.kind === "model" && Object.keys(source).length === 3 && isSafeStorageId(source.profileId) &&
         typeof source.model === "string" && source.model.trim().length > 0 &&
         !/[\u0000-\u001f\u007f]/u.test(source.model) && Buffer.byteLength(source.model, "utf8") <= 1024;
   }

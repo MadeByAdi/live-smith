@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { openVerifiedFileStream, type SessionFileExport } from "./file-export.js";
 import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -432,6 +433,20 @@ export async function readSessionAttachment(
       bytes: await readAndVerifyBlobBound(binding, metadata, options),
     };
   }, options.signal);
+}
+
+export async function sessionAttachmentExport(storageDirectory: string, sessionId: string, attachmentId: string): Promise<SessionFileExport> {
+  requireSafeStorageId(sessionId, "Session ID"); requireSafeStorageId(attachmentId, "Attachment ID");
+  if (!await prepareAttachmentSessionDirectory(storageDirectory, sessionId, false)) throw new AttachmentNotFoundError();
+  const binding = await captureAttachmentDirectoryBinding(storageDirectory, sessionId);
+  const metadata = await readStoredMetadataBound(binding, sessionId, attachmentId);
+  return { fileName: metadata.fileName, mediaType: metadata.mediaType, byteLength: metadata.byteLength,
+    open: signal => openVerifiedFileStream({ path: attachmentBlobPath(binding.directory, attachmentId), byteLength: metadata.byteLength, sha256: metadata.sha256, signal,
+      assertCurrent: async () => {
+        await assertAttachmentDirectoryBinding(binding);
+        if (JSON.stringify(await readStoredMetadataBound(binding, sessionId, attachmentId)) !== JSON.stringify(metadata)) throw new AttachmentStorageCorruptionError();
+      } }),
+  };
 }
 
 export async function deleteSessionAttachment(

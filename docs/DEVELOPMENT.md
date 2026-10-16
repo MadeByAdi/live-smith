@@ -78,6 +78,22 @@ only when Suno requests human verification.
 
 ## Verification
 
+### MCP 服务验证
+
+对外 MCP 使用官方 Server 2.3.1 与 Node Adapter 2.1.1；已有 Client 2.2.0 用于互操作
+验证。`tests/app/mcp/` 覆盖真实 HTTP 工具发现、调用、凭据撤销、审批后的状态变化、
+共享写入队列及 Session 文件隔离。`tests/runtime/mcp-host.test.ts` 在受限 VM 中加载
+bundle，再通过真实 MCP Client 完成鉴权请求和工具调用。
+
+`tests/ui/inspector/chat-dialog.mcp-service.test.ts` 通过实际对话脚本的 DOM 事件
+验证服务配置、客户端创建、凭据清理和外部 Apply。真实宿主验证使用独立 Live Set：
+启用服务、创建客户端、读取上下文、观察目标，然后提交一次可撤销的小幅修改，
+确认界面审批和实际 Live 结果。宿主停止后确认监听端口释放。
+
+私有文件 `live-smith-mcp-server-clients.json` 保存 Session 绑定、客户端名称、凭据
+代次与摘要。客户端原始凭据由创建命令的一次性结果交付。操作状态和作者信息
+存放于已有 Session 事件目录，输出音频复用 Session 附件存储。
+
 Test modules live under `tests/`, mirroring their source module directories.
 Test-only helpers and harnesses live in each test module's `support/` directory;
 attachment document fixtures live under `tests/attachments/fixtures/`.

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { openVerifiedFileStream, type SessionFileExport } from "./file-export.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isDeepStrictEqual, types } from "node:util";
@@ -153,6 +154,21 @@ export async function readExpectedAudioAsset(
   const result = await readAudioAsset(storageDirectory, sessionId, expected.id, signal);
   if (!isDeepStrictEqual(result.asset, expected)) throw new AudioStorageError("The audio source changed since it was selected.");
   return result.bytes;
+}
+
+export async function audioAssetExport(storageDirectory: string, sessionId: string, expected: AudioAsset): Promise<SessionFileExport> {
+  requireAudioStorage(storageDirectory, sessionId); requireSafeStorageId(expected.id, "Audio asset ID");
+  await requireAudioSession(storageDirectory, sessionId);
+  const directory = await bindAudioDirectory(storageDirectory, sessionId);
+  if (!directory || !isDeepStrictEqual(await readAudioAssetRecord(directory, sessionId, expected.id), expected)) throw new AudioStorageError();
+  return { fileName: expected.label, mediaType: expected.mediaType, byteLength: expected.byteLength,
+    open: signal => openVerifiedFileStream({ path: path.join(directory.directory, `${expected.id}.audio`), byteLength: expected.byteLength, sha256: expected.sha256, signal,
+      assertCurrent: async () => {
+        await assertAudioDirectory(directory);
+        if (!audioJobOwnsAssetRole(await loadAudioJob(storageDirectory, sessionId, expected.jobId), expected.role) ||
+          !isDeepStrictEqual(await readAudioAssetRecord(directory, sessionId, expected.id), expected)) throw new AudioStorageError();
+      } }),
+  };
 }
 
 export async function listAudioAssets(

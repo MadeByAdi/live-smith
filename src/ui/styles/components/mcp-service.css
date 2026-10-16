@@ -1,0 +1,22 @@
+@layer components {
+  #mcpOutwardService {
+    @apply grid min-w-0 gap-2 border-b border-b-divider pb-4 mb-4;
+  }
+  #mcpOutwardService[hidden] { @apply hidden; }
+  #mcpOutwardService :is(h3, p, .field) { @apply m-0; }
+  #mcpOutwardService .field { @apply grid min-w-0 gap-1; }
+  #mcpOutwardService .checkbox-row { @apply flex items-center gap-2 py-1; }
+  #mcpOutwardService input[type="checkbox"] {
+    @apply m-0 size-[14px] shrink-0 p-0;
+    accent-color: var(--color-accent);
+  }
+  #saveMcpServer { @apply justify-self-start; }
+  #mcpClientCreator > summary { @apply cursor-pointer py-1 text-label; }
+  #mcpClientCreator[open] { @apply grid gap-2; }
+  #mcpClientCreator > :not(summary) { @apply mt-2; }
+  #mcpClientCredential:not([hidden]) { @apply grid gap-2; }
+  #mcpClientConfig { @apply h-[176px] resize-y text-small; font-family: monospace; }
+  #mcpClientList .connection-row { @apply grid items-center gap-2 p-2; grid-template-columns: minmax(0, 1fr) auto auto; }
+  #mcpClientList .connection-choice { @apply grid min-w-0 gap-1; overflow-wrap: anywhere; }
+  #mcpClientList .connection-choice strong { @apply text-label; }
+}

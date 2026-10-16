@@ -73,6 +73,11 @@ capabilities determine which inputs, reasoning options and Web Search features
 are available. See [model setup and compatibility](docs/MODEL_PROVIDERS.md).
 
 Optional audio-service accounts and MCP servers live under **Settings → Extensions**.
+
+Live Smith 也提供本机 MCP 服务。外部 AI 客户端可以使用完整工具目录，
+通过绑定的 Session 观察和编辑 Live、调用音频服务及管理产物。
+服务默认关闭；访问凭据绑定一个 Session，编辑范围与审批策略由该 Session 管理。
+配置步骤见[对外 MCP 服务](docs/USER_GUIDE.md#对外-mcp-服务)。
 Audio generation and processing use those services' own billing and allowances,
 separately from chat-model usage. See [audio services](docs/USER_GUIDE.md#audio-services)
 and [Plugins and MCP connections](docs/USER_GUIDE.md#plugins-and-mcp-connections).

@@ -5,6 +5,7 @@
 @import "./components/controls.css";
 @import "./components/disclosures.css";
 @import "./components/auth.css";
+@import "./components/mcp-service.css";
 
 :root {
   color-scheme: dark;

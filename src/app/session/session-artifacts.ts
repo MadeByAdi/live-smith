@@ -34,7 +34,7 @@ export interface SessionArtifact {
   audio?: { durationSeconds: number; mediaType: "audio/wav" | "audio/mpeg"; jobId?: string };
   midi?: { durationBeats: number; noteCount: number; parts: MidiArtifactPartSummary[];
     notes: (MidiPreviewNote & { partId: string })[]; omittedNoteCount: number };
-  deviceParameters?: { parameterCount: number; target: DeviceParameterSnapshot["target"]; source: "captured" | "model"; parameters?: DeviceParameterSnapshot["parameters"] };
+  deviceParameters?: { parameterCount: number; target: DeviceParameterSnapshot["target"]; source: "captured" | "model" | "mcp"; parameters?: DeviceParameterSnapshot["parameters"] };
 }
 export interface SessionArtifactDetail { sessionId: string; artifact: SessionArtifact }
 export interface SessionArtifacts {
@@ -179,12 +179,12 @@ export async function readSessionArtifactCatalog(input: SessionInput & { include
   const jobMap = new Map(jobs.map((job) => [job.id, job]));
   const summaries: SessionArtifact[] = [
     ...parameters.map((artifact): SessionArtifact => ({ ref: { kind: "device-parameters", id: artifact.id }, label: artifact.label,
-      createdAt: artifact.createdAt, sourceLabel: artifact.source.kind === "captured" ? "Captured device parameters" : "AI-proposed device parameters",
+      createdAt: artifact.createdAt, sourceLabel: artifact.source.kind === "mcp" ? artifact.source.clientName : artifact.source.kind === "captured" ? "Captured device parameters" : "AI-proposed device parameters",
       ...generationAt(`device-parameters:${artifact.id}`, artifact.createdAt),
       version: { ...artifact.version, groupLabel: artifact.label },
       deviceParameters: { parameterCount: artifact.parameters.length, target: artifact.target, source: artifact.source.kind } })),
     ...listing.artifacts.filter((artifact) => input.includeHostMidi || artifact.source?.kind !== "host").map((artifact): SessionArtifact => ({ ref: { kind: "midi", id: artifact.id }, label: artifact.label,
-      createdAt: artifact.createdAt, sourceLabel: artifact.source?.kind === "model" ? "AI-generated MIDI" : artifact.source?.kind === "host" ? "Live MIDI source" : "Plugin-generated MIDI",
+      createdAt: artifact.createdAt, sourceLabel: artifact.source?.kind === "mcp" ? artifact.source.clientName : artifact.source?.kind === "model" ? "AI-generated MIDI" : artifact.source?.kind === "host" ? "Live MIDI source" : "Plugin-generated MIDI",
       ...generationAt(`midi:${artifact.id}`, artifact.createdAt),
       version: { ...midiArtifactVersion(artifact), groupLabel: listing.artifacts.find((entry) => entry.id === midiArtifactVersion(artifact).groupId)?.label ?? artifact.label } })),
     ...assets.filter((asset) => asset.role !== "source" && jobMap.get(asset.jobId)?.outputAssets.some((output) => output.id === asset.id)).map((asset): SessionArtifact => {

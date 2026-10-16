@@ -20,6 +20,7 @@
         runCommand,
         readSessionSearch,
         showStatus,
+        onExternalApproval,
         onInspectorTabChange = () => {},
       }) {
       const t = (message, params) => window.LiveSmithI18n.t(message, params);
@@ -43,6 +44,7 @@
       const selectedInspectorTabs = { session: "context", settings: "agent" };
       let activeInspectorGroup = "settings";
       let focusedConfirmationId = null;
+      let focusedExternalApprovalId = null;
       let confirmationReturnFocus = null;
       const selectedSessionIds = new Set();
       let sessionSelectionAnchorId = null;
@@ -1101,6 +1103,9 @@
       function renderSessions() {
         retainActiveSessionForWindow();
         const state = getState();
+        const externalApprovalId = state.mcpApprovals?.[0]?.operationId || null;
+        if (externalApprovalId && externalApprovalId !== focusedExternalApprovalId) onExternalApproval?.();
+        focusedExternalApprovalId = externalApprovalId;
         sessionSearch.syncState(state);
         const currentSessions = state.sessions.filter((session) => isSessionVisible(session));
         const previousSessions = (state.previousSessions || []).filter(
@@ -2013,6 +2018,7 @@
           queuedFollowUps,
           webSearchUpdates,
           pendingConfirmation,
+          mcpApprovals: state.mcpApprovals, mcpOperations: state.mcpOperations,
           pendingUserMessage,
         });
         if (renderKey === renderedTimelineKey) {
@@ -2109,8 +2115,11 @@
           focusedActivityStep?.dataset.activityStepId || null;
         const nearBottom =
           timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 48;
+        const operationViews = new Map((state.mcpOperations || []).map(operation => [operation.id, operation]));
+        const latestOperationEvents = new Map((state.events || []).filter(event => event.operation).map(event => [event.operation.id, event.id]));
+        const externalApprovals = (state.mcpApprovals || []).map(entry => ({ ...entry.request, id: `mcp:${entry.operationId}`, externalOperationId: entry.operationId, clientName: entry.actor.clientName }));
         const events = (state.events || []).filter((event) =>
-          event.kind !== "candidate" && (event.kind !== "reasoning" || event.content.trim().length > 0)
+          (event.kind !== "operation" || latestOperationEvents.get(event.operation.id) === event.id) && event.kind !== "candidate" && (event.kind !== "reasoning" || event.content.trim().length > 0)
         );
 
         if (
@@ -2127,10 +2136,12 @@
 
         let confirmation = null;
         const visibleActivityIds = new Set();
+        for (const approval of externalApprovals.filter(entry => entry.kind === "resolve_recovery")) desiredNodes.push(buildConfirmCard(approval));
         for (const entry of timelineActivityEntries(events)) {
           if (entry.activitySteps) {
             const steps = entry.activitySteps;
-            const pendingStep = steps.find((step) => step.operationId && step.operationId === pendingConfirmation?.operationId);
+            const pendingForStep = step => step.operationId && (step.operationId === pendingConfirmation?.operationId ? pendingConfirmation : externalApprovals.find(approval => approval.operationId === step.operationId));
+            const pendingStep = steps.find(pendingForStep);
             const group = steps.length > 1 ? buildTimelineActivityGroup(steps) : null;
             group?.toggleAttribute("data-confirmation-block", Boolean(pendingStep));
             const groupId = group?.dataset.activityGroupId;
@@ -2154,7 +2165,7 @@
             const stepNodes = [];
             for (const step of steps) {
               visibleActivityIds.add(step.id);
-              const pending = pendingStep === step ? pendingConfirmation : null;
+              const pending = pendingForStep(step) || null;
               const item = buildTimelineActivityStep(step, pending);
               item.toggleAttribute("data-confirmation-block", !group && Boolean(pending));
               restoreTimelineActivityStepDetails(
@@ -2187,8 +2198,8 @@
           const item = messageItemForRender(
                 existingMessages,
                 eventKey,
-                JSON.stringify(entry),
-                () => buildTimelineItem(entry),
+                JSON.stringify([entry, entry.operation && operationViews.get(entry.operation.id)]),
+                () => buildTimelineItem(entry.operation && operationViews.has(entry.operation.id) ? { ...entry, operation: operationViews.get(entry.operation.id) } : entry),
                 ["user", "assistant"].includes(entry.kind) && sameSession && !replacesPending && !replacesStreaming,
               );
           restoreTimelineItemDetails(
@@ -2521,7 +2532,8 @@
 
       function buildTimelineActivitySummary(step, className) {
         const status = activityStepStatus(step);
-        const titleText = activityStepTitle(step, status);
+        const actor = step.events.find(event => event.toolActor)?.toolActor;
+        const titleText = [actor?.clientName, activityStepTitle(step, status)].filter(Boolean).join(" · ");
         const excerptText = activityStepExcerpt(step);
         const summary = document.createElement("summary");
         summary.className = `timeline-activity-summary ${className}`;
@@ -2552,7 +2564,10 @@
 
       function activityStepStatus(step) {
         if (step.operationId) {
-          if (getPendingConfirmation()?.operationId === step.operationId) return "waiting";
+          if (
+            getPendingConfirmation()?.operationId === step.operationId ||
+            getState().mcpApprovals?.some(entry => entry.request.operationId === step.operationId)
+          ) return "waiting";
           const operation = [...step.events].reverse().find((event) => event.applyOperation)?.applyOperation;
           return ({ applied: "complete", partial: "partial", failed: "failed", cancelled: "stopped", approved: "approved" })[operation?.status] || "unconfirmed";
         }
@@ -2740,6 +2755,18 @@
           "inspect_song_info": t("Inspect song info"),
           "apply_live_actions": t("Apply live actions"),
           "resolve_live_recovery": t("Resolve live recovery"),
+          "propose_creative_brief": t("Propose creative brief"),
+          "list_session_artifacts": t("List Session artifacts"),
+          "inspect_midi_artifact": t("Inspect MIDI artifact"),
+          "save_midi_artifact": t("Save MIDI artifact"),
+          "capture_device_parameter_artifact": t("Capture device parameter artifact"),
+          "inspect_device_parameter_artifact": t("Inspect device parameter artifact"),
+          "save_device_parameter_artifact": t("Save device parameter artifact"),
+          "listen_to_audio_asset": t("Listen to audio asset"),
+          "livesmith_get_context": t("Read external tool context"),
+          "livesmith_get_operation": t("Read external operation"),
+          "livesmith_cancel_operation": t("Cancel external operation"),
+          "upload_attachment": t("Upload attachment"),
         };
         if (labels[localName]) return labels[localName];
         const words = localName.split("_").filter(Boolean).join(" ");
@@ -2765,6 +2792,11 @@
         if (event.kind === "apply_result") return t("Apply result");
         if (event.kind === "error") return t("Error");
         return event.kind;
+      }
+
+      function resolveConfirmation(confirm, approve) {
+        if (confirm.externalOperationId) return runCommand("resolve_mcp_approval", { sessionId: getState().activeSessionId, operationId: confirm.externalOperationId, approve });
+        return resolveConfirm(confirm.id, approve);
       }
 
       function renderOperationReview(id, events, confirm) {
@@ -2816,11 +2848,11 @@
         view.outcome.hidden = !view.outcome.textContent;
         makeDetailScrollable(view.outcome, t("Apply result"), "status");
         view.cancel.textContent = t("Cancel"); view.apply.textContent = t("Apply"); view.buttons.hidden = !confirm;
-        view.cancel.disabled = view.apply.disabled = Boolean(confirm && isConfirmationLocked?.());
+        view.cancel.disabled = view.apply.disabled = Boolean(confirm && (confirm.externalOperationId ? isCommandInProgress?.() : isConfirmationLocked?.()));
         view.root.toggleAttribute("data-pending-confirmation", Boolean(confirm));
         if (confirm) {
           view.root.setAttribute("role", "alertdialog"); view.root.setAttribute("aria-label", confirm.message);
-          view.cancel.onclick = () => resolveConfirm(confirm.id, false); view.apply.onclick = () => resolveConfirm(confirm.id, true);
+          view.cancel.onclick = () => resolveConfirmation(confirm, false); view.apply.onclick = () => resolveConfirmation(confirm, true);
         } else {
           view.root.removeAttribute("role"); view.root.removeAttribute("aria-label"); view.root.removeAttribute("aria-busy");
           view.cancel.onclick = view.apply.onclick = null;
@@ -2882,12 +2914,12 @@
         cancel.type = "button";
         cancel.dataset.confirmCancel = "";
         cancel.textContent = resolvesRecovery ? t("Keep unfinished") : t("Cancel");
-        cancel.onclick = () => resolveConfirm(confirm.id, false);
+        cancel.onclick = () => resolveConfirmation(confirm, false);
         const apply = document.createElement("button");
         apply.className = "primary";
         apply.type = "button";
         apply.textContent = resolvesRecovery ? t("Keep changes and close") : t("Apply");
-        apply.onclick = () => resolveConfirm(confirm.id, true);
+        apply.onclick = () => resolveConfirmation(confirm, true);
         buttons.append(cancel, apply);
         card.append(buttons);
 
@@ -2899,6 +2931,22 @@
       }
 
       function buildTimelineItem(event) {
+        if (event.operation) {
+          const operation = event.operation;
+          const item = document.createElement("details"); item.className = "timeline-item"; item.dataset.eventId = event.id; item.dataset.externalOperationId = operation.id;
+          const summary = document.createElement("summary"); summary.className = "timeline-label";
+          const states = { running: "In progress", awaiting_approval: "Waiting for approval", completed: "Completed", failed: "Failed", cancelled: "Stopped", interrupted: "Interrupted" };
+          summary.textContent = `${operation.actor.clientName} · ${humanizeToolName(operation.toolName)} · ${t(states[operation.status])}`;
+          const content = document.createElement("div"); content.className = "timeline-content";
+          content.textContent = operation.progress === operation.status ? t(states[operation.status]) : window.LiveSmithI18n.format(operation.progress);
+          makeDetailScrollable(content, t("External tool operation"));
+          item.append(summary, content);
+          if (["running", "awaiting_approval"].includes(operation.status)) {
+            const stop = document.createElement("button"); stop.type = "button"; stop.className = "secondary"; stop.textContent = t("Stop");
+            stop.addEventListener("click", () => { void runCommand("cancel_mcp_operation", { sessionId: getState().activeSessionId, operationId: operation.id }); }); item.append(stop);
+          }
+          return item;
+        }
         const eventContent = event.content || "";
         if (event.kind === "reasoning") {
           return buildReasoningItem(eventContent, { eventId: event.id });

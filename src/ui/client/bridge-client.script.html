@@ -52,6 +52,7 @@
         isDecimalRevision,
         compareDecimalRevisions,
         sameJsonValue,
+        sessionToolCatalogOwner,
         sameJsonData
       } = window.LiveSmithFactories.createWireValidators({ isPluginParameterPanel, isPluginConfigView });
       if (
@@ -134,6 +135,7 @@
         "archivedSessions",
       ];
       const sessionCommandKinds = new Set([
+        "resolve_mcp_approval", "cancel_mcp_operation",
         "new_session",
         "select_session",
         "restore_session",
@@ -1041,20 +1043,6 @@
         ) <= 0;
       }
 
-      function sessionToolCatalogOwner(state) {
-        return JSON.stringify([
-          state.activeSessionId,
-          state.activeProfileRevision,
-          state.runtimeProfile,
-          state.integrationConnections?.revision ?? "0",
-          state.plugins,
-          state.sunoAccounts ?? [],
-          state.mcpOAuthStates ?? [],
-          (state.audioJobs ?? []).map(({ id, status, outputs }) => [id, status, outputs.map(({ id: assetId }) => assetId)]),
-          state.events.at(-1)?.id,
-        ]);
-      }
-
       function preserveNewerCausalState(state, attempt) {
         const baseline = attempt.causalStateSnapshot;
         const current = getState();
@@ -1239,6 +1227,7 @@
           merged.audioJobs = state.audioJobs;
           merged.midiContinuation = state.midiContinuation;
           merged.events = state.events;
+          merged.mcpApprovals = state.mcpApprovals; merged.mcpOperations = state.mcpOperations;
           merged.pendingAttachments = state.pendingAttachments;
           const contextState = state.activeSessionId !== current.activeSessionId || incomingContextIsCurrent
             ? state : current;
@@ -1250,6 +1239,7 @@
           merged.audioJobs = current.audioJobs;
           merged.midiContinuation = current.midiContinuation;
           merged.events = current.events;
+          merged.mcpApprovals = current.mcpApprovals; merged.mcpOperations = current.mcpOperations;
           merged.pendingAttachments = current.pendingAttachments;
           merged.contextSummary = current.contextSummary;
           merged.liveContext = current.liveContext;
@@ -1339,7 +1329,11 @@
         merged.activeSkillIds = [...(activeSession?.activeSkillIds || [])];
         const catalogUnchanged = current.sessionToolCatalog === baseline.sessionToolCatalog ||
           sameJsonValue(current.sessionToolCatalog, baseline.sessionToolCatalog);
-        const catalogSource = catalogUnchanged ? state : current;
+        const incomingSuggestionsAreCurrent = current.sessionToolCatalog &&
+          current.sessionToolCatalog.loadedAt === state.sessionToolCatalog?.loadedAt &&
+          sessionToolCatalogOwner(current) === sessionToolCatalogOwner(state) &&
+          (contextCutOrder > 0 || contextCutOrder === 0 && incomingCurrentRevisionOrder >= 0);
+        const catalogSource = catalogUnchanged || incomingSuggestionsAreCurrent ? state : current;
         if (catalogSource.sessionToolCatalog?.sessionId === merged.activeSessionId &&
           sessionToolCatalogOwner(catalogSource) === sessionToolCatalogOwner(merged)) {
           merged.sessionToolCatalog = catalogSource.sessionToolCatalog;
@@ -2538,6 +2532,7 @@
         return Boolean(
           kind &&
           kind !== "save_global_settings" &&
+          !["create_mcp_client", "rotate_mcp_client", "revoke_mcp_client"].includes(kind) &&
           !sessionCommandKinds.has(kind)
         );
       }
@@ -3394,9 +3389,12 @@
         adoptIntegrationConnections(state.integrationConnections);
         adoptSunoAccountsFromState(state);
         adoptGlobalSettingsFromState(state);
-        const reconciledState = causalAttempt
-          ? preserveNewerCausalState(state, causalAttempt)
-          : state;
+        let reconciledState = causalAttempt ? preserveNewerCausalState(state, causalAttempt) : state;
+        if (state.mcpCredential) reconciledState = { ...reconciledState, mcpCredential: state.mcpCredential };
+        if (compareDecimalRevisions(state.bridgeStateRevision, getState().bridgeStateRevision) >= 0 && state.mcpServer) {
+          reconciledState = { ...reconciledState, mcpServer: state.mcpServer,
+            settings: { ...reconciledState.settings, mcpServer: state.mcpServer.settings } };
+        }
         const profileSettingsChanged =
           previousSettings.activeProfileId !==
             reconciledState.settings.activeProfileId ||
@@ -7794,6 +7792,7 @@
         loadSessionModelCapabilities,
         loadSessionTools,
         getSessionToolCatalogOwner: () => sessionToolCatalogOwner(getState()),
+        sameJsonData,
         resolveConfirm,
         renderDefaultFollowUpBehavior,
         renderCustomInstructions,

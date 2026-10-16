@@ -1,3 +1,4 @@
+import { assertExternalMcpEndpoint } from "../../runtime/local-mcp-endpoint.js";
 import {
   Client,
   UnauthorizedError, InsufficientScopeError, SdkHttpError,
@@ -83,6 +84,7 @@ export async function connectPluginMcpServer(
   } else {
     const url = expandPluginMcpTemplate(server.url, paths);
     validateRemoteUrl(url);
+    assertExternalMcpEndpoint(url);
     const headers = Object.fromEntries(Object.entries(server.headers).map(([name, value]) =>
       [name, expandPluginMcpTemplate(value, paths, "credentials")]));
     if (Object.values(headers).some((value) => /[\u0000\r\n]/u.test(value))) throw new PluginMcpConnectionError("connect", server.id);

@@ -5,6 +5,7 @@ import { isDeviceParameterWrites, MAX_DEVICE_PARAMETERS, type DeviceParameterWri
 export type SampleSource =
   | { kind: "selected" }
   | { kind: "audio_asset"; assetRef: string }
+  | { kind: "session_audio_attachment"; attachmentId: string }
   | {
       kind: "request_audio_attachment";
       requestId: string;
@@ -932,6 +933,8 @@ function requiredSampleSource(): ActionField<SampleSource, true> {
   return requiredField(
     {
       oneOf: [
+        { type: "object", properties: { kind: { type: "string", enum: ["session_audio_attachment"] },
+          attachmentId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" } }, required: ["kind", "attachmentId"], additionalProperties: false },
         {
           type: "object",
           properties: { kind: { type: "string", enum: ["selected"] } },
@@ -1151,6 +1154,11 @@ function parseSampleSource(value: unknown, key: string): SampleSource {
         kind: "audio_asset",
         assetRef,
       };
+    }
+    case "session_audio_attachment": {
+      assertRecordKeys(value, ["kind", "attachmentId"], key);
+      if (typeof value.attachmentId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value.attachmentId)) throw new Error("Invalid Session audio attachment reference.");
+      return { kind: "session_audio_attachment", attachmentId: value.attachmentId };
     }
     case "request_audio_attachment":
       assertRecordKeys(value, ["kind", "requestId", "audioIndex"], key);

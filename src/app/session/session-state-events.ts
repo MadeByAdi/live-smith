@@ -3,10 +3,14 @@ import { storageScopeKey } from "../../storage/scope.js";
 export interface SessionStateInvalidation {
   sessionId: string;
   source: symbol;
+  /** Defaults to UI state; tools-only notifications do not schedule a dialog refresh. */
+  target?: "state" | "tools" | "all";
 }
 
 export interface GlobalStateInvalidation {
   source: symbol;
+  /** Include tools when their configuration or execution authorization changes. */
+  target?: "state" | "tools" | "all";
   /** Internal auth-lifecycle invalidation; never forwarded into browser payloads. */
   sunoAuthServiceId?: string;
 }

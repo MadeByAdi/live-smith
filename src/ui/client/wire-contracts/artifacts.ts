@@ -49,7 +49,7 @@ function isSessionArtifact(artifact: unknown, maximumMidiNotes: number): artifac
       (artifact.generation.requestEventId === undefined || text(artifact.generation.requestEventId, 128)) &&
       text(artifact.generation.parameters, 4000) && typeof artifact.generation.parametersTruncated === "boolean") &&
     (ref.kind === "device-parameters" ? record(artifact.deviceParameters) && isDeviceParameterTarget(artifact.deviceParameters.target) &&
-      ["captured", "model"].includes(String(artifact.deviceParameters.source)) && Number.isSafeInteger(artifact.deviceParameters.parameterCount) &&
+      ["captured", "model", "mcp"].includes(String(artifact.deviceParameters.source)) && Number.isSafeInteger(artifact.deviceParameters.parameterCount) &&
       Number(artifact.deviceParameters.parameterCount) > 0 && Number(artifact.deviceParameters.parameterCount) <= MAX_DEVICE_PARAMETERS &&
       (artifact.deviceParameters.parameters === undefined || isDeviceParameterSnapshot({ target: artifact.deviceParameters.target, parameters: artifact.deviceParameters.parameters }) &&
         (artifact.deviceParameters.parameters as unknown[]).length === artifact.deviceParameters.parameterCount)

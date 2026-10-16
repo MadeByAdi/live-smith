@@ -3,6 +3,7 @@
         addAudioConnection, clearAudioSecrets, confirmAction, getAudioConnections,
         getState, openSection, runCommand, selectAudioConnection, stopCommand,
       }) {
+        const outwardService = window.LiveSmithFactories.createMcpServiceSettings({ getState, runCommand });
         const t = (message, params) => window.LiveSmithI18n.t(message, params);
         const builtInDescriptors = __BUILT_IN_INTEGRATION_CONNECTION_DESCRIPTORS__;
         let busy = false;
@@ -171,6 +172,7 @@
         }
 
         function clearSecrets() {
+          outwardService.clearSecrets();
           if (!draft) return;
           if (draft.kind === "standalone") for (const row of draft.secretRows) row.value = "";
           else for (const name of Object.keys(draft.secrets)) if (draft.secrets[name] !== "") delete draft.secrets[name];
@@ -707,6 +709,7 @@
         }
 
         function render(force = false) {
+          outwardService.render(busy || saving);
           if (draft?.kind === "plugin" && !draftPluginServer(draft).server) {
             draft.secrets = Object.create(null);
             if (!draft.feedback?.message) draft.feedback = {
@@ -747,7 +750,89 @@
             }
           },
           initialize() {
+            outwardService.initialize();
             document.getElementById("addConnectionButton").addEventListener("click", () => openStandalone());
           },
         };
+      };
+
+      window.LiveSmithFactories.createMcpServiceSettings = function ({ getState, runCommand }) {
+        const t = (key, values) => window.LiveSmithI18n.t(key, values);
+        let busy = false, rendered = "", lastToken = "", draftSettings = null;
+        const byId = id => document.getElementById(id);
+        const report = (message, error = false) => {
+          const node = byId("mcpClientFeedback"); node.textContent = window.LiveSmithI18n.text(message); node.hidden = !node.textContent; node.classList.toggle("error", error);
+        };
+        const clearSecrets = () => { byId("mcpClientConfig").value = ""; byId("mcpClientCredential").hidden = true; };
+        const sessionRecords = () => [...getState().sessions, ...getState().previousSessions, ...getState().archivedSessions];
+        const showScope = () => {
+          const session = sessionRecords().find(entry => entry.id === byId("mcpClientSession").value);
+          byId("mcpClientScope").textContent = session
+            ? `${t("Scope")}: ${session.editScopes?.length === 0 ? t("Read only") : (session.editScopes || ["All"]).map(scope => t({ midi: "MIDI content", audio: "Audio content", devices: "Devices", mixer: "Mixer", structure: "Track and Set structure" }[scope] || scope)).join(", ")} · ${t("Approval")}: ${t({ manual: "Manual", "low-risk": "Low Risk", everything: "Accept Everything" }[session.approvalMode || "manual"])}`
+            : t("New Session · All scopes · Manual approval");
+        };
+        async function command(kind, fields) {
+          clearSecrets(); report("");
+          return runCommand(kind, fields, { statusPresenter: report });
+        }
+        function render(operationBusy = busy) {
+          busy = operationBusy;
+          const state = getState(), service = state.mcpServer;
+          byId("mcpOutwardService").hidden = !service;
+          if (!service) return;
+          const key = JSON.stringify([service, state.sessions, state.previousSessions, state.archivedSessions, state.mcpCredential, busy, window.LiveSmithI18n.locale]);
+          if (key === rendered) return;
+          rendered = key;
+          const settings = draftSettings || service.settings;
+          byId("mcpServerEnabled").checked = settings.enabled;
+          byId("mcpServerPort").value = String(settings.port);
+          byId("mcpServerUrl").value = service.url;
+          byId("mcpServerStatus").textContent = service.error || t(service.status === "running" ? "Ready for external clients" : "Local MCP service is disabled");
+          byId("mcpServerStatus").classList.toggle("error", service.status === "error");
+          const selected = byId("mcpClientSession").value;
+          const options = [new Option(t("New external tools Session"), ""), ...state.sessions.map(session => new Option(session.title || session.scope.label, session.id))];
+          byId("mcpClientSession").replaceChildren(...options);
+          if (options.some(option => option.value === selected)) byId("mcpClientSession").value = selected;
+          showScope();
+          const clients = service.clients.map(client => {
+            const row = document.createElement("div"); row.className = "connection-row"; row.setAttribute("role", "listitem"); row.dataset.mcpClientId = client.id;
+            const detail = document.createElement("div"); detail.className = "connection-choice";
+            const title = document.createElement("strong"); title.textContent = client.name;
+            const session = sessionRecords().find(entry => entry.id === client.sessionId);
+            const subtitle = document.createElement("span"); subtitle.className = "field-hint"; subtitle.textContent = session?.title || session?.scope.label || t("Session unavailable");
+            detail.append(title, subtitle); row.append(detail);
+            for (const [kind, label] of [["rotate_mcp_client", "Rotate credential"], ["revoke_mcp_client", "Revoke access"]]) {
+              const button = document.createElement("button"); button.type = "button"; button.className = "secondary"; button.textContent = t(label); button.disabled = busy; button.dataset.mcpAction = kind;
+              button.addEventListener("click", () => { void command(kind, { clientId: client.id, generation: client.generation }); }); row.append(button);
+            }
+            return row;
+          });
+          byId("mcpClientList").replaceChildren(...clients);
+          for (const id of ["mcpServerEnabled", "mcpServerPort", "saveMcpServer", "mcpClientName", "mcpClientSession", "createMcpClient"]) byId(id).disabled = busy;
+          byId("createMcpClient").disabled ||= service.clients.length >= 64;
+          const credential = state.mcpCredential;
+          if (credential && credential.token !== lastToken) {
+            lastToken = credential.token;
+            byId("mcpClientConfig").value = JSON.stringify({ mcpServers: { "live-smith": { url: credential.url, headers: { Authorization: `Bearer ${credential.token}` } } } }, null, 2);
+            byId("mcpClientCredential").hidden = false;
+            byId("mcpClientConfig").focus(); byId("mcpClientConfig").select();
+          }
+        }
+        function initialize() {
+          const editSettings = () => { draftSettings = { enabled: byId("mcpServerEnabled").checked, port: Number(byId("mcpServerPort").value) }; };
+          byId("mcpServerEnabled").addEventListener("change", editSettings); byId("mcpServerPort").addEventListener("input", editSettings);
+          byId("saveMcpServer").addEventListener("click", async () => {
+            const port = Number(byId("mcpServerPort").value);
+            if (!Number.isInteger(port) || port < 1024 || port > 65535) { report(t("Choose a port from 1024 to 65535."), true); return; }
+            if (await command("save_global_settings", { mcpServer: { enabled: byId("mcpServerEnabled").checked, port } })) { draftSettings = null; rendered = ""; render(); }
+          });
+          byId("mcpClientSession").addEventListener("change", showScope);
+          byId("createMcpClient").addEventListener("click", async () => {
+            const name = byId("mcpClientName").value.trim(), sessionId = byId("mcpClientSession").value;
+            if (!name) { report(t("Enter a client name."), true); byId("mcpClientName").focus(); return; }
+            if (await command("create_mcp_client", { name, ...(sessionId ? { sessionId } : {}) })) byId("mcpClientName").value = "";
+          });
+          byId("dismissMcpCredential").addEventListener("click", clearSecrets);
+        }
+        return { render, initialize, clearSecrets };
       };

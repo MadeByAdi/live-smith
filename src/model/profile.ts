@@ -198,6 +198,7 @@ export const MAX_CUSTOM_INSTRUCTIONS_CODE_POINTS = 8_000;
 export const CURRENT_AGENT_SETTINGS_SCHEMA_VERSION = 10 as const;
 
 export interface AgentSettings {
+  mcpServer?: import("./mcp-server.js").McpServerSettings;
   schemaVersion: typeof CURRENT_AGENT_SETTINGS_SCHEMA_VERSION;
   activeProfileId: string | null;
   profiles: SavedProfile[];

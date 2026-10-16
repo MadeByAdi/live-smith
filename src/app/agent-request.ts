@@ -1,49 +1,34 @@
+import { createToolScope } from "./tools/tool-scope.js";
+import { appendAgentLoopTraceEvent } from "./tools/tool-events.js";
+import { createSessionToolRuntime } from "./tools/tool-runtime.js";
+import { createLiveMutationExecution } from "./tools/live-tool-execution.js";
 import { createLiveSetGuard } from "../live/set-identity.js";
-import { createMidiArtifactAuthoringToolset } from "./midi/midi-artifact-tools.js";
-import { createSessionArtifactToolset } from "./session/session-artifact-tools.js";
-import { createParameterArtifactToolset } from "./parameters/parameter-artifact-tools.js";
-import { creativeBriefProposalTool, proposeCreativeBrief } from "./context/creative-brief.js";
 import { ModelInputTooLargeError } from "../model/connection-error.js";
-import { artifactSourceInstructions, pendingArtifactParentFromEvents, type ArtifactRef } from "../agent/artifact-contracts.js";
+import { artifactSourceInstructions,pendingArtifactParentFromEvents } from "../agent/artifact-contracts.js";
 import { assertSessionArtifact } from "./session/session-artifacts.js";
 import type { ExtensionContext } from "@ableton-extensions/sdk";
-import { uiMessage, type UiMessage } from "../i18n/ui-message.js";
+import { uiMessage,type UiMessage } from "../i18n/ui-message.js";
+export { preflightAgentPlan } from "./tools/live-tool-execution.js";
 
 import {
-  AgentPartialCompletionError,
-  AgentRecoveryResolutionReportingError,
-  AgentSteeringBeforeApplyError,
-  AgentSteeringInterruptError,
+  AgentRecoveryResolutionReportingError,AgentSteeringInterruptError,
   runAgentLoop,
   webSearchSummary,
   type AgentActionExecutionOutcome,
   type AgentActionPreflightGuard,
-  type AgentConfirmationDecision,
-  type AgentLoopTraceEvent,
+  type AgentConfirmationDecision
 } from "../agent/loop.js";
-import { ToolRegistry } from "../plugins/registry.js";
 import {
-  materializeMidiArtifactActionPlan,
-  midiArtifactImportActionSchema,
-} from "../plugins/artifacts.js";
-import {
-  observationRequestForAction,
-  type AgentPlan,
+  type AgentPlan
 } from "../agent/actions.js";
-import { liveSmithTools } from "../agent/tool-definitions.js";
-import { createRequestAudioTools } from "./audio/request-audio-tools.js";
 import {
-  createRequestPluginTools,
-  type PluginExecutionAuthorization,
+  type PluginExecutionAuthorization
 } from "./plugins/request-plugin-tools.js";
 import { providerFetchForStorage } from "./network.js";
-import { audioProcessingAvailable, type AudioProcessingContext } from "./audio/audio-processing.js";
-import { addAudioAssetSampleSources, audioAssetSampleSourceInstructions } from "./audio/audio-asset-sources.js";
+import { audioProcessingAvailable,type AudioProcessingContext } from "./audio/audio-processing.js";
+import { addAudioAssetSampleSources,audioAssetSampleSourceInstructions } from "./audio/audio-asset-sources.js";
 import {
-  assertEditScopesAllow,
-  EditScopeDeniedError,
-  resolveEditScopes,
-  type EditScope,
+  type EditScope
 } from "../agent/edit-scopes.js";
 import {
   HOSTED_WEB_SEARCH_MAX_EVENTS_PER_SEND,
@@ -60,12 +45,8 @@ import type {
 } from "../model/contracts.js";
 import type { RuntimeProfile } from "../model/provider.js";
 import { profileSecrets } from "../model/profile.js";
-import {
-  AgentPlanExecutionError,
-  executeAgentPlanWithProgress,
-} from "../live/executor.js";
 import type { LiveConversationContext } from "../live/context.js";
-import { observeLive, readArrangementAudio } from "../live/observer.js";
+import { observeLive,readArrangementAudio } from "../live/observer.js";
 import {
   attachmentRequestQuotaIsWithinLimits,
   AttachmentProcessingError,
@@ -73,22 +54,8 @@ import {
 } from "../attachments/contracts.js";
 import { MAX_REQUEST_DOCUMENT_TEXT_CHARACTERS } from "../attachments/document-text.js";
 import {
-  captureLiveActionPreflightObservation,
-  type LiveActionPreflightObservation,
-  type MidiClipPreflightStates,
-} from "../live/preflight.js";
-import {
-  requiredEditScopesForAction,
-  requiredEditScopesForPlan,
-} from "../live/action-permissions.js";
-import {
-  assertSameExistingPlanTargets,
-  bindAgentPlanTargets,
-  boundTrackForAction,
-  liveActionIdentityKeys,
-  type AgentPlanBindings,
+  type AgentPlanBindings
 } from "../live/action-bindings.js";
-import type { RequestAudioSampleSources } from "../live/sample-source.js";
 import { throwIfAborted } from "../runtime/host.js";
 import {
   listPendingSessionAttachments,
@@ -106,13 +73,10 @@ import {
   type SessionSteeringReceipt,
 } from "../storage/events.js";
 import {
-  isStorageCommitOutcomeUnknownError,
-  withStorageTransaction,
+  isStorageCommitOutcomeUnknownError
 } from "../storage/persistence.js";
 import {
-  listSessions,
-  listSessionsInTransaction,
-  updateSession,
+  listSessions,updateSession
 } from "../storage/sessions.js";
 import {
   resolveConversationHistory,
@@ -132,11 +96,7 @@ import {
   type ModelReconnectWait,
 } from "./model/model-reconnect.js";
 import {
-  createRequestAudioSampleSources,
-  mergeRequestAudioImportProgress,
-  prepareRequestAudioSampleSources,
-  requestAudioSampleSourceInstructions,
-  type RequestAudioImportProgress,
+  createRequestAudioSampleSources,requestAudioSampleSourceInstructions
 } from "./audio/request-audio-sources.js";
 import {
   activeRecoveryLedgerFromEvents,
@@ -148,10 +108,6 @@ import {
   resolveSkillContext,
   type ResolvedSkillContext,
 } from "./context/skill-context.js";
-import {
-  subscribeSessionEditScopesChanges,
-  subscribeSessionEditScopesInvalidations,
-} from "./session/session-edit-scope-events.js";
 import {
   SteeringPersistenceOutcomeUnknownError,
   type SteeringChannel,
@@ -201,27 +157,8 @@ export async function handleAgentRequest(
     supportsAudioInputDelivery(runtimeProfile);
   const audioProcessingOnly = runtimeProfile.capabilities.tools &&
     !supportsAudioInputDelivery(runtimeProfile) && await audioProcessingAvailable(storageDirectory);
-  let activeEditScopes: EditScope[] | undefined = resolveEditScopes(session.editScopes);
-  let editScopesGeneration = 0;
-  const currentEditScopes = () => {
-    if (!activeEditScopes) throw new EditScopeDeniedError([]);
-    return activeEditScopes;
-  };
-  const readEditScopes = async () => {
-    const generation = editScopesGeneration;
-    const current = await withStorageTransaction(
-      storageDirectory,
-      async (transaction) => (await listSessionsInTransaction(
-        transaction, storageDirectory, projectKey,
-      )).find((candidate) => candidate.id === session.id && !candidate.archivedAt),
-    );
-    if (!current) throw new Error("That Session is not available in this Live Set.");
-    throwIfAborted(callbacks.signal);
-    if (generation === editScopesGeneration) {
-      activeEditScopes = resolveEditScopes(current.editScopes);
-    }
-    return [...currentEditScopes()];
-  };
+  const scopeAuthority = createToolScope({ storageDirectory, projectKey, session, signal: callbacks.signal });
+  const { readEditScopes, currentEditScopes } = scopeAuthority;
   const prepareRequest = async () => {
     const priorEvents = await loadSessionEvents(
       storageDirectory,
@@ -328,9 +265,10 @@ export async function handleAgentRequest(
   let audioSampleSourceInstructions = requestAudioSampleSourceInstructions(requestAudioSources);
   const requestAttachmentQuota = prepared.attachmentQuota;
   let requestDocumentTextCharacters = prepared.documentTextCharacters;
-  let audioTools: Awaited<ReturnType<typeof createRequestAudioTools>>;
-  const pluginTools: Awaited<ReturnType<typeof createRequestPluginTools>> = await createRequestPluginTools({
-    onAudioArtifacts: (artifacts) => audioTools.registerArtifacts(artifacts),
+  const toolRuntime = await createSessionToolRuntime({
+    actor: { kind: "model", profileId: runtimeProfile.profile.id, model: runtimeProfile.model.model },
+    projectKey, creativeBrief: session.creativeBrief ?? "",
+    plugins: {
     ...(prepared.userEvent.parentCandidate ? { artifactRevisionOf: prepared.userEvent.parentCandidate } : {}),
     storageDirectory,
     pluginConfigSnapshots: prepared.skillContext.pluginConfigSnapshots ?? {},
@@ -343,15 +281,10 @@ export async function handleAgentRequest(
     ...(callbacks.withPluginAuthorization
       ? { withAuthorization: callbacks.withPluginAuthorization }
       : {}),
-  });
-  let toolResources: Pick<ToolRegistry, "close"> = pluginTools;
-  let unsubscribeEditScopes: (() => void) | undefined;
-  let unsubscribeEditScopesInvalidations: (() => void) | undefined;
-  try {
-    audioTools = await createRequestAudioTools({
+    },
+    audio: {
       context, assertLiveSetCurrent, storageDirectory, sessionId: session.id, requestId: prepared.userEvent.id,
       attachmentRefs: requestAudioAttachmentRefs,
-      hasPluginAudioOutputs: pluginTools.hasAudioOutputs,
       ...(prepared.userEvent.parentCandidate ? { artifactSource: prepared.userEvent.parentCandidate } : {}),
       target: interaction.target, signal: callbacks.signal, onProgress: callbacks.onProgress,
       ...(callbacks.withGenerationAuthorization ? { withGenerationAuthorization: callbacks.withGenerationAuthorization } : {}),
@@ -369,25 +302,10 @@ export async function handleAgentRequest(
           audioAssetSampleSourceInstructions(requestAudioSources),
         ].filter(Boolean).join("\n\n");
       },
-    });
-    const externalTools = new ToolRegistry([
-      {
-        id: "live-smith.creative-brief",
-        tools: () => [creativeBriefProposalTool],
-        callTool: async (call) => proposeCreativeBrief(call.arguments, session.creativeBrief ?? ""),
-      },
-      ...(storageDirectory ? [createSessionArtifactToolset({ storageDirectory, sessionId: session.id, signal: callbacks.signal }),
-        createMidiArtifactAuthoringToolset({ storageDirectory, sessionId: session.id,
-        runtimeProfile, signal: callbacks.signal,
-        ...(prepared.userEvent.parentCandidate?.kind === "midi" ? { revisionOf: prepared.userEvent.parentCandidate.id } : {}),
-      }), createParameterArtifactToolset({ context, storageDirectory, sessionId: session.id, projectKey, assertLiveSetCurrent,
-        target: interaction.target, runtimeProfile, signal: callbacks.signal,
-        ...(prepared.userEvent.parentCandidate?.kind === "device-parameters" ? { revisionOf: prepared.userEvent.parentCandidate.id } : {}),
-      })] : []),
-      ...audioTools.toolsets,
-      ...pluginTools.toolsets,
-    ]);
-    toolResources = externalTools;
+    },
+  });
+  const { plugins: pluginTools, externalTools } = toolRuntime;
+  try {
     const canReadArrangementAudio = () => supportsArrangementAudioInput &&
       attachmentRequestQuotaIsWithinLimits([
         ...requestAttachmentQuota,
@@ -543,24 +461,7 @@ export async function handleAgentRequest(
       pendingAcceptedProjectionTokens = undefined;
       await callbacks.onModelTurnAccepted?.(undefined);
     };
-    // Committed changes update the synchronous action boundary without inserting
-    // a disk await after the final Live-state drift check.
-    unsubscribeEditScopes = subscribeSessionEditScopesChanges(
-      storageDirectory,
-      (change) => {
-        if (change.sessionId !== session.id) return;
-        editScopesGeneration += 1;
-        activeEditScopes = resolveEditScopes(change.editScopes);
-      },
-    );
-    unsubscribeEditScopesInvalidations = subscribeSessionEditScopesInvalidations(
-      storageDirectory,
-      (changedSessionId) => {
-        if (changedSessionId !== session.id) return;
-        editScopesGeneration += 1;
-        activeEditScopes = undefined;
-      },
-    );
+    scopeAuthority.subscribe();
     await callbacks.onProgress("Starting agent loop");
     if (pluginTools.unavailableMidiArtifacts) {
       await callbacks.onProgress(uiMessage(
@@ -706,12 +607,7 @@ export async function handleAgentRequest(
         const editScopes = await readEditScopes();
         const toolsForCurrentState = () => modelToolsForProfile(
           runtimeProfile,
-          [...liveSmithTools({
-            readArrangementAudio: canReadArrangementAudio(),
-            ...(storageDirectory
-              ? { additionalActionSchemas: [midiArtifactImportActionSchema] }
-              : {}),
-          }), ...externalTools.tools()],
+          toolRuntime.tools(canReadArrangementAudio()),
           Math.min(
             HOSTED_WEB_SEARCH_REQUEST_MAX_USES,
             Math.max(
@@ -903,127 +799,11 @@ export async function handleAgentRequest(
           byteLength: part.bytes.byteLength,
         });
       },
-      preflightActions: (plan) =>
-        preflightAgentPlan(
-          context, interaction, plan, callbacks.signal,
-          undefined, undefined, {
-            refresh: async () => { assertLiveSetCurrent(); await readEditScopes(); assertLiveSetCurrent(); },
-            assert: (requestedPlan, bindings) => {
-              assertLiveSetCurrent();
-              assertEditScopesAllow(requiredEditScopesForPlan(context, requestedPlan, bindings), currentEditScopes());
-            },
-          },
-          requestAudioSources,
-        ),
-      prepareActionPlan: (toolCall) => materializeMidiArtifactActionPlan({
-        argumentsJson: toolCall.arguments,
-        storageDirectory,
-        sessionId: session.id,
-        signal: callbacks.signal,
-      }),
+      ...createLiveMutationExecution({ context, interaction, storageDirectory, sessionId: session.id,
+        signal: callbacks.signal, assertLiveSetCurrent, readEditScopes, currentEditScopes, requestAudioSources,
+        hasPendingSteering: () => callbacks.steering?.hasPending() ?? false, onProgress: callbacks.onProgress }),
       confirmActions: callbacks.confirmActions,
-      ...(callbacks.confirmRecoveryResolution
-        ? { confirmRecoveryResolution: callbacks.confirmRecoveryResolution }
-        : {}),
-      executeActions: async (plan, rawBindings, revalidateAfterImport) => {
-        let bindings = rawBindings as AgentPlanBindings;
-        const assertActionBoundary = (actionIndex: number, action: AgentPlan["actions"][number]) => {
-          assertLiveSetCurrent();
-          assertEditScopesAllow(
-            requiredEditScopesForAction(context, action, actionIndex, bindings),
-            currentEditScopes(),
-          );
-          if (callbacks.steering?.hasPending()) {
-            throw new AgentSteeringBeforeApplyError(
-              "Newer user guidance arrived before the next Live action began. " +
-                "The remaining actions in this plan were not executed.",
-            );
-          }
-        };
-        let importProgress: RequestAudioImportProgress = {
-          results: [],
-          keys: [],
-        };
-        let outcome: AgentActionExecutionOutcome;
-        try {
-          importProgress = await prepareRequestAudioSampleSources(
-            bindings,
-            callbacks.signal,
-            () => {
-              assertLiveSetCurrent();
-              assertEditScopesAllow(
-                requiredEditScopesForPlan(context, plan, bindings),
-                currentEditScopes(),
-              );
-              if (callbacks.steering?.hasPending()) {
-                throw new AgentSteeringBeforeApplyError(
-                  "Newer user guidance arrived while the audio attachment was being imported. " +
-                    "The remaining Live actions were not executed.",
-                );
-              }
-            },
-          );
-          if (importProgress.results.length > 0) {
-            bindings = await revalidateAfterImport() as AgentPlanBindings;
-          }
-          outcome = await executeAgentPlanWithProgress(
-            context,
-            plan,
-            interaction.target,
-            callbacks.signal,
-            bindings,
-            assertActionBoundary,
-          );
-          outcome = {
-            results: [...importProgress.results, ...outcome.results],
-            mutationCount: importProgress.results.length + outcome.mutationCount,
-          };
-        } catch (caught) {
-          const error = mergeRequestAudioImportProgress(importProgress, caught);
-          if (
-            error instanceof AgentPlanExecutionError &&
-            error.cause instanceof AgentSteeringBeforeApplyError &&
-            error.completedResults.length === 0 &&
-            error.completedMutationCount === 0
-          ) {
-            throwIfAborted(callbacks.signal);
-            throw error.cause;
-          }
-          if (
-            callbacks.signal.aborted &&
-            error instanceof AgentPlanExecutionError &&
-            error.completedResults.length &&
-            isAbortCause(error.cause, callbacks.signal)
-          ) {
-            outcome = {
-              results: error.completedResults,
-              mutationCount: error.completedMutationCount,
-              incompleteRecovery: {
-                completedActionKeys: error.completedActionKeys,
-                completedActionCount: error.completedActionCount,
-                failureMessage:
-                  "The request was stopped before every confirmed Live action completed.",
-              },
-            };
-          } else if (error instanceof AgentPlanExecutionError) {
-            throw new AgentPartialCompletionError(
-              error.completedResults,
-              error.cause,
-              error.failedActionIndex,
-              error.failedAction,
-              error.failedTrackName,
-              error.completedActionKeys,
-              error.completedMutationCount,
-              error.failedTrackSelector,
-              error.completedActionCount,
-            );
-          } else {
-            throw error;
-          }
-        }
-        await callbacks.onProgress("Updating chat history");
-        return outcome;
-      },
+      ...(callbacks.confirmRecoveryResolution ? { confirmRecoveryResolution: callbacks.confirmRecoveryResolution } : {}),
       ...(callbacks.withActionExecutionLock
         ? { withActionExecutionLock: callbacks.withActionExecutionLock }
         : {}),
@@ -1079,225 +859,13 @@ export async function handleAgentRequest(
     }
     throw error;
   } finally {
-    unsubscribeEditScopes?.();
-    unsubscribeEditScopesInvalidations?.();
-    await toolResources.close();
+    scopeAuthority.close();
+    await toolRuntime.close();
   }
 }
 
 function attachmentQuotaItem(ref: SessionAttachmentRef): AttachmentQuotaItem {
   return { kind: ref.kind, byteLength: ref.byteLength };
-}
-
-function isAbortCause(error: unknown, signal: AbortSignal): boolean {
-  if (!signal.aborted) return false;
-  if ("reason" in signal) return error === signal.reason;
-  return error instanceof Error && /abort/i.test(error.message);
-}
-
-export async function preflightAgentPlan(
-  context: Api,
-  interaction: LiveConversationContext,
-  plan: AgentPlan,
-  signal: AbortSignal,
-  observer: typeof observeLive = observeLive,
-  snapshotter: (
-    context: Api,
-    action: AgentPlan["actions"][number],
-    target: LiveConversationContext["target"],
-    requestAudioSources?: RequestAudioSampleSources,
-    includePreview?: boolean,
-    midiClipStates?: MidiClipPreflightStates,
-  ) => string | LiveActionPreflightObservation | Promise<string | LiveActionPreflightObservation> = captureLiveActionPreflightObservation,
-  authorization?: {
-    refresh(): Promise<unknown>;
-    assert(plan: AgentPlan, bindings: AgentPlanBindings): void;
-  },
-  requestAudioSources?: RequestAudioSampleSources,
-): Promise<AgentActionPreflightGuard<AgentPlanBindings>> {
-  await authorization?.refresh();
-  const initialBindings = bindAgentPlanTargets(
-    context,
-    plan,
-    interaction.target,
-    requestAudioSources,
-  );
-  const initialSnapshots = await captureAgentPlanPreflightSnapshots(
-    context,
-    interaction,
-    plan,
-    signal,
-    observer,
-    snapshotter,
-    initialBindings,
-    requestAudioSources,
-    plan.actions.length === 1,
-  );
-  authorization?.assert(plan, withPreflightParameters(initialBindings, initialSnapshots));
-
-  const guard: AgentActionPreflightGuard<AgentPlanBindings> = async () => {
-    await authorization?.refresh();
-    const currentBindings = bindAgentPlanTargets(
-      context,
-      plan,
-      interaction.target,
-      requestAudioSources,
-    );
-    assertSameExistingPlanTargets(initialBindings, currentBindings);
-    const currentSnapshots = await captureAgentPlanPreflightSnapshots(
-      context,
-      interaction,
-      plan,
-      signal,
-      observer,
-      snapshotter,
-      currentBindings,
-      requestAudioSources,
-    );
-    const changedIndex = currentSnapshots.findIndex(
-      (snapshot, index) => snapshot.fingerprint !== initialSnapshots[index]?.fingerprint,
-    );
-    if (
-      changedIndex !== -1 ||
-      currentSnapshots.length !== initialSnapshots.length
-    ) {
-      const actionNumber = changedIndex === -1 ? 1 : changedIndex + 1;
-      throw new Error(
-        `Live target or relevant state changed for action ${actionNumber} while confirmation was open. Inspect the current Live state and try again.`,
-      );
-    }
-    const bindings = withPreflightParameters(currentBindings, currentSnapshots);
-    authorization?.assert(plan, bindings);
-    return bindings;
-  };
-  Object.defineProperty(guard, "actionKeys", {
-    enumerable: true,
-    value: planActionIdentityKeys(plan, initialBindings),
-  });
-  const preview = plan.actions.length === 1 ? initialSnapshots[0]?.preview : undefined;
-  if (preview) {
-    Object.defineProperty(guard, "previews", { enumerable: true, value: [preview] });
-  }
-  return guard;
-}
-
-function withPreflightParameters(
-  bindings: AgentPlanBindings,
-  snapshots: readonly LiveActionPreflightObservation[],
-): AgentPlanBindings {
-  return {
-    ...bindings,
-    actionObjects: new Map([...bindings.actionObjects].map(([index, objects]) => {
-      const parameterValues = snapshots[index]?.executionParameters;
-      return [index, parameterValues ? { ...objects, parameterValues } : objects];
-    })),
-  };
-}
-
-function planActionIdentityKeys(
-  plan: AgentPlan,
-  bindings: AgentPlanBindings,
-): string[][] {
-  const aliases = new Map(
-    Object.entries(plan.targets ?? {}).flatMap(([ref, target]) =>
-      target.trackName ? [[ref, target.trackName] as const] : []
-    ),
-  );
-  return plan.actions.map((action, actionIndex) => {
-    const boundTrack = boundTrackForAction(action, actionIndex, bindings);
-    const trackAliases: string[] = [];
-    if ("trackRef" in action && action.trackRef) {
-      const alias = aliases.get(action.trackRef);
-      if (alias) trackAliases.push(alias);
-    } else if ("trackName" in action && action.trackName) {
-      trackAliases.push(action.trackName);
-    }
-    const target = "trackRef" in action && action.trackRef
-      ? plan.targets?.[action.trackRef]
-      : undefined;
-    const nonRegularTrack = target?.trackRole === "return"
-      ? { role: "return" as const }
-      : target?.trackRole === "main"
-        ? { role: "main" as const }
-        : undefined;
-    const keys = liveActionIdentityKeys(
-      action,
-      boundTrack,
-      trackAliases,
-      nonRegularTrack,
-    );
-    if (
-      (action.type === "create_midi_track" || action.type === "create_audio_track") &&
-      action.ref &&
-      action.name
-    ) {
-      aliases.set(action.ref, action.name);
-    }
-    if (action.type === "rename_track" && action.trackRef) {
-      aliases.set(action.trackRef, action.newName);
-    } else if (action.type === "rename_track" && action.trackName) {
-      for (const [ref, name] of aliases) {
-        if (normalizedIdentityText(name) === normalizedIdentityText(action.trackName)) {
-          aliases.set(ref, action.newName);
-        }
-      }
-    }
-    return keys;
-  });
-}
-
-function normalizedIdentityText(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-async function captureAgentPlanPreflightSnapshots(
-  context: Api,
-  interaction: LiveConversationContext,
-  plan: AgentPlan,
-  signal: AbortSignal,
-  observer: typeof observeLive,
-  snapshotter: (
-    context: Api,
-    action: AgentPlan["actions"][number],
-    target: LiveConversationContext["target"],
-    requestAudioSources?: RequestAudioSampleSources,
-    includePreview?: boolean,
-    midiClipStates?: MidiClipPreflightStates,
-  ) => string | LiveActionPreflightObservation | Promise<string | LiveActionPreflightObservation>,
-  bindings: AgentPlanBindings,
-  requestAudioSources?: RequestAudioSampleSources,
-  includePreview = false,
-): Promise<LiveActionPreflightObservation[]> {
-  const snapshots: LiveActionPreflightObservation[] = [];
-  const midiClipStates: MidiClipPreflightStates = new Map();
-  for (const [actionIndex, action] of plan.actions.entries()) {
-    throwIfAborted(signal);
-    const boundTrack = boundTrackForAction(action, actionIndex, bindings);
-    if ("trackRef" in action && action.trackRef && !boundTrack) {
-      snapshots.push({ fingerprint: `deferred:${action.type}:${action.trackRef}` });
-      continue;
-    }
-    const actionTarget = boundTrack
-      ? { ...interaction.target, track: boundTrack }
-      : interaction.target;
-    await observer(
-      context,
-      observationRequestForAction(action),
-      actionTarget,
-    );
-    throwIfAborted(signal);
-    const captured = await snapshotter(
-      context,
-      action,
-      actionTarget,
-      requestAudioSources,
-      includePreview,
-      midiClipStates,
-    );
-    snapshots.push(typeof captured === "string" ? { fingerprint: captured } : captured);
-    throwIfAborted(signal);
-  }
-  return snapshots;
 }
 
 interface AgentRequestCallbacks {
@@ -1346,7 +914,9 @@ export type AgentModelTurnRequester = (
 
 export function consumedAttachmentIds(events: readonly SessionEvent[]): string[] {
   return [...new Set(events.flatMap((event) =>
-    event.attachments?.flatMap((attachment) => [attachment.id, ...(attachment.provenance?.replacedIds ?? [])]) ?? []
+    [...(event.attachments?.flatMap((attachment) => [attachment.id, ...(attachment.provenance?.replacedIds ?? [])]) ?? []),
+      ...(event.operation?.result?.audioAttachmentId ? [event.operation.result.audioAttachmentId] : []),
+      ...(event.operation?.result?.inputAttachmentIds ?? [])]
   ))];
 }
 
@@ -1367,39 +937,6 @@ async function resolvePendingAttachmentRefs(
       throw new Error("A selected attachment is no longer pending in this Session.");
     }
     return sessionAttachmentRefFromStored(attachment);
-  });
-}
-async function appendAgentLoopTraceEvent(
-  storageDirectory: string | undefined,
-  sessionId: string,
-  event: AgentLoopTraceEvent,
-  appendEvent: typeof appendSessionEvent = appendSessionEvent,
-  parentCandidate?: ArtifactRef,
-  requestEventId?: string,
-): Promise<SessionEvent> {
-  if ("name" in event) {
-    return appendEvent(storageDirectory, sessionId, {
-      kind: event.kind,
-      name: event.name,
-      content: event.content,
-      ...(event.kind === "tool_result" ? { outcome: event.outcome } : {}),
-      ...(event.kind === "tool_result" && event.artifacts ? { artifacts: event.artifacts } : {}),
-      ...(event.kind === "tool_call" && parentCandidate ? { parentCandidate,
-        ...(requestEventId ? { requestEventId } : {}) } : {}),
-    });
-  }
-
-  return appendEvent(storageDirectory, sessionId, {
-    kind: event.kind,
-    content: event.content,
-    ...("applyOperation" in event && event.applyOperation ? { applyOperation: event.applyOperation } : {}),
-    ...(event.kind === "web_search" ? { webSearch: event.webSearch } : {}),
-    ...(event.kind === "assistant" && event.citations?.length
-      ? { citations: event.citations }
-      : {}),
-    ...(event.kind === "apply_result" && event.recovery
-      ? { recovery: event.recovery }
-      : {}),
   });
 }
 

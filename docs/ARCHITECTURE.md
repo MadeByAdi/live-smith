@@ -1,5 +1,48 @@
 # Live Smith Architecture
 
+## 对外 MCP 执行边界
+
+`src/app/mcp/` 将本机 Streamable HTTP 请求适配到 Session 工具运行环境。
+`service.ts` 拥有监听生命周期、客户端授权绑定与工具目录缓存；`server-transport.ts`
+通过官方 MCP Server 和 Node Adapter 处理协议、Host/Origin 校验及 4 MiB JSON 请求
+上限。资源和附件接口使用同一授权入口。客户端秘密以随机 Bearer 凭据发放，私有
+存储仅保存其摘要；轮换与撤销使用凭据代次确认目标。
+
+`src/agent/tool-execution.ts` 拥有单次工具执行和 Live 部分失败恢复状态机。
+模型循环与 MCP 均调用该执行器。`src/app/tools/tool-runtime.ts` 装配同一组
+Artifact、音频和 Plugin Toolset，原业务模块继续拥有 Schema 和实际执行。
+`live-tool-execution.ts` 统一目标绑定、预检查、音频导入、Scope 检查与 Live 修改。
+`tool-scope.ts` 订阅已提交的 Scope 变化，使同步写入边界能使用最新权限。
+
+`tool-operations.ts` 将外部工具调用登记为 Session 操作，并保存运行、待审批和
+终态事件。操作持有自身取消信号，HTTP 连接与浏览器窗口各自拥有独立生命周期。
+待审批对象保留原始计划和预检查展示；审批命令只经本地 UI 桥接接收。
+服务对 MCP 客户端返回操作标识和业务结果，浏览器桥接凭据由宿主自行持有。
+历史中尚无结果的 Apply 记录进入共享恢复门禁；新的 Live 修改等待重新观察与
+显式恢复决定。查询、取消和资源请求直接访问各自所有者，工具目录发现按需执行。
+
+`resources.ts` 将 Session 资源映射到原有存储。小文件使用现有格式读取器；大型
+文件通过 `storage/file-export.ts` 固定文件句柄、分块校验摘要并流式输出。
+附件上传以操作输入保存归属，音频试听结果以操作输出保存归属。
+
+`session-fences.ts` 提供各入口共用的 Session、附件与连接配置互斥实例。
+Extension 激活创建一个 `LiveMutationQueue`，同时注入窗口和 MCP 服务。
+获准方案取得该队列后再次校验工程身份、权限、目标绑定和 Live 状态。
+外部客户端来源写入工具事件，MIDI 和参数版本使用明确的 MCP 作者身份；音频和
+Plugin 产物继续保留实际生产者信息。
+
+服务通过官方 SDK 的工具目录变更通知刷新订阅者；每次业务调用重建运行环境并
+核对当前连接授权。直接指向自身本机入口的外部 MCP 连接在连接边界被拒绝。
+Session 与全局通知使用 `target` 区分界面状态、工具目录或两者的失效。
+已启用 Plugin 的 MCP 组件、连接配置与授权变化使全局目录失效；Session 生命周期
+变化只清除对应 Session 的目录缓存。普通进度、历史、Scope、审批模式与音频任务
+更新继续刷新界面，工具目录保持缓存。音频工具由已启用的来源预先注册，移除来源时
+再依据保留的任务与产物重建目录。首个音频任务的创建由 `audio-job-runtime.ts`
+统一发送仅工具目录通知，覆盖连接移除与任务创建交错的情形，并保留聊天窗口的
+原有刷新生命周期。每次目录读取仍验证客户端及绑定 Session 的有效性。
+SDK 的 HTTP 消息构造器延迟加载，复用固定版本 Undici 的 Request/Response/Headers；
+Fetch 和 Abort 能力继续由 `src/runtime/host.ts` 从宿主解析。
+
 This document describes module ownership, request and Session lifecycles, and
 safety and concurrency contracts. The Ableton extension entrypoint registers
 commands; application modules coordinate Live execution and model protocols.
@@ -840,6 +883,12 @@ tool. The bounded display snapshot is cleared when its Session, model, Plugin,
 or connection owner changes; display limits do not change executable toolsets.
 Request-specific inputs and later remote changes may alter the next model turn's
 tool list.
+
+`ui/tool-catalog-owner.ts` 统一宿主与浏览器的目录归属判定，依赖 Session、模型、
+已启用的 MCP 来源、连接与授权、网络代理版本及音频任务是否存在。历史事件、
+已有任务的进度和产物更新保持发现快照。`session-tool-catalog.ts` 从本地保存的
+查询结果与任务投影音频参数建议，按现有签名匹配表单，并沿用目录的总字节限制。
+建议更新保留工具定义、授权签名与发现时间；工具面板依据更新后的投影重新渲染。
 
 `plugins/parameter-panel.ts` derives native parameter controls from a supported
 MCP tool input schema. It owns the scalar field contract, argument validation,
@@ -2150,6 +2199,11 @@ notices, progress and terminal status carry descriptors; historical strings and
 provider diagnostics remain original data. Model-facing audio tool results format
 descriptor messages into English without translating raw parameters. Storage and
 wire readers bound and validate descriptors before rendering them.
+
+External operation progress uses the same descriptors in Session storage and UI
+state. MCP response projection formats them into plain English strings. Historical
+progress strings, caller names, tool results, and file names retain their original
+content; application-owned tool labels use the UI message catalog.
 
 Parameter comparison errors use the same descriptors. App-authored command and
 parameter-read failures may carry a validated `displayMessage` beside their

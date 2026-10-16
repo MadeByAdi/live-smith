@@ -1,3 +1,4 @@
+import { isMcpToolActor, type ToolActor } from "./tool-actor.js";
 import { isArtifactLabel, isArtifactVersion, type ArtifactVersion } from "./artifact-contracts.js";
 
 /** Complete saved values; display labels never imply units or enum value mappings. */
@@ -91,7 +92,7 @@ export interface DeviceParameterArtifact extends DeviceParameterSnapshot {
   label: string;
   createdAt: string;
   version: ArtifactVersion;
-  source: { kind: "captured" } | { kind: "model"; profileId: string; model: string };
+  source: { kind: "captured" } | ToolActor;
 }
 
 const id = (value: unknown): value is string => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value);
@@ -102,7 +103,7 @@ export function isDeviceParameterArtifact(value: unknown): value is DeviceParame
     id(value.id) && id(value.sessionId) && isArtifactLabel(value.label) && timestamp(value.createdAt) &&
     isArtifactVersion(value.version, value.id) && isDeviceParameterSnapshot({ target: value.target, parameters: value.parameters }) &&
     record(value.source) && (value.source.kind === "captured" ? keys(value.source, ["kind"]) :
-      value.source.kind === "model" && keys(value.source, ["kind", "profileId", "model"]) && text(value.source.profileId, 128) && text(value.source.model, 512));
+      isMcpToolActor(value.source) || value.source.kind === "model" && keys(value.source, ["kind", "profileId", "model"]) && text(value.source.profileId, 128) && text(value.source.model, 512));
 }
 
 export interface DeviceParameterApplication {

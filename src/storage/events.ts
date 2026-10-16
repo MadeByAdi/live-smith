@@ -1,3 +1,5 @@
+import { isToolOperationSnapshot, type ToolOperationSnapshot } from "../agent/tool-operation.js";
+import { isMcpToolActor, type ToolActor } from "../agent/tool-actor.js";
 import { isToolResultOutcome, type ToolResultOutcome } from "../agent/tool-outcome.js";
 import { isAgentApplyOperation, type AgentApplyOperation } from "../agent/action-preview.js";
 import { cloneJsonValue } from "../model/json-clone.js";
@@ -51,6 +53,7 @@ import {
 } from "./persistence.js";
 
 export type SessionEventKind =
+  | "operation"
   | "user"
   | "assistant"
   | "reasoning"
@@ -77,6 +80,9 @@ export interface SessionSteeringReceipt {
 
 export interface SessionEventInput {
   kind: SessionEventKind;
+  operation?: ToolOperationSnapshot;
+  toolActor?: Extract<ToolActor, { kind: "mcp" }>;
+  toolOperationId?: string;
   content: string;
   name?: string;
   outcome?: ToolResultOutcome;
@@ -288,6 +294,7 @@ function isSessionEvent(
   const record = value as Record<string, unknown>;
   return (
     hasOnlyKeys(record, [
+      "operation", "toolActor", "toolOperationId",
       "id",
       "createdAt",
       "kind",
@@ -305,6 +312,8 @@ function isSessionEvent(
       "artifacts",
       "outcome",
     ]) &&
+    (record.kind === "operation" ? isToolOperationSnapshot(record.operation) : record.operation === undefined) &&
+    (record.toolActor === undefined ? record.toolOperationId === undefined : isMcpToolActor(record.toolActor) && isSafeStorageId(record.toolOperationId)) &&
     isSafeStorageId(record.id) &&
     typeof record.createdAt === "string" &&
     isSessionEventKind(record.kind) &&
@@ -558,6 +567,8 @@ export function sessionSteeringContentSha256(
 function cloneSessionEvent(event: SessionEvent): SessionEvent {
   return {
     ...event,
+    ...(event.operation ? { operation: cloneJsonValue(event.operation) } : {}),
+    ...(event.toolActor ? { toolActor: { ...event.toolActor } } : {}),
     ...(event.applyOperation ? { applyOperation: cloneJsonValue(event.applyOperation) } : {}),
     ...(event.artifacts ? { artifacts: event.artifacts.map((ref) => ({ ...ref })) } : {}),
     ...(event.parentCandidate ? { parentCandidate: { ...event.parentCandidate } } : {}),
@@ -627,6 +638,7 @@ function hasOnlyKeys(
 
 function isSessionEventKind(value: unknown): value is SessionEventKind {
   return (
+    value === "operation" ||
     value === "user" ||
     value === "assistant" ||
     value === "reasoning" ||

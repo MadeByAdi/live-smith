@@ -69,12 +69,14 @@ test("native parameter controls submit typed values directly and display the sav
     const result = cloneState(state);
     result.events.push({ id: "panel-result", createdAt: "2026-09-28T00:01:00.000Z", kind: "tool_result",
       name: "mcp_generator_generate", content: JSON.stringify({ content: [{ type: "text", text: "Pattern ready <img src=x>" }] }) });
-    delete result.sessionToolCatalog;
+    const originalForm = h.document.querySelector(form);
     h.setServerState(result);
     h.click(`${form} button[type="submit"]`);
     await h.settle();
     await waitForCondition(() => Boolean(h.document.querySelector(".plugin-result-summary")),
-      "Expected the completed tool result after directory refresh: " + h.document.querySelector("#sessionToolsStatus")?.textContent);
+      "Expected the completed tool result in the existing form: " + h.document.querySelector("#sessionToolsStatus")?.textContent);
+    assert.equal(h.document.querySelector(form), originalForm);
+    assert.equal(h.calls.filter(call => call.path === "/session-tools").length, 0);
     const calls = commandCalls(h);
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0]!.body, { kind: "run_plugin_tool", sessionId: state.activeSessionId,

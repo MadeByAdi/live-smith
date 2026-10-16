@@ -1,5 +1,6 @@
+import type { ToolActor } from "../../agent/tool-actor.js";
 import { writeStandardMidi } from "../../attachments/midi-writer.js";
-import type { ModelTool, RuntimeProfile } from "../../model/provider.js";
+import type { ModelTool } from "../../model/provider.js";
 import type { Toolset } from "../../plugins/registry.js";
 import { throwIfAborted } from "../../runtime/host.js";
 import { isSafeStorageId } from "../../storage/id.js";
@@ -19,11 +20,11 @@ export const midiArtifactAuthoringTool = { type: "function", function: {
   },
 } } satisfies ModelTool;
 
-/** Saves model-authored artifacts independently of Live mutation. */
+/** Saves authored artifacts independently of Live mutation. */
 export function createMidiArtifactAuthoringToolset(input: {
   storageDirectory: string;
   sessionId: string;
-  runtimeProfile: RuntimeProfile;
+  actor: ToolActor;
   signal: AbortSignal;
   revisionOf?: string;
 }): Toolset {
@@ -53,7 +54,7 @@ export function createMidiArtifactAuthoringToolset(input: {
       }
       try {
         const artifact = await saveMidiArtifact(input.storageDirectory, input.sessionId, {
-          source: { kind: "model", profileId: input.runtimeProfile.profile.id, model: input.runtimeProfile.model.model },
+          source: input.actor,
           serverId: "host", toolName: "save_midi_artifact", label, bytes, signal: input.signal,
           ...(revisionOf ? { revisionOf } : {}),
         });

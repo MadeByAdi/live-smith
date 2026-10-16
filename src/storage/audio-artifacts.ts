@@ -11,7 +11,8 @@ import { audioArtifactOutputDescriptor, audioOutputsCanShareWork } from "../audi
 import { cloneJsonValue } from "../model/json-clone.js";
 import { isSafePluginId } from "../plugins/contracts.js";
 import { throwIfAborted } from "../runtime/host.js";
-import { listAudioAssetRecords, readAudioAsset } from "./audio-assets.js";
+import { listAudioAssetRecords, readAudioAsset, audioAssetExport } from "./audio-assets.js";
+import { openVerifiedFileStream, type SessionFileExport } from "./file-export.js";
 import {
   AudioStorageError, assertAudioDirectory, assertAudioJsonSize, audioAssetInspectionLimits, audioDirectoryEntries,
   audioRecordHasOnly, boundedAudioText, isAudioHash, listAudioJobs, readAudioJson,
@@ -171,6 +172,23 @@ export async function readSessionAudioArtifact(
   if (!isDeepStrictEqual(expected, result.asset)) throw new AudioStorageError("The audio source changed since it was selected.");
   throwIfAborted(signal);
   return result;
+}
+
+export async function sessionAudioArtifactExport(storageDirectory: string, sessionId: string, id: string): Promise<SessionFileExport> {
+  requireAudioStorage(storageDirectory, sessionId); requireSafeStorageId(id, "Audio artifact ID");
+  await requireAudioSession(storageDirectory, sessionId);
+  if (!id.startsWith("audio_artifact_")) {
+    const expected = (await listAudioJobs(storageDirectory, sessionId)).flatMap(job => job.outputAssets).find(asset => asset.id === id);
+    if (!expected) throw new AudioArtifactNotFoundError();
+    return audioAssetExport(storageDirectory, sessionId, expected);
+  }
+  const directory = await bindDirectory(storageDirectory, sessionId);
+  const artifact = directory && await readRecord(directory, sessionId, id);
+  if (!directory || !artifact) throw new AudioArtifactNotFoundError();
+  return { fileName: artifact.label, mediaType: artifact.mediaType, byteLength: artifact.byteLength,
+    open: signal => openVerifiedFileStream({ path: path.join(directory.directory, `${id}.audio`), byteLength: artifact.byteLength, sha256: artifact.sha256, signal,
+      assertCurrent: async () => { await assertAudioDirectory(directory); if (!isDeepStrictEqual(await readRecord(directory, sessionId, id), artifact)) throw new AudioStorageError(); } }),
+  };
 }
 
 export async function readExpectedSessionAudioArtifact(

@@ -20,7 +20,7 @@ import { ToolRegistry } from "../../plugins/registry.js";
 import { listPluginAudioArtifacts, readSessionAudioArtifact, readExpectedSessionAudioArtifact, type SessionAudioArtifact } from "../../storage/audio-artifacts.js";
 import { loadSessionEvents } from "../../storage/events.js";
 import { listAudioJobs } from "../../storage/audio-jobs.js";
-import { readSessionAttachmentBytes, type AudioSessionAttachmentRef } from "../../storage/attachments.js";
+import { readSessionAttachment, readSessionAttachmentBytes, type AudioSessionAttachmentRef } from "../../storage/attachments.js";
 import { throwIfAborted } from "../../runtime/host.js";
 import {
   audioAssetsFromJobs, audioJobResultText, audioJobViews,
@@ -106,6 +106,11 @@ export async function createRequestAudioTools(input: {
   };
 
   const snapshot = async (source: AudioProcessingSource): Promise<AudioProcessingSnapshot> => {
+    if (source.kind === "session_audio_attachment") {
+      const { attachment, bytes } = await readSessionAttachment(input.storageDirectory, input.sessionId, source.attachmentId, { signal: input.signal });
+      if (attachment.kind !== "audio") throw new Error("The Session attachment is not audio.");
+      return { bytes, label: attachment.fileName, origin: { kind: "attachment" } };
+    }
     if (source.kind === "request_audio_attachment") {
       if (source.requestId !== input.requestId) throw new Error("Audio attachment locator is not from the current request.");
       const ref = input.attachmentRefs[source.audioIndex];

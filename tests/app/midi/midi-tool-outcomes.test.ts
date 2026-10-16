@@ -36,7 +36,7 @@ for (const route of ["authoring", "continuation"] as const) for (const stopped o
         arguments: JSON.stringify(route === "authoring" ? authored : { label: authored.label, tracks: authored.tracks }) }] }; };
       if (route === "authoring") {
         const tools = createMidiArtifactAuthoringToolset({ storageDirectory: h.directory, sessionId: h.session.id,
-          signal: h.signal, runtimeProfile: h.runtime });
+          signal: h.signal, actor: { kind: "model", profileId: h.runtime.profile.id, model: h.runtime.model.model } });
         const running = runAgentLoop({ maxConsecutiveFailures: 3, signal: h.signal,
           externalTools: { names: ["save_midi_artifact"], execute: async call => tools.callTool(call) }, askModel: requestTurn,
           observe: async () => "", confirmActions: async () => false,

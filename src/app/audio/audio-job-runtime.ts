@@ -2,12 +2,32 @@ import { Buffer } from "node:buffer";
 import type { AudioJob } from "../../audio-services/contracts.js";
 import { builtInAudioPlugin } from "../../plugins/builtins/index.js";
 import { listAudioAssets, readExpectedAudioAsset } from "../../storage/audio-assets.js";
-import { updateAudioJob } from "../../storage/audio-jobs.js";
+import { createAudioJob, listAudioJobs, updateAudioJob } from "../../storage/audio-jobs.js";
+import { isStorageCommitOutcomeUnknownError } from "../../storage/persistence.js";
 import { storageScopeKey } from "../../storage/scope.js";
 import { sessionErrorMessage } from "../chat/error-routing.js";
 import { audioMessage as m } from "./audio-messages.js";
+import { invalidateSessionState } from "../session/session-state-events.js";
 
 const activeJobs = new Map<string | symbol, Set<string>>();
+const jobSource = Symbol("audio-jobs");
+
+/** A first saved job keeps recovery tools available even if its connection was removed during admission. */
+export async function createSessionAudioJob(...args: Parameters<typeof createAudioJob>): Promise<AudioJob> {
+  const [storageDirectory, sessionId] = args;
+  const firstJob = (await listAudioJobs(storageDirectory, sessionId)).length === 0;
+  const notify = () => {
+    if (firstJob) invalidateSessionState(storageDirectory, { sessionId, source: jobSource, target: "tools" });
+  };
+  try {
+    const job = await createAudioJob(...args);
+    notify();
+    return job;
+  } catch (error) {
+    if (isStorageCommitOutcomeUnknownError(error)) notify();
+    throw error;
+  }
+}
 
 export function audioJobIsActive(storageDirectory: string | undefined, jobId: string): boolean {
   return activeJobs.get(storageScopeKey(storageDirectory))?.has(jobId) ?? false;

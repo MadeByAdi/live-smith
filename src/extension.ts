@@ -16,12 +16,19 @@ import {
   objectInteractionContext,
 } from "./live/context.js";
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
+import { createMcpService } from "./app/mcp/service.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
 export function activate(activation: ActivationContext) {
   const context = initialize(activation, "1.0.0");
-  const windowHost = createWindowHostController(context, { liveMutationQueue: new LiveMutationQueue(), openOAuthAuthorizationUrl });
+  const liveMutationQueue = new LiveMutationQueue();
+  const storageDirectory = context.environment.storageDirectory;
+  const mcpService = storageDirectory ? createMcpService({ context, storageDirectory, liveMutationQueue,
+    openSession: sessionId => windowHost.openSession(sessionId) }) : undefined;
+  const windowHost = createWindowHostController(context, { liveMutationQueue, openOAuthAuthorizationUrl,
+    ...(mcpService ? { mcpService } : {}) });
+  if (mcpService) void mcpService.start().catch(error => showAgentError(context, error));
 
   context.commands.registerCommand("live-smith.ask-object", (arg: unknown) => {
     void askAboutObject(context, arg as Handle, windowHost).catch((error) =>

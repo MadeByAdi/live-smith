@@ -318,6 +318,8 @@ function sourceLabel(source: import("../agent/action-schema.js").SampleSource): 
   switch (source.kind) {
     case "selected":
       return m("selected Live object");
+    case "session_audio_attachment":
+      return m("Session audio attachment {attachmentId}", { attachmentId: source.attachmentId });
     case "request_audio_attachment":
       return m("current request audio input {number}", { number: source.audioIndex + 1 });
     case "audio_asset":
