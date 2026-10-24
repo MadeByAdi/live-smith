@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AgentPartialCompletionError } from "../../../src/agent/loop.js";
+import { normalizeCodexSearchOutput } from "../../../src/model/oauth/codex-search-output.js";
 import {
   cloneState,
   commandCalls,
@@ -903,6 +904,242 @@ test("assistant Web Search citations render as bounded source links", async () =
     assert.equal(links[0]?.textContent, "Official source");
     assert.equal(links[0]?.target, "_blank");
     assert.equal(links[0]?.rel, "noopener noreferrer");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("saved answers omit unresolved citation markers while retaining links and code examples", async () => {
+  const state = stateFixture();
+  state.events = [{
+    id: "event-citation-markers",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: "120 BPM.citeturn0search0turn0search1 G minor. [Source](https://example.test/source)\n\n`citeturn0search0`\n\n```text\nciteturn0search1\n```",
+    citations: [{ url: "https://example.test/source", title: "Source" }],
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    const content = harness.document.querySelector(".timeline-item.assistant .timeline-content");
+    assert.ok(content);
+    assert.equal(content.querySelector("p")?.textContent, "120 BPM. G minor. Source");
+    assert.deepEqual([...content.querySelectorAll("code")].map(code => code.textContent), [
+      "citeturn0search0", "citeturn0search1\n",
+    ]);
+    assert.equal(content.querySelector<HTMLAnchorElement>("p a")?.href, "https://example.test/source");
+    assert.equal(content.querySelector<HTMLAnchorElement>(".citation-source-list a")?.href, "https://example.test/source");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("converted search citations render as safe inline source links", async () => {
+  const state = stateFixture();
+  state.events = [{
+    id: "event-inline-source-links",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: "120 BPM.[Song &#91;analysis&#93;](<https://example.test/path_(1)>) [&#42;&#42;Report&#42;&#42; &#60;note&#62;](<https://example.test/report>)",
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    const content = harness.document.querySelector(".timeline-item.assistant .timeline-content");
+    assert.ok(content);
+    const links = [...content.querySelectorAll<HTMLAnchorElement>("a")];
+    assert.deepEqual(links.map(link => [link.textContent, link.href, link.target, link.rel]), [
+      ["Song [analysis]", "https://example.test/path_(1)", "_blank", "noopener noreferrer"],
+      ["**Report** <note>", "https://example.test/report", "_blank", "noopener noreferrer"],
+    ]);
+    assert.equal(content.querySelector("strong, note"), null);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("search source titles cannot add nested links to converted citations", async () => {
+  const state = stateFixture();
+  const titles = [
+    "Article [click](https://user:secret@evil.test/path)",
+    "Article [click][evil]",
+    "Report &amp; details",
+    "Source citeturn0search0 😄",
+  ];
+  state.events = titles.map((title, index) => ({
+    id: `event-untrusted-source-title-${index}`,
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: normalizeCodexSearchOutput("120 BPM.citeturn0search0", [{
+      type: "text_result", ref_id: "turn0search0", url: "https://example.test/source",
+      title,
+    }]).content + "\n\n[evil]: https://user:secret@evil.test/path\n[click]: https://user:secret@evil.test/path",
+  }));
+  const harness = await createDialogHarness(state);
+  try {
+    const contents = [...harness.document.querySelectorAll(".timeline-item.assistant .timeline-content")];
+    assert.equal(contents.length, titles.length);
+    for (const [index, content] of contents.entries()) {
+      const links = [...content.querySelectorAll<HTMLAnchorElement>("a")];
+      assert.deepEqual(links.map(link => [link.textContent, link.href]), [
+        [titles[index], "https://example.test/source"],
+      ]);
+    }
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("converted citation titles remain intact inside Markdown table cells", async () => {
+  const state = stateFixture();
+  const citation = normalizeCodexSearchOutput("citeturn0search0", [{
+    type: "text_result", ref_id: "turn0search0", url: "https://example.test/source",
+    title: "BPM & Key | SongBPM",
+  }]).content;
+  state.events = [{
+    id: "event-table-citation",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: `| Tempo | Source |\n| --- | --- |\n| 120 BPM | ${citation} |`,
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    const cells = [...harness.document.querySelectorAll(".timeline-item.assistant tbody td")];
+    assert.deepEqual(cells.map(cell => cell.textContent), ["120 BPM", "BPM & Key | SongBPM"]);
+    assert.equal(cells[1]?.querySelector<HTMLAnchorElement>("a")?.href, "https://example.test/source");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("converted citation destinations retain their literal URL semantics", async () => {
+  const urls = [
+    "https://example.test/?x=&copy;",
+    "https://good.test&commat;evil.test/",
+    "https://user&colon;pass&commat;evil.test/",
+    "https://example.test/a|b",
+    "https://example.test/a%2Fb?q=one%26two#x%20y",
+  ];
+  const state = stateFixture();
+  state.events = urls.map((url, index) => ({
+    id: `event-literal-citation-url-${index}`,
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: "| Source |\n| --- |\n| " + normalizeCodexSearchOutput("citeturn0search0", [{
+      type: "text_result", ref_id: "turn0search0", url, title: "Source",
+    }]).content + " |",
+  }));
+  const harness = await createDialogHarness(state);
+  try {
+    const contents = [...harness.document.querySelectorAll(".timeline-item.assistant .timeline-content")];
+    assert.equal(contents.length, urls.length);
+    for (const [index, content] of contents.entries()) {
+      assert.equal(content.querySelectorAll("tbody td").length, 1);
+      const links = [...content.querySelectorAll<HTMLAnchorElement>("a")];
+      assert.deepEqual(links.map(link => [link.textContent, link.href]), [["Source", urls[index]]]);
+      assert.equal(new URL(links[0]!.href).username, "");
+    }
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("citation markers end automatic URLs without changing their destination", async () => {
+  const original = "See https://example.test/pageciteturn0search0";
+  const converted = normalizeCodexSearchOutput(original, [{
+    type: "text_result", ref_id: "turn0search0", url: "https://example.test/source", title: "Source",
+  }]).content;
+  const state = stateFixture();
+  state.events = [converted, original, "See https://example.test/pageci"].map((content, index) => ({
+    id: `event-url-citation-boundary-${index}`,
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content,
+  }));
+  const harness = await createDialogHarness(state);
+  try {
+    const contents = [...harness.document.querySelectorAll(".timeline-item.assistant .timeline-content")];
+    assert.deepEqual(contents.map(content => [...content.querySelectorAll<HTMLAnchorElement>("a")].map(link => link.href)), [
+      ["https://example.test/page", "https://example.test/source"],
+      ["https://example.test/page"],
+      ["https://example.test/page"],
+    ]);
+    for (const content of contents) assert.doesNotMatch(content.textContent ?? "", /|turn0search/);
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("citation source analysis follows GFM table cells and strikethrough boundaries", async () => {
+  const state = stateFixture();
+  const source = "| Note | Source |\n| --- | --- |\n| A ` character | Fact.citeturn0search0 |\n| Another ` character | Other fact.citeturn0search0 |\n\n~~citeturn0search0~~";
+  state.events = [{
+    id: "event-gfm-citation-context",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: normalizeCodexSearchOutput(source, [{
+      type: "text_result", ref_id: "turn0search0", url: "https://example.test/source", title: "Source",
+    }]).content,
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    const content = harness.document.querySelector(".timeline-item.assistant .timeline-content");
+    assert.ok(content);
+    const rows = [...content.querySelectorAll("tbody tr")];
+    assert.deepEqual(rows.map(row => [...row.querySelectorAll<HTMLAnchorElement>("a")].map(link => link.href)), [
+      ["https://example.test/source"], ["https://example.test/source"],
+    ]);
+    assert.equal(content.querySelector("del a")?.textContent, "Source");
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.close();
+  }
+});
+
+test("streaming citation markers stay hidden across token boundaries without swallowing following text", async () => {
+  const harness = await createDialogHarness();
+  try {
+    harness.holdNextSend();
+    harness.input("#prompt", "Find the tempo");
+    harness.click("#sendButton");
+    await Promise.resolve();
+    const sendId = harness.sendIds[0];
+    assert.ok(sendId);
+    for (const delta of ["120 BPM.", "", "ci", "te", "turn0", "search0turn0search1", "", " G minor."]) {
+      harness.emitServerEvent({ type: "assistant_delta", sendId, sessionId: "session-1", delta });
+      harness.flushAnimationFrames();
+      const draft = harness.document.querySelector(".timeline-item.assistant.streaming .timeline-content");
+      assert.equal(draft?.textContent, delta === " G minor." ? "120 BPM. G minor." : "120 BPM.");
+    }
+    assert.deepEqual(harness.errors, []);
+  } finally {
+    harness.releaseHeldSend();
+    await harness.settle();
+    harness.close();
+  }
+});
+
+test("inert HTML and image labels omit unresolved citation markers", async () => {
+  const state = stateFixture();
+  state.events = [{
+    id: "event-inert-citation-markers",
+    createdAt: "2026-08-06T00:00:00.000Z",
+    kind: "assistant",
+    content: "<div>120 BPM.citeturn0search0 G minor.</div>\n\n![Sourceciteturn0search1](https://example.test/image.png)",
+  }];
+  const harness = await createDialogHarness(state);
+  try {
+    const content = harness.document.querySelector(".timeline-item.assistant .timeline-content");
+    assert.ok(content);
+    assert.match(content.textContent ?? "", /<div>120 BPM\. G minor\.<\/div>/);
+    assert.match(content.textContent ?? "", /Source/);
+    assert.doesNotMatch(content.textContent ?? "", /|turn0search/);
+    assert.equal(content.querySelector("img"), null);
     assert.deepEqual(harness.errors, []);
   } finally {
     harness.close();

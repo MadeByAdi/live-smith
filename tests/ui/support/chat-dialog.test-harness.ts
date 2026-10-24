@@ -69,6 +69,7 @@ interface DialogHarness {
     field?: string,
     details?: {
       commandOutcome?: "stopped" | "unknown";
+      displayMessage?: unknown;
       reconciliationRequired?: boolean;
       state?: ChatBridgeState;
       status?: number;
@@ -380,6 +381,8 @@ function stateFixture(): ChatBridgeState {
       approvalMode: "manual",
       defaultFollowUpBehavior: "queue",
       defaultFollowUpBehaviorRevision: "0",
+      interfaceMode: "modal",
+      interfaceModeRevision: "0",
       uiLanguage: "system",
       uiLanguageRevision: "0",
       customInstructions: "",
@@ -453,7 +456,9 @@ async function createDialogHarness(
     initialCommandError?: string;
     holdInitialCommand?: boolean;
     holdInitialCommandResponse?: boolean;
+    defaultStopTerminal?: boolean;
     toolCatalogResponse?: (state: ChatBridgeState, signal?: AbortSignal | null) => Promise<ChatBridgeState>;
+    sessionPreviewResponse?: (input: { sessionId: string; offset: number }) => unknown;
   } = {},
 ): Promise<DialogHarness> {
   const calls: BridgeCall[] = [];
@@ -483,6 +488,7 @@ async function createDialogHarness(
     error: string;
     field?: string;
     commandOutcome?: "stopped" | "unknown";
+    displayMessage?: unknown;
     reconciliationRequired?: boolean;
     state?: ChatBridgeState;
     status?: number;
@@ -938,6 +944,10 @@ async function createDialogHarness(
         serverState.settings.sessionTabs = [...event.sessionTabs];
         serverState.settings.sessionTabsRevision = event.sessionTabsRevision;
       }
+      if ((event.interfaceMode === "modal" || event.interfaceMode === "browser") && typeof event.interfaceModeRevision === "string") {
+        serverState.settings.interfaceMode = event.interfaceMode;
+        serverState.settings.interfaceModeRevision = event.interfaceModeRevision;
+      }
       if (isUiLanguage(event.uiLanguage) &&
           typeof event.uiLanguageRevision === "string") {
         serverState.settings.uiLanguage = event.uiLanguage;
@@ -959,6 +969,8 @@ async function createDialogHarness(
       event.customInstructions ??= serverState.settings.customInstructions;
       event.customInstructionsRevision ??=
         serverState.settings.customInstructionsRevision;
+      if (!Object.hasOwn(event, "interfaceMode")) event.interfaceMode = serverState.settings.interfaceMode;
+      if (!Object.hasOwn(event, "interfaceModeRevision")) event.interfaceModeRevision = serverState.settings.interfaceModeRevision;
       if (!Object.hasOwn(event, "uiLanguage")) event.uiLanguage = serverState.settings.uiLanguage;
       if (!Object.hasOwn(event, "uiLanguageRevision")) event.uiLanguageRevision = serverState.settings.uiLanguageRevision;
     }
@@ -1228,6 +1240,12 @@ async function createDialogHarness(
             const body = typeof init?.body === "string"
               ? JSON.parse(init.body) as unknown
               : undefined;
+            if (url.pathname === "/session-preview") {
+              const previewInput = body as { sessionId: string; offset: number };
+              return response(options.sessionPreviewResponse?.(previewInput) ?? {
+                ...previewInput, title: "History", total: 0, messages: [], artifacts: [], artifactCount: 0,
+              });
+            }
             if (url.pathname === "/send") {
               const headers = init?.headers as Record<string, string> | undefined;
               sendIds.push(headers?.["X-Live-Smith-Send-Id"] ?? "");
@@ -1555,6 +1573,7 @@ async function createDialogHarness(
                 defaultFollowUpBehavior?: "queue" | "steer";
                 showContextUsage?: boolean;
                 sessionTabs?: SessionShortcutId[];
+                interfaceMode?: "modal" | "browser";
                 uiLanguage?: UiLanguage;
                 networkProxy?: NetworkProxySettings;
                 integrationConnections?: import("../../../src/plugins/integration-connections.js").IntegrationConnectionsSettingsPatch;
@@ -1569,6 +1588,8 @@ async function createDialogHarness(
                   "xhigh" | "max" | "ultra" | null;
                 sessionId?: string;
                 skillIds?: string[];
+                skillId?: string;
+                sha256?: string;
                 pluginId?: string;
                 serverId?: string;
                 enabled?: boolean;
@@ -1608,8 +1629,11 @@ async function createDialogHarness(
                 typeof command.serverId === "string" &&
                 typeof command.approved === "boolean"
               ) {
-                const server = serverState.plugins.find((entry) => entry.id === command.pluginId)
-                  ?.mcpServers.find((entry) => entry.id === command.serverId);
+                const plugin = serverState.plugins.find((entry) => entry.id === command.pluginId);
+                if (plugin && plugin.sha256 !== command.sha256) {
+                  return failedResponse({ commandId, error: "Plugin package changed. Review its permissions and try again." }, 409, "Conflict");
+                }
+                const server = plugin?.mcpServers.find((entry) => entry.id === command.serverId);
                 if (server) {
                   server.approved = command.approved;
                   if (!command.approved) {
@@ -1624,8 +1648,11 @@ async function createDialogHarness(
                 (command.permission === "input" || command.permission === "output") &&
                 typeof command.approved === "boolean"
               ) {
-                const server = serverState.plugins.find((entry) => entry.id === command.pluginId)
-                  ?.mcpServers.find((entry) => entry.id === command.serverId);
+                const plugin = serverState.plugins.find((entry) => entry.id === command.pluginId);
+                if (plugin && plugin.sha256 !== command.sha256) {
+                  return failedResponse({ commandId, error: "Plugin package changed. Review its permissions and try again." }, 409, "Conflict");
+                }
+                const server = plugin?.mcpServers.find((entry) => entry.id === command.serverId);
                 if (server?.type === "stdio" && server.approved) {
                   if (command.permission === "input") server.artifactInputApproved = command.approved;
                   else server.artifactOutputApproved = command.approved;
@@ -1692,6 +1719,9 @@ async function createDialogHarness(
                 } else if (command.sessionTabs) {
                   serverState.settings.sessionTabs = [...command.sessionTabs];
                   serverState.settings.sessionTabsRevision = String(BigInt(serverState.settings.sessionTabsRevision) + 1n);
+                } else if (command.interfaceMode) {
+                  serverState.settings.interfaceMode = command.interfaceMode;
+                  serverState.settings.interfaceModeRevision = String(BigInt(serverState.settings.interfaceModeRevision) + 1n);
                 } else if (command.uiLanguage) {
                   serverState.settings.uiLanguage = command.uiLanguage;
                   serverState.settings.uiLanguageRevision = String(BigInt(serverState.settings.uiLanguageRevision) + 1n);
@@ -1967,18 +1997,21 @@ async function createDialogHarness(
                 ) ?? [];
                 synchronizeActiveSessionProjection();
               } else if (
-                command.kind === "set_session_skills" &&
-                command.sessionId &&
-                Array.isArray(command.skillIds)
+                (command.kind === "set_session_skills" && Array.isArray(command.skillIds) ||
+                  command.kind === "remove_session_skill" && typeof command.skillId === "string") &&
+                command.sessionId
               ) {
                 const session = [
                   ...serverState.sessions,
                   ...serverState.previousSessions,
                   ...serverState.archivedSessions,
                 ].find((entry) => entry.id === command.sessionId);
-                if (session) session.activeSkillIds = [...command.skillIds].sort();
+                const skillIds = command.kind === "remove_session_skill"
+                  ? (session?.activeSkillIds ?? []).filter((skillId) => skillId !== command.skillId)
+                  : [...command.skillIds!].sort();
+                if (session) session.activeSkillIds = skillIds;
                 if (serverState.activeSessionId === command.sessionId) {
-                  serverState.activeSkillIds = [...command.skillIds].sort();
+                  serverState.activeSkillIds = [...skillIds];
                 }
               } else if (command.kind === "restore_session" && command.sessionId) {
                 const restored = serverState.previousSessions.find(
@@ -2269,7 +2302,8 @@ async function createDialogHarness(
                   commandId,
                 });
               }
-              const terminal = outcome?.terminal ?? stopTerminals.shift() ?? true;
+              const terminal = outcome?.terminal ?? stopTerminals.shift() ??
+                options.defaultStopTerminal ?? true;
               const sendId = outcome?.sendId ??
                 headers.get("X-Live-Smith-Send-Id") ?? "";
               return response({

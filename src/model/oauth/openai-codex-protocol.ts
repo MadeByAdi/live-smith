@@ -39,7 +39,9 @@ import {
   decodeOpenAIResponsesFailedResponse,
   decodeOpenAIResponsesTerminalTurn,
   openAIResponsesVisibleTextDelta,
+  webSearchUpdateFromOpenAIEvent,
 } from "../transports/openai-responses.js";
+import { createModelWebSearchStreamReporter, normalizeModelHostedWebSearch } from "../web-search.js";
 import { createModelReasoningStreamReporter } from "../reasoning.js";
 import {
   openAIErrorDiagnostic,
@@ -59,10 +61,12 @@ import {
   oauthRequestAsDirect,
 } from "./direct-transport-adapter.js";
 import type { OAuthModelProtocol } from "./protocol.js";
+import { createInternalWebSearchRunner, internalSearchReplayMessages } from "./internal-web-search.js";
+import { normalizeCodexSearchOutput } from "./codex-search-output.js";
 
 const codexBaseUrl = "https://chatgpt.com/backend-api/codex";
 // The catalog is filtered by Codex protocol compatibility, not product version.
-const codexCatalogCompatibilityVersion = "0.155.0";
+const codexCatalogCompatibilityVersion = "0.162.1";
 const maximumTurnStateLength = 16_384;
 const codexTurnStateByReconnectState = new WeakMap<object, string>();
 
@@ -75,6 +79,7 @@ export function createOpenAICodexProtocol(
   options: TransportFactoryOptions = {},
 ): OAuthModelProtocol {
   const fetchImpl = resolveFetchImplementation(options.fetchImpl);
+  const runSearchTurn = createInternalWebSearchRunner("ChatGPT Codex");
   return {
     async listModels(profile, credential, signal) {
       requireOpenAICredential(credential);
@@ -106,11 +111,15 @@ export function createOpenAICodexProtocol(
     async createToolTurn(request, credential) {
       requireOpenAICredential(credential);
       const directRequest = oauthRequestAsDirect(request, credential);
-      const priorTurnState = codexTurnStateForRequest(request);
       return withTransportContext(
         directRequest.runtimeProfile.profile,
         "request",
-        async () => {
+        () => runSearchTurn(request, async current => {
+          const directRequest = oauthRequestAsDirect({
+            ...current,
+            agentMessages: current.agentMessages.flatMap(internalSearchReplayMessages),
+          }, credential);
+          const priorTurnState = codexTurnStateForRequest(directRequest);
           const body = buildOpenAIResponsesBody(directRequest);
           delete body.max_output_tokens;
           if (
@@ -163,7 +172,40 @@ export function createOpenAICodexProtocol(
             responseTurnState,
             request.reconnectState,
           );
-        },
+        }, async (query, id) => {
+          const response = await fetchCodex(fetchImpl, `${codexBaseUrl}/alpha/search`, {
+            method: "POST",
+            headers: {
+              ...codexHeaders(directRequest.runtimeProfile.profile as CodexRequestProfile),
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              id,
+              model: request.runtimeProfile.model.model,
+              input: [{ type: "message", role: "user", content: [{ type: "input_text", text: query }] }],
+              commands: { search_query: [{ q: query }], response_length: "short" },
+              settings: { allowed_callers: ["direct"], external_web_access: true },
+              max_output_tokens: 4096,
+            }),
+            ...(request.signal ? { signal: request.signal } : {}),
+          }, request.signal);
+          await assertCodexResponse(response, request.signal, true);
+          const result = await readBoundedJsonResponse(response, {
+            label: "ChatGPT Codex Web Search",
+            connectionFailureOnRead: true,
+            ...(request.signal ? { signal: request.signal } : {}),
+          });
+          if (!isRecord(result) || typeof result.output !== "string" ||
+              (result.results != null && !Array.isArray(result.results))) {
+            throw new Error("ChatGPT Codex returned invalid Web Search results.");
+          }
+          const normalized = normalizeCodexSearchOutput(result.output, result.results ?? []);
+          const activity = normalizeModelHostedWebSearch({
+            id, action: "search", status: "completed", queries: [query],
+            sources: normalized.sources,
+          })!;
+          return { content: normalized.content, toolCalls: [], hostedWebSearches: [activity] };
+        }),
         request.signal,
       );
     },
@@ -233,6 +275,7 @@ async function readCodexTurn(
   reconnectState: object | undefined,
 ): Promise<ModelTurn> {
   const completedOutputItems = new Map<number, Record<string, unknown>>();
+  const reportWebSearch = createModelWebSearchStreamReporter(request.onHostedWebSearch);
   let pendingError: OpenAIErrorDiagnostic | undefined;
   let malformedPendingError = false;
   const reportReasoning = createModelReasoningStreamReporter(
@@ -278,6 +321,7 @@ async function readCodexTurn(
       }
       continue;
     }
+    await reportWebSearch(webSearchUpdateFromOpenAIEvent(event));
     const reasoningUpdate = decodeReasoningUpdate(event);
     if (reasoningUpdate) await reportReasoning(reasoningUpdate);
     const metadataTurnState = codexTurnStateFromMetadata(event);
@@ -315,17 +359,29 @@ async function readCodexTurn(
       const expectedStatus = event.type === "response.completed"
         ? "completed"
         : "incomplete";
-      const turn = decodeOpenAIResponsesTerminalTurn(
+      const turn = await decodeOpenAIResponsesTerminalTurn(
         codexTerminalResponse(event.response, expectedStatus, completedOutputItems),
         expectedStatus,
         "ChatGPT Codex",
         request.runtimeProfile.capabilities.contextWindowTokens,
+        reportWebSearch,
       );
       return withCodexTurnState(turn, turnState);
     }
     if (event.type === "response.failed") {
       const retryAfterMs = providerRetryAfterMs(response.headers);
-      throw codexProviderFailure(event.response, retryAfterMs);
+      const failed = decodeOpenAIResponsesFailedResponse(event.response, "ChatGPT Codex");
+      if (Array.isArray(failed.output)) {
+        for (const [index, item] of failed.output.entries()) {
+          await reportWebSearch(webSearchUpdateFromOpenAIEvent({
+            type: "response.output_item.done", output_index: index, item,
+          }));
+        }
+      }
+      throw openAIProviderFailure(failed, "ChatGPT Codex", {
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        unknownIsRetryable: true,
+      });
     }
     if (event.type === "response.cancelled") {
       throw new Error("ChatGPT Codex was cancelled.");
@@ -346,17 +402,6 @@ async function readCodexTurn(
     );
   }
   throw new ModelConnectionError("ChatGPT Codex stream ended without a terminal response.");
-}
-
-function codexProviderFailure(
-  value: unknown,
-  retryAfterMs: number | undefined,
-): Error {
-  const response = decodeOpenAIResponsesFailedResponse(value, "ChatGPT Codex");
-  return openAIProviderFailure(response, "ChatGPT Codex", {
-    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
-    unknownIsRetryable: true,
-  });
 }
 
 function codexTerminalResponse(

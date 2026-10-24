@@ -17,7 +17,16 @@ const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8")) as {
   entry: string;
 };
 const production = argv.includes("--production");
+const isolatedRootFlag = argv.find((value) => value.startsWith("--isolated-native-root="));
+const isolatedRoot = isolatedRootFlag?.slice("--isolated-native-root=".length);
+if (isolatedRoot !== undefined && (!production || !path.isAbsolute(isolatedRoot) ||
+  path.basename(isolatedRoot) !== "2026-10-12_isolated-live-smith-native" ||
+  !fs.statSync(isolatedRoot).isDirectory())) {
+  throw new Error("The isolated native build requires --production and its dedicated existing absolute output directory.");
+}
+const outputEntry = isolatedRoot ? path.join(isolatedRoot, manifest.entry) : manifest.entry;
 const thirdPartyNotices = fs.readFileSync("THIRD_PARTY_NOTICES.md", "utf8");
+const packageLock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
 const networkRuntimeInject = "src/runtime/network-node-globals.ts";
 
 verifySourceRuntimeBoundaries("src");
@@ -34,7 +43,7 @@ const smithCompanionCapsule = await readSmithCompanionCapsule();
 
 const buildResult = await esbuild.build({
   entryPoints: ["src/extension.ts"],
-  outfile: manifest.entry,
+  outfile: outputEntry,
   bundle: true,
   format: "cjs",
   metafile: true,
@@ -47,6 +56,9 @@ const buildResult = await esbuild.build({
   inject: [networkRuntimeInject],
   loader: { ".html": "text" },
   define: {
+    __LIVE_SMITH_ISOLATED_NATIVE_BUILD__: JSON.stringify(isolatedRoot !== undefined),
+    __LIVE_SMITH_HANDOFF_ID__: JSON.stringify(isolatedRoot ?
+      "t7-startup-isolation-lab.t7-live-smith-native-dev-20261012" : "sam-kuler.live-smith"),
     __LIVE_SMITH_MARKDOWN_RENDERER_SCRIPT__: JSON.stringify(markdownRendererScript),
     __LIVE_SMITH_PLUGIN_APPS_SCRIPT__: JSON.stringify(pluginAppsScript),
     __LIVE_SMITH_AUDIO_PARAMETERS_SCRIPT__: JSON.stringify(audioParametersScript),
@@ -66,17 +78,17 @@ const buildResult = await esbuild.build({
 
 const outputFiles = buildResult.outputFiles ?? [];
 const entryOutput = outputFiles.find((output) =>
-  path.normalize(output.path) === path.normalize(path.resolve(manifest.entry))
+  path.normalize(output.path) === path.normalize(path.resolve(outputEntry))
 );
 if (!entryOutput) throw new Error(`Build did not produce ${manifest.entry}.`);
 const bundle = entryOutput.text;
 
-assertPackagedBundleContainsThirdPartyNotices(entryOutput.contents);
+assertPackagedBundleContainsThirdPartyNotices(entryOutput.contents, packageLock);
 verifyNetworkRuntimeBundleInputs(buildResult.metafile);
 verifyBundleDoesNotUseUnsupportedGlobals(bundle, manifest.entry);
 verifyBundleEntrypointLoads(bundle, manifest.entry);
 if (production) await verifyDocumentParserBundleIsHostSafe();
-writeVerifiedBuildOutputs(outputFiles, production ? `${manifest.entry}.map` : undefined);
+writeVerifiedBuildOutputs(outputFiles, production && !isolatedRoot ? `${manifest.entry}.map` : undefined);
 
 async function verifyDocumentParserBundleIsHostSafe(): Promise<void> {
   const probeResult = await esbuild.build({

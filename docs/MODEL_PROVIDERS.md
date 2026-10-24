@@ -190,7 +190,9 @@ authorization code which the user pastes into Live Smith; the code is bounded,
 submitted only to the active Google Profile's pending attempt, and never stored
 or projected back into dialog state. Claude's loopback callback accepts only
 its exact path and state, returns inert local HTML, and closes after success,
-denial, cancellation, timeout, or backend shutdown.
+denial, cancellation, timeout, or backend shutdown. Accepted unrelated sockets
+are retired on completion. The terminal callback response has up to one second
+to flush before a non-reading peer is released.
 
 The dialog does not depend on popup support in Ableton's embedded WebView.
 After login acquisition returns a validated pending HTTPS URL, the Extension
@@ -250,6 +252,20 @@ gate unless OAuth state for that Profile actually needs retirement.
 
 #### Provider request mapping
 
+Subscription client identifiers are pinned protocol metadata:
+
+| Provider | Request identifier | Pinned version |
+| --- | --- | --- |
+| ChatGPT | Codex catalog `client_version` | [0.162.1](https://github.com/openai/codex/releases/tag/rust-v0.162.1) |
+| Claude | `claude-cli` User-Agent | [2.1.296](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md) |
+| Google | Antigravity CLI consumer User-Agent | [1.3.1](https://www.antigravity.google/docs/changelog?tab=cli#rel-cli-1.3.1) |
+
+These identifiers are independent of locally installed CLIs and the Live Smith
+release version. Updates require request-contract checks and catalog validation.
+Anthropic's `anthropic-version: 2023-06-01` selects the Messages API contract;
+dated beta headers select implemented features and are versioned separately
+from Claude Code releases. OpenAI's User-Agent identifies Live Smith itself.
+
 OpenAI OAuth sends Responses requests to
 `https://chatgpt.com/backend-api/codex/responses`. Requests use Bearer auth,
 the token-derived `chatgpt-account-id`, the Codex Responses beta header,
@@ -298,7 +314,7 @@ Account bootstrap uses `cloudcode-pa.googleapis.com`; Antigravity catalog and
 generation traffic use its `daily-cloudcode-pa.googleapis.com` product route.
 Generation sends SSE requests to
 `https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse`
-with Antigravity CLI 1.1.22's consumer HTTP identity. The request envelope
+with Antigravity CLI's pinned consumer HTTP identity. The request envelope
 contains `requestType: "agent"`, `userAgent: "antigravity"`, and one opaque
 `requestId` in `agent/<UUID>` form for each logical model request. Only physical
 connection retries reuse that ID; tool-result and output-limit continuations
@@ -324,7 +340,26 @@ citations, usage, or conflicting terminals fail explicitly instead of being
 discarded or coerced. Provider-supplied
 function-call IDs are replayed on both call and result; a Live Smith ID
 synthesized for an ID-less call remains internal and is omitted from both
-Google wire parts.
+Google wire parts. Omitted function-call arguments serialize as an explicit
+empty object on replay, including unexecuted output-limit calls. The original
+provider state and all call IDs and signatures remain unchanged. Pure empty
+text chunks are omitted from replay; empty parts
+carrying thought signatures or other provider metadata remain intact.
+Consecutive streamed thought-text fragments ending in a thought signature
+serialize as one complete signed thinking block. Each signature closes its
+block; ordinary text, function calls and other provider metadata preserve their
+boundaries. This assembly changes only the outbound copy, leaving visible
+reasoning deltas and the original provider state intact.
+
+Antigravity function schemas with a root `oneOf`, `anyOf` or `allOf` use an
+object envelope with one required `input` property. The original schema and
+its constraints remain inside that property; document-local `$ref` pointers
+move with it. Explicit nested schema resource IDs retain their own reference
+base. This encoding applies across the account's model catalog. The adapter
+unwraps valid returned arguments before tool admission, so Plugin and Live
+executors continue to consume their canonical arguments. Signed provider parts
+retain the exact wire envelope on replay. Incomplete output-limit calls remain
+unexecuted and are retained for continuation without decoding partial envelopes.
 
 #### Catalogs and send admission
 
@@ -379,8 +414,8 @@ Direct API model configurations may store maximum output tokens, temperature,
 reasoning, capability overrides, hosted-tool policy, and Extra Body.
 Direct and subscription model configurations may both store a local context
 window and automatic compaction threshold. Subscription model configurations
-otherwise store only the selected model and reasoning settings: output-token
-requests, endpoint overrides, temperature, Extra Body, hosted tools, and manual
+also store reasoning settings and the Web Search opt-in: output-token
+requests, endpoint overrides, temperature, Extra Body, and manual
 capability overrides remain rejected.
 
 The configured context window supplies the denominator when provider metadata
@@ -562,13 +597,16 @@ does not yet define a video attachment part.
 ## Input mapping
 
 Images are supported only when the saved runtime capability and evidence allow
-them. OpenAI Responses uses image data URLs, Anthropic uses base64 image source
+them. Direct API input evidence may include explicit per-model capability
+overrides; subscription input evidence comes from the current account catalog.
+OpenAI Responses uses image data URLs, Anthropic uses base64 image source
 blocks, and Antigravity uses inline data parts. Native PDF input uses OpenAI
-Responses, Anthropic Messages, or Antigravity inline data only when the loaded
-catalog or Direct API metadata supports `application/pdf`.
+Responses, Anthropic Messages, or Antigravity inline data only when the resolved
+runtime capability and evidence support PDF input.
 
 Audio input uses OpenAI Chat Completions or Antigravity inline data only when
-the loaded metadata explicitly supports WAV or MP3. Other subscription
+the resolved runtime capability and evidence support audio input. Catalog-derived
+audio evidence requires coverage of both WAV and MP3. Other subscription
 backends, OpenAI Responses, and Anthropic Messages reject audio locally. Plain
 text, code, rich documents, spreadsheets, presentations, and MIDI are extracted
 locally into bounded untrusted text and do not require native provider document
@@ -606,8 +644,62 @@ The ordered-buffer workflow and persistence boundaries are described in
 
 ## Provider-hosted Web Search
 
-Hosted Web Search is an explicit per-model Direct API setting for OpenAI
-Responses and Anthropic Messages. OAuth subscription Profiles do not expose it.
+Hosted Web Search is an explicit per-model opt-in for Direct API OpenAI
+Responses and Anthropic Messages, and for all three OAuth subscription
+providers. Direct API OpenAI Responses and Anthropic Messages, including Claude
+OAuth, use native server tools with bounded activity and opaque result replay.
+Support still depends on the selected endpoint, model and account; enabling the
+setting does not establish provider verification. Chat Completions does not
+expose hosted search.
+
+ChatGPT advertises a private query function and executes it through the Codex
+standalone `POST /alpha/search` protocol, using the same Profile credential,
+account and selected model. The auxiliary request contains the search query,
+explicit search commands and settings; full conversation history and Live tool
+results are not sent to it. The returned text becomes a function result for the
+next model turn. Explicit citation markers and source-reference headers in prose
+are expanded into Markdown links using that response's validated text-result URLs
+before replay, because independent searches can reuse reference IDs. The mdast
+parser supplies source positions with standard GFM table and strikethrough
+extensions; code, existing links, reference definitions and ordinary IDs retain
+their literal text. Link labels and destinations encode data symbols so Markdown
+and HTML parsing preserve the original source title and URL. Unresolved citation
+markers are omitted without guessing source associations. Validated text-result
+URLs also supply search activity; encrypted search output is not replayed.
+Missing or null result metadata is allowed when
+the response contains valid output text. The request and output contract follows
+the [Codex search client](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/codex-api/src/endpoint/search.rs)
+and its [tool executor](https://github.com/openai/codex/blob/rust-v0.162.0/codex-rs/ext/web-search/src/tool.rs).
+The Responses request contains ordinary functions without a native `web_search`
+tool or `max_tool_calls`; search execution obeys the local per-send allowance.
+
+Antigravity advertises a private search function alongside ordinary functions.
+The adapter executes that function through a separate `requestType: "web_search"`
+request containing only `googleSearch`, using the same Profile credential and
+project. It selects the conversation model when present in the account's
+`webSearchModelIds`, otherwise the first advertised search model. No model name
+is inferred and no other Profile or Direct API connection supplies the search.
+Only the search query enters this auxiliary request. Missing search models,
+provider rejection or absent grounding evidence return a failed search result
+to the conversation model. Ordinary function calls retain their original Live
+admission and approval path.
+
+ChatGPT and Antigravity expose query-only functions. Their search results and
+internal exchanges remain request-scoped protocol state. Connection retries
+retain accepted searches and their original allowance; OAuth refresh retains
+already-published text. Antigravity grounding metadata and Codex result records
+produce search activity, while answer citations come from the conversation
+model. Sources returned by search are not automatically promoted
+to answer citations. Search results consume the existing per-send activity
+budget, and search is omitted from workflows that request no hosted tools.
+Provider-internal exchanges also supply normalized context-estimation messages
+and the message boundary covered by exact provider usage. Search text appended
+after that boundary contributes to the next compaction decision; text already
+covered by usage is not counted twice. Displayed provider usage remains exact.
+When only private search calls complete, the adapter returns a hosted-tool
+continuation to the Agent loop. Each subsequent conversation-model request
+therefore passes through the application's compaction, steering, cancellation
+and planning limits.
 Search results and citations are untrusted data and cannot authorize tools,
 approvals, filesystem access, or Live mutations.
 
@@ -705,7 +797,9 @@ and always generates 30 seconds. A different explicit duration for that model is
 rejected before an audio job or paid request is created. Instrumental requests
 add an explicit no-vocals instruction inside the provider adapter. Batch output
 is bounded, decoded from the final documented model-output audio block, then
-inspected and saved as an ordinary Session asset.
+inspected and saved as an ordinary Session asset. After the complete HTTP body
+reaches EOF, bounded local validation and decoding finish even if Stop arrives,
+so the received result can be saved. Incomplete reads remain cancellable.
 
 The experimental `lyria-realtime-exp` model uses the official
 [Live Music WebSocket](https://ai.google.dev/api/live_music). Live Smith sends

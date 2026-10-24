@@ -64,7 +64,7 @@ export function oauthDraftAsDirect(
         maxOutputTokens: defaultOutputTokens[credential.provider],
         reasoning: model.parameters.reasoning,
       },
-      advanced: {},
+      advanced: { ...model.advanced },
     })),
   };
 }
@@ -80,7 +80,7 @@ function directRuntimeProfile(
         defaultOutputTokens[credential.provider],
       reasoning: runtime.model.parameters.reasoning,
     },
-    advanced: {},
+    advanced: { ...runtime.model.advanced },
   };
   return {
     profile: {
@@ -124,13 +124,13 @@ function requestHeaders(
       "chatgpt-account-id": credential.accountId,
       "openai-beta": "responses=experimental",
       originator: "live-smith",
-      "user-agent": "live-smith/0.2",
+      "user-agent": "live-smith",
     };
   }
   return {
     authorization: `Bearer ${credential.accessToken}`,
     "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1",
+    "user-agent": "claude-cli/2.1.296",
     "x-app": "cli",
   };
 }

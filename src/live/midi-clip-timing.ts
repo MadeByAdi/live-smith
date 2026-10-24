@@ -8,6 +8,19 @@ interface ClipTiming {
   looping: boolean; loopStart: number; loopEnd: number; muted: boolean;
 }
 
+/** Creation writes section-relative notes directly into the retained source timeline. */
+export function midiClipHasAuthoringTiming(
+  timing: Pick<ClipTiming, "duration" | "startMarker" | "endMarker" | "looping" | "loopEnd">,
+  durationBeats: number,
+  looping = timing.looping,
+): boolean {
+  return Math.abs(timing.duration - durationBeats) < 0.0001 &&
+    timing.startMarker === 0 &&
+    (looping
+      ? timing.loopEnd >= durationBeats
+      : timing.endMarker >= durationBeats);
+}
+
 /** Projects nominal note intervals into the bounded Clip span, cropping at markers and each loop boundary. */
 export function projectMidiClipNotes(notes: readonly Note[], timing: ClipTiming, maxNotes: number, signal?: AbortSignal): ProjectedNote[] {
   throwIfAborted(signal);

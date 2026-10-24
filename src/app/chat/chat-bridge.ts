@@ -1,7 +1,11 @@
+import { createSseClient } from "./sse-client.js";
+import type { ChatCommandActivity } from "../../ui/chat-state.js";
+import { isInterfaceMode, type InterfaceMode } from "../../model/interface-mode.js";
 import { Buffer } from "node:buffer";
+import { isParameterArtifactRead, type ParameterArtifactRead } from "../parameters/contracts.js";
 import { randomUUID } from "node:crypto";
 import { isSessionTabs, type SessionShortcutId } from "../../model/session-tabs.js";
-import type { UiMessage } from "../../i18n/ui-message.js";
+import { UiMessageError, type UiMessage } from "../../i18n/ui-message.js";
 import { sendMediaAssetResponse } from "./media-response.js";
 import type { IntegrationConnectionsView } from "../../plugins/integration-connections.js";
 import {
@@ -18,6 +22,8 @@ import type { SessionEvent } from "../../storage/events.js";
 import { isArtifactRef, type ArtifactRef } from "../../agent/artifact-contracts.js";
 import type { MidiArtifactDiff } from "../midi/midi-artifact-diff.js";
 import type { MidiPartPreview, SessionArtifactDetail } from "../session/session-artifacts.js";
+import { MAX_SEARCH_QUERY_LENGTH, normalizeSearchQuery, type SessionSearchInput, type SessionSearchResult } from "../session/search-contracts.js";
+import type { SessionPreview, SessionPreviewInput } from "../session/session-preview-contracts.js";
 import type { SessionAttachmentRef } from "../../storage/attachments.js";
 import type { SessionModelSelection } from "../../storage/sessions.js";
 import { isSafeStorageId } from "../../storage/id.js";
@@ -37,11 +43,13 @@ import {
   compareDefaultFollowUpBehaviorRevisions,
   compareCustomInstructionsRevisions,
   compareNetworkProxyRevisions,
+  compareInterfaceModeRevisions,
   compareUiLanguageRevisions,
   compareSessionTabsRevisions,
   isSessionTabsRevision,
   type SessionTabsRevision,
   isUiLanguage,
+  isInterfaceModeRevision,
   isUiLanguageRevision,
   type UiLanguage,
   type UiLanguageRevision,
@@ -263,12 +271,12 @@ function promptPersistenceForSendOutcome(
   return observed ?? "not_persisted";
 }
 
-export class ChatBridgeCommandOutcomeUnknownError extends Error {
+export class ChatBridgeCommandOutcomeUnknownError extends UiMessageError {
   readonly authoritativeState: ChatDialogState | undefined;
   readonly authoritativeStateAttempted: boolean;
 
   constructor(
-    message: string,
+    message: UiMessage,
     options?: ErrorOptions & { authoritativeState?: ChatDialogState | undefined },
   ) {
     super(message, options);
@@ -346,6 +354,7 @@ export interface ChatBridgeStream {
 }
 
 export interface ChatBridge {
+  readonly busy: boolean;
   url: string;
   browserUrl: string;
   publishSessionApprovalMode(
@@ -381,7 +390,10 @@ export interface ChatBridge {
 
 interface ChatBridgeOptions {
   readMidiArtifact?(sessionId: string, artifactRef: string, signal: AbortSignal): Promise<{ bytes: Uint8Array; fileName: string }>;
-  readSessionArtifacts?(input: { sessionId: string; offset: number }, signal: AbortSignal): Promise<unknown>;
+  searchSessions?(input: SessionSearchInput, signal: AbortSignal): Promise<SessionSearchResult>;
+  readSessionPreview?(input: SessionPreviewInput, signal: AbortSignal): Promise<SessionPreview>;
+  readSessionArtifacts?(input: { sessionId: string; offset: number; query?: string }, signal: AbortSignal): Promise<unknown>;
+  readDeviceParameters?(input: ParameterArtifactRead, signal: AbortSignal): Promise<unknown>;
   readSessionArtifact?(input: { sessionId: string; artifact: ArtifactRef }, signal: AbortSignal): Promise<SessionArtifactDetail>;
   readMidiArtifactDiff?(input: { sessionId: string; artifactRef: string; baseArtifactRef?: string }, signal: AbortSignal): Promise<MidiArtifactDiff>;
   readMidiPartPreview?(input: { sessionId: string; artifactRef: string; partId: string }, signal: AbortSignal): Promise<MidiPartPreview>;
@@ -399,11 +411,6 @@ interface ChatBridgeOptions {
     sessionId: string,
     signal?: AbortSignal,
   ): Promise<ChatDialogState>;
-  /** Test-only seam for exercising a slow SSE socket without patching Node globals. */
-  writeSseFrame?(
-    response: ServerResponse,
-    payload: SsePayload,
-  ): boolean;
   renderHtml(state: ChatBridgeState, bridge: { baseUrl: string; token: string }): string;
   handleCommand(
     input: ChatBridgeCommandInput,
@@ -516,6 +523,8 @@ interface PendingSendAdmission {
 }
 
 type StateChangeSsePayloadBase =
+  | { type: "command_activity"; command: ChatCommandActivity | null }
+  | { type: "send_activity"; sendId: string; sessionId: string; activity: StateChangeActivity }
   | {
       type: "steer_accepted";
       sendId: string;
@@ -589,7 +598,9 @@ type StateChangeSsePayloadBase =
       customInstructionsRevision: CustomInstructionsRevision;
       networkProxy: NetworkProxySettings;
       networkProxyRevision: NetworkProxyRevision;
+      interfaceMode: InterfaceMode;
       uiLanguage: UiLanguage;
+      interfaceModeRevision: string;
       uiLanguageRevision: UiLanguageRevision;
       sessionTabs: SessionShortcutId[];
       sessionTabsRevision: SessionTabsRevision;
@@ -706,6 +717,7 @@ type SsePayload =
       sessionId?: string;
       commandId?: string;
       message: string;
+      displayMessage?: UiMessage;
       field?: string;
       promptPersistence?: PromptPersistence;
       sendFailureKind?: ChatBridgeSendFailureKind;
@@ -718,14 +730,13 @@ export async function createChatBridge(
   options: ChatBridgeOptions,
 ): Promise<ChatBridge> {
   const token = randomUUID();
-  const browserLaunch = randomUUID();
+  let browserLaunch = randomUUID();
   const browserCookieName = `LiveSmithBridge-${randomUUID()}`;
   let browserLaunchAvailable = true;
   let appSandbox: Promise<PluginAppSandbox> | undefined;
   const appSandboxRegistrations = new Map<string, { dispose(): void }>();
   const mediaDownloads = new Map<string, { kind: "audio" | "midi"; sessionId: string; assetId: string; expiresAt: number }>();
-  const clients = new Set<ServerResponse>();
-  const backpressuredClients = new Set<ServerResponse>();
+  const clients = new Set<ReturnType<typeof createSseClient>>();
   const pendingConfirmations = new Map<string, PendingConfirmation>();
   let pendingCommandConfirmation: PendingCommandConfirmation | undefined;
   const pendingRequestBodies = new Set<IncomingMessage>();
@@ -769,6 +780,8 @@ export async function createChatBridge(
   const sessionActivities = new Map<string, ChatSessionActivity>();
   let activeCommandAbort: AbortController | null = null;
   let activeCommandId: string | null = null;
+  let commandActivity: ChatCommandActivity | null = null;
+  let hasCommandActivity = false;
   let activeCommandStopRequested = false;
   let activeCommandTerminal: Promise<void> | null = null;
   let latestGlobalSettingsChange: GlobalSettingsChange | undefined;
@@ -828,23 +841,9 @@ export async function createChatBridge(
   };
 
   const broadcast = (payload: SsePayload) => {
-    if (closing) return;
-    for (const client of backpressuredClients) {
-      backpressuredClients.delete(client);
-      client.destroy();
-    }
-    for (const client of clients) {
-      if (client.writableEnded || client.destroyed) {
-        clients.delete(client);
-      } else if (!writeSse(client, payload, options.writeSseFrame)) {
-        clients.delete(client);
-        backpressuredClients.add(client);
-        void waitForSseDrain(client).then((drained) => {
-          if (!backpressuredClients.delete(client) || !drained || closing) return;
-          clients.add(client);
-        });
-      }
-    }
+    if (closing || clients.size === 0) return;
+    const frame = `data: ${JSON.stringify(payload)}\n\n`;
+    for (const client of clients) client.send(frame);
   };
 
   const nextStateRevision = (): string =>
@@ -1006,6 +1005,8 @@ export async function createChatBridge(
       !isCustomInstructionsRevision(settings.customInstructionsRevision) ||
       !isNetworkProxySettings(settings.networkProxy) ||
       !isNetworkProxyRevision(settings.networkProxyRevision) ||
+      !isInterfaceMode(settings.interfaceMode) ||
+      !isInterfaceModeRevision(settings.interfaceModeRevision) ||
       !isUiLanguage(settings.uiLanguage) ||
       !isUiLanguageRevision(settings.uiLanguageRevision) ||
       !isSessionTabs(settings.sessionTabs) ||
@@ -1024,7 +1025,9 @@ export async function createChatBridge(
         customInstructionsRevision: settings.customInstructionsRevision,
         networkProxy: settings.networkProxy,
         networkProxyRevision: settings.networkProxyRevision,
+        interfaceMode: settings.interfaceMode,
         uiLanguage: settings.uiLanguage,
+        interfaceModeRevision: settings.interfaceModeRevision,
         uiLanguageRevision: settings.uiLanguageRevision,
         sessionTabs: settings.sessionTabs,
         sessionTabsRevision: settings.sessionTabsRevision,
@@ -1050,6 +1053,10 @@ export async function createChatBridge(
       settings.sessionTabsRevision,
       latestGlobalSettingsChange.sessionTabsRevision,
     ) > 0;
+    const interfaceModeFromState = compareInterfaceModeRevisions(
+      settings.interfaceModeRevision,
+      latestGlobalSettingsChange.interfaceModeRevision,
+    ) > 0;
     const uiLanguageFromState = compareUiLanguageRevisions(
       settings.uiLanguageRevision,
       latestGlobalSettingsChange.uiLanguageRevision,
@@ -1066,7 +1073,7 @@ export async function createChatBridge(
       contextVisibilityFromState ||
       customInstructionsFromState ||
       networkProxyFromState ||
-      uiLanguageFromState || sessionTabsFromState || audioFromState
+      interfaceModeFromState || uiLanguageFromState || sessionTabsFromState || audioFromState
     ) {
       latestGlobalSettingsChange = {
         ...latestGlobalSettingsChange,
@@ -1091,6 +1098,10 @@ export async function createChatBridge(
               customInstructionsRevision: settings.customInstructionsRevision,
             }
           : {}),
+        ...(interfaceModeFromState ? {
+          interfaceMode: settings.interfaceMode,
+          interfaceModeRevision: settings.interfaceModeRevision,
+        } : {}),
         ...(uiLanguageFromState ? {
           uiLanguage: settings.uiLanguage,
           uiLanguageRevision: settings.uiLanguageRevision,
@@ -1125,7 +1136,9 @@ export async function createChatBridge(
         customInstructions: latestGlobalSettingsChange.customInstructions,
         customInstructionsRevision:
           latestGlobalSettingsChange.customInstructionsRevision,
+        interfaceMode: latestGlobalSettingsChange.interfaceMode,
         uiLanguage: latestGlobalSettingsChange.uiLanguage,
+        interfaceModeRevision: latestGlobalSettingsChange.interfaceModeRevision,
         uiLanguageRevision: latestGlobalSettingsChange.uiLanguageRevision,
         sessionTabs: latestGlobalSettingsChange.sessionTabs,
         sessionTabsRevision: latestGlobalSettingsChange.sessionTabsRevision,
@@ -1628,6 +1641,8 @@ export async function createChatBridge(
         "/session-tools",
         "/midi-import-preview",
         "/session-artifacts",
+        "/session-search",
+        "/session-preview",
         "/session-artifact",
         "/midi-artifact-diff",
         "/midi-artifact-preview",
@@ -1858,12 +1873,8 @@ export async function createChatBridge(
           Connection: "keep-alive",
           "Content-Type": "text/event-stream",
         });
-        if (!response.write("\n")) {
-          backpressuredClients.add(response);
-          const drained = await waitForSseDrain(response);
-          backpressuredClients.delete(response);
-          if (!drained) return;
-        }
+        const client = createSseClient(response, () => clients.delete(client));
+        clients.add(client);
         const replayPayloads: SsePayload[] = [];
         const replay = (payload: SsePayload): void => {
           replayPayloads.push(payload);
@@ -1898,6 +1909,9 @@ export async function createChatBridge(
         }
         for (const activeSend of activeSendsById.values()) {
           if (activeSend.stopRequested) continue;
+          const activity = sessionActivities.get(activeSend.sessionId)!;
+          replay({ type: "send_activity", sendId: activeSend.sendId, sessionId: activeSend.sessionId,
+            activity: stateChangeActivity(activity), bridgeStateRevision: nextStateRevision() });
           replay(modelTurnStatePayload(activeSend));
         }
         for (const [id, pending] of pendingConfirmations) {
@@ -1923,23 +1937,14 @@ export async function createChatBridge(
             bridgeStateRevision: nextStateRevision(),
           });
         }
+        if (hasCommandActivity) replay({ type: "command_activity", command: commandActivity, bridgeStateRevision: nextStateRevision() });
         if (pendingCommandConfirmation) {
           const { id, commandId, sessionId, request: confirmation } = pendingCommandConfirmation;
           replay({ type: "command_confirm_request", id, commandId, sessionId, ...confirmation });
         }
-        for (const payload of replayPayloads) {
-          if (writeSse(response, payload, options.writeSseFrame)) continue;
-          if (response.writableEnded || response.destroyed) return;
-          backpressuredClients.add(response);
-          const drained = await waitForSseDrain(response);
-          backpressuredClients.delete(response);
-          if (!drained) return;
-        }
-        clients.add(response);
-        request.on("close", () => {
-          clients.delete(response);
-          backpressuredClients.delete(response);
-        });
+        // Replay is one initial write, so large retained state can drain before
+        // later live publications enter the bounded pending queue.
+        client.send("\n" + replayPayloads.map(payload => `data: ${JSON.stringify(payload)}\n\n`).join(""));
         return;
       }
 
@@ -2180,16 +2185,57 @@ export async function createChatBridge(
         return;
       }
 
+      if (request.method === "POST" && url.pathname === "/session-search") {
+        if (!options.searchSessions) { request.resume(); response.writeHead(404).end("Not found"); return; }
+        assertExactQueryParameters(url, ["token"], "Session search");
+        const input = await readRequestBody(request) as Record<string, unknown>;
+        if (!input || typeof input !== "object" || Array.isArray(input) ||
+            Object.keys(input).some(key => !["query", "offset"].includes(key)) ||
+            typeof input.query !== "string" || input.query.length > MAX_SEARCH_QUERY_LENGTH ||
+            input.offset !== undefined && (!Number.isSafeInteger(input.offset) || (input.offset as number) < 0)) {
+          throw new ChatBridgeRequestValidationError("Session search query or page is invalid.");
+        }
+        sendJson(response, await options.searchSessions({ query: normalizeSearchQuery(input.query), offset: input.offset as number ?? 0 },
+          beginReadOnlyBuild(response, handlerTerminal)));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/session-preview") {
+        if (!options.readSessionPreview) { request.resume(); response.writeHead(404).end("Not found"); return; }
+        assertExactQueryParameters(url, ["token"], "Session preview");
+        const input = await readRequestBody(request) as Record<string, unknown>;
+        if (!input || typeof input !== "object" || Array.isArray(input) ||
+            Object.keys(input).some((key) => !["sessionId", "offset"].includes(key)) ||
+            !isSafeStorageId(input.sessionId) || !Number.isSafeInteger(input.offset) || (input.offset as number) < 0) {
+          throw new ChatBridgeRequestValidationError("Choose a historical Session and preview page.");
+        }
+        sendJson(response, await options.readSessionPreview({ sessionId: input.sessionId, offset: input.offset as number },
+          beginReadOnlyBuild(response, handlerTerminal)));
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/device-parameters") {
+        if (!options.readDeviceParameters) { request.resume(); response.writeHead(404).end("Not found"); return; }
+        assertExactQueryParameters(url, ["token"], "Device parameters");
+        const input = await readRequestBody(request);
+        if (!isParameterArtifactRead(input)) throw new ChatBridgeRequestValidationError("Choose a Session and device parameter version.");
+        sendJson(response, await options.readDeviceParameters(input, beginReadOnlyBuild(response, handlerTerminal)));
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/session-artifacts") {
         if (!options.readSessionArtifacts) { request.resume(); response.writeHead(404).end("Not found"); return; }
         assertExactQueryParameters(url, ["token"], "Session artifacts");
         const input = await readRequestBody(request) as Record<string, unknown>;
         if (!input || typeof input !== "object" || Array.isArray(input) ||
-            Object.keys(input).some((key) => !["sessionId", "offset"].includes(key)) || !isSafeStorageId(input.sessionId) ||
+            Object.keys(input).some((key) => !["sessionId", "offset", "query"].includes(key)) || !isSafeStorageId(input.sessionId) ||
+            input.query !== undefined && (typeof input.query !== "string" || input.query.length > MAX_SEARCH_QUERY_LENGTH) ||
             input.offset !== undefined && (!Number.isSafeInteger(input.offset) || (input.offset as number) < 0)) {
           throw new ChatBridgeRequestValidationError("Choose a Session artifact page.");
         }
-        sendJson(response, await options.readSessionArtifacts({ sessionId: input.sessionId, offset: input.offset as number ?? 0 }, beginReadOnlyBuild(response, handlerTerminal)));
+        const query = typeof input.query === "string" ? normalizeSearchQuery(input.query) : "";
+        sendJson(response, await options.readSessionArtifacts({ sessionId: input.sessionId, offset: input.offset as number ?? 0,
+          ...(query ? { query } : {}) }, beginReadOnlyBuild(response, handlerTerminal)));
         return;
       }
 
@@ -2363,6 +2409,9 @@ export async function createChatBridge(
             }, 409);
             return;
           }
+          commandActivity = { id: commandId, sessionId: "sessionId" in input ? input.sessionId : null, stopping: false };
+          hasCommandActivity = true;
+          broadcastStateChange({ type: "command_activity", command: commandActivity });
           const confirmationCommandId = commandId;
           const commandState = await options.handleCommand(
             input,
@@ -2553,11 +2602,13 @@ export async function createChatBridge(
         sendAdmission = undefined;
         activeSendsById.set(sendId, activeSend);
         activeSendsBySession.set(input.sessionId, activeSend);
-        updateActivity(input.sessionId, "running", {
+        const activity = updateActivity(input.sessionId, "running", {
           sendId,
           message: "Starting agent loop",
           unread: false,
         });
+        broadcastStateChange({ type: "send_activity", sendId, sessionId: input.sessionId,
+          activity: stateChangeActivity(activity) });
         let sendOutcomeError: unknown;
         try {
           const stream = createStream(activeSend, (event) => {
@@ -2809,6 +2860,10 @@ export async function createChatBridge(
           if (!matchesActiveCommand) retainCommandId(stopTarget.id, "stopped");
           if (matchesActiveCommand && activeCommandAbort) {
             activeCommandStopRequested = true;
+            if (commandActivity) {
+              commandActivity = { ...commandActivity, stopping: true };
+              broadcastStateChange({ type: "command_activity", command: commandActivity });
+            }
             activeCommandAbort.abort(new ChatBridgeCommandStoppedError());
           }
           sendJson(response, {
@@ -2856,7 +2911,7 @@ export async function createChatBridge(
       if (pluginBodyMayBeUnread) request.resume();
       if (
         request.method === "POST" &&
-        ["/command", "/session-model-capabilities", "/session-tools", "/midi-import-preview", "/session-artifacts", "/session-artifact", "/midi-artifact-diff", "/midi-artifact-preview", "/confirm", "/send", "/steer", "/stop",
+        ["/command", "/session-model-capabilities", "/session-tools", "/midi-import-preview", "/session-artifacts", "/session-search", "/session-preview", "/session-artifact", "/midi-artifact-diff", "/midi-artifact-preview", "/confirm", "/send", "/steer", "/stop",
           "/plugin-apps/open", "/plugin-apps/call", "/plugin-apps/resource", "/plugin-apps/close", "/plugin-apps/resources", "/plugin-apps/resource-templates"].includes(
           requestPath,
         )
@@ -2864,6 +2919,9 @@ export async function createChatBridge(
       const reportedError = error instanceof ChatBridgeSendFailureError
         ? error.originalError
         : error;
+      const displayMessage = (requestPath === "/command" || requestPath === "/device-parameters") &&
+        reportedError instanceof UiMessageError && typeof reportedError.displayMessage === "object"
+        ? reportedError.displayMessage : undefined;
       const attachmentRequest = requestPath === "/attachments" ||
         requestPath.startsWith("/attachments/");
       const attachmentMutation = attachmentRequest && (request.method === "POST" || request.method === "DELETE");
@@ -2965,6 +3023,7 @@ export async function createChatBridge(
           ...(sendSessionId === undefined ? {} : { sessionId: sendSessionId }),
           ...(commandId === undefined ? {} : { commandId }),
           message,
+          ...(displayMessage === undefined ? {} : { displayMessage }),
           ...(field === undefined ? {} : { field }),
           ...(promptPersistence === undefined ? {} : { promptPersistence }),
           ...(sendFailureKind === undefined ? {} : { sendFailureKind }),
@@ -2983,6 +3042,7 @@ export async function createChatBridge(
         response,
         {
           error: message,
+          ...(displayMessage === undefined ? {} : { displayMessage }),
           ...(commandId === undefined ? {} : { commandId }),
           ...(field === undefined ? {} : { field }),
           ...(promptPersistence === undefined ? {} : { promptPersistence }),
@@ -3030,6 +3090,10 @@ export async function createChatBridge(
         activeCommandAbort = null;
         activeCommandId = null;
         activeCommandStopRequested = false;
+        if (commandActivity) {
+          commandActivity = null;
+          broadcastStateChange({ type: "command_activity", command: null });
+        }
       }
       if (
         attachmentSessionId !== undefined &&
@@ -3069,8 +3133,13 @@ export async function createChatBridge(
   };
 
   return {
+    get busy() { return pendingSendAdmissions.size > 0 || activeSendsById.size > 0 || activeCommandId !== null || inFlightMutationHandlers.size > 0; },
     url: `${bridgeBaseUrl(server)}/chat?token=${token}`,
-    browserUrl: `${bridgeBaseUrl(server)}/chat?launch=${browserLaunch}`,
+    get browserUrl() {
+      browserLaunch = randomUUID();
+      browserLaunchAvailable = true;
+      return `${bridgeBaseUrl(server)}/chat?launch=${browserLaunch}`;
+    },
     createAudioDownload: (sessionId, assetId, signal) => createMediaDownload("audio", sessionId, assetId, signal),
     createMidiDownload: (sessionId, assetId, signal) => createMediaDownload("midi", sessionId, assetId, signal),
     waitForFrontendClose: () => frontendClosed,
@@ -3170,6 +3239,10 @@ export async function createChatBridge(
           change.sessionTabsRevision,
           latestGlobalSettingsChange.sessionTabsRevision,
         );
+        const interfaceModeOrder = compareInterfaceModeRevisions(
+          change.interfaceModeRevision,
+          latestGlobalSettingsChange.interfaceModeRevision,
+        );
         const uiLanguageOrder = compareUiLanguageRevisions(
           change.uiLanguageRevision,
           latestGlobalSettingsChange.uiLanguageRevision,
@@ -3186,6 +3259,10 @@ export async function createChatBridge(
             sessionTabsOrder === 0 &&
             (change.sessionTabs.length !== latestGlobalSettingsChange.sessionTabs.length ||
               change.sessionTabs.some((tab, index) => tab !== latestGlobalSettingsChange!.sessionTabs[index]))
+          ) ||
+          (
+            interfaceModeOrder === 0 &&
+            change.interfaceMode !== latestGlobalSettingsChange.interfaceMode
           ) ||
           (
             uiLanguageOrder === 0 &&
@@ -3221,6 +3298,7 @@ export async function createChatBridge(
             customInstructionsOrder <= 0 &&
             networkProxyOrder <= 0 &&
             audioOrder <= 0 &&
+            interfaceModeOrder <= 0 &&
             uiLanguageOrder <= 0 &&
             sessionTabsOrder <= 0 &&
             !(
@@ -3230,6 +3308,7 @@ export async function createChatBridge(
               customInstructionsOrder === 0 &&
               networkProxyOrder === 0 &&
               audioOrder === 0 &&
+              interfaceModeOrder === 0 &&
               uiLanguageOrder === 0 &&
               sessionTabsOrder === 0
             )
@@ -3262,6 +3341,12 @@ export async function createChatBridge(
           sessionTabsRevision: sessionTabsOrder > 0
             ? change.sessionTabsRevision
             : latestGlobalSettingsChange.sessionTabsRevision,
+          interfaceMode: interfaceModeOrder > 0
+            ? change.interfaceMode
+            : latestGlobalSettingsChange.interfaceMode,
+          interfaceModeRevision: interfaceModeOrder > 0
+            ? change.interfaceModeRevision
+            : latestGlobalSettingsChange.interfaceModeRevision,
           uiLanguage: uiLanguageOrder > 0
             ? change.uiLanguage
             : latestGlobalSettingsChange.uiLanguage,
@@ -3304,12 +3389,8 @@ export async function createChatBridge(
       mediaDownloads.clear();
       const mutationTerminals = [...inFlightMutationHandlers];
       const pendingReads = [...readOnlyBuilds.entries()];
-      const connectedClients = new Set([
-        ...clients,
-        ...backpressuredClients,
-      ]);
+      const connectedClients = [...clients];
       clients.clear();
-      backpressuredClients.clear();
       sendStopTombstones.clear();
       retainedCommandIds.clear();
       for (const request of pendingRequestBodies) request.destroy();
@@ -3329,7 +3410,7 @@ export async function createChatBridge(
         read.controller.abort(new Error("Live Smith window closed."));
       }
       for (const [response] of pendingReads) response.destroy();
-      for (const client of connectedClients) client.end();
+      for (const client of connectedClients) client.close();
 
       closePromise = (async () => {
         await Promise.allSettled([options.closePluginApps?.(), appSandbox?.then((sandbox) => sandbox.close())]);
@@ -3348,40 +3429,6 @@ export async function createChatBridge(
       return closePromise;
     },
   };
-}
-
-function writeSse(
-  response: ServerResponse,
-  payload: SsePayload,
-  writeFrame?: (response: ServerResponse, payload: SsePayload) => boolean,
-): boolean {
-  if (response.writableEnded || response.destroyed) return false;
-  if ((writeFrame ?? defaultWriteSseFrame)(response, payload)) return true;
-  return false;
-}
-
-function defaultWriteSseFrame(
-  response: ServerResponse,
-  payload: SsePayload,
-): boolean {
-  return response.write(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function waitForSseDrain(response: ServerResponse): Promise<boolean> {
-  if (response.writableEnded || response.destroyed) return Promise.resolve(false);
-  return new Promise((resolve) => {
-    const settle = (drained: boolean) => {
-      response.off("drain", onDrain);
-      response.off("close", onClose);
-      response.off("error", onClose);
-      resolve(drained);
-    };
-    const onDrain = () => settle(true);
-    const onClose = () => settle(false);
-    response.once("drain", onDrain);
-    response.once("close", onClose);
-    response.once("error", onClose);
-  });
 }
 
 function requestHasBridgeCookie(request: IncomingMessage, cookieName: string, token: string): boolean {
@@ -3511,7 +3558,9 @@ function isSessionCommand(input: ChatBridgeCommandInput): boolean {
     input.kind === "load_midi_continuation" || input.kind === "configure_midi_continuation" ||
     input.kind === "fill_midi_continuation" || input.kind === "import_midi_continuation" ||
     input.kind === "select_artifact" ||
-    input.kind === "set_session_skills" ||
+    input.kind === "capture_device_parameters" || input.kind === "apply_device_parameters" ||
+    input.kind === "restore_device_parameters" || input.kind === "keep_device_parameters" ||
+    input.kind === "set_session_skills" || input.kind === "remove_session_skill" ||
     input.kind === "capture_main_for_analysis" || input.kind === "capture_listener_for_analysis";
 }
 

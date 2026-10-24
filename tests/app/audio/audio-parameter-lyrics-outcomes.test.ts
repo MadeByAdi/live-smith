@@ -13,7 +13,7 @@ for (const response of ["lost", "invalid", "rejected", "rejected-stop", "stopped
   const panel = (await loadAudioParameterGroups(h.directory, h.session.id)).groups.flatMap((group) => group.tools)
     .find((tool) => tool.name === "builtin_mureka_generate_lyrics")!.audioPanel!;
   let submissions = 0;
-  const run = () => runAudioParameterTool({
+  const run = () => runAudioParameterTool({ assertLiveSetCurrent: () => {}, ...{
     context: {} as never, storageDirectory: h.directory, sessionId: h.session.id, target: {},
     signal: h.controller.signal, onProgress() {}, onAssets() {},
     withAdmissionAuthorization: async (_signal, work) => work(),
@@ -33,13 +33,15 @@ for (const response of ["lost", "invalid", "rejected", "rejected-stop", "stopped
           headers: { "Content-Type": "application/json" } });
       },
     }) } } },
-  });
+  } });
   if (response === "rejected" || response === "rejected-stop") assert.deepEqual(await run(), { failed: true });
   else if (response === "stopped") assert.deepEqual(await run(), { failed: false });
   else await assert.rejects(run(), ChatBridgeCommandOutcomeUnknownError);
   assert.equal(submissions, 1);
   const events = await loadSessionEvents(h.directory, h.session.id);
   assert.equal(events.at(-1)?.kind, "tool_result");
+  assert.equal(events.at(-1)?.outcome, response === "lost" || response === "invalid" ? "unknown"
+    : response === "stopped" ? "success" : "failed");
   if (response === "lost" || response === "invalid") assert.equal(JSON.parse(events.at(-1)!.content).status, "unknown");
   if (response === "stopped") assert.equal(JSON.parse(events.at(-1)!.content).lyrics, "Rain falls over the city");
   if (response === "rejected-stop") assert.equal(JSON.parse(events.at(-1)!.content).status, "failed");

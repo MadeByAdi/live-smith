@@ -48,6 +48,7 @@ export const MAX_SESSION_TOOL_CATALOG_DESCRIPTION_LENGTH = 512;
 export interface ChatSessionSummary extends AgentSession {
   /** Derived display metadata; never part of the stored Session record. */
   hasContent?: boolean;
+  lastMessageAt?: string;
 }
 
 export type ChatLiveContext =
@@ -415,4 +416,11 @@ export function serializeChatStateForHtml(state: ChatBridgeState): string {
     .replaceAll("&", "\\u0026")
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
+}
+
+/** An admitted command retained by this bridge after its initiating page closes. */
+export interface ChatCommandActivity {
+  id: string;
+  sessionId: string | null;
+  stopping: boolean;
 }

@@ -18,6 +18,7 @@ import {
 
 import {
   supportsNonRegularTrackAction,
+  validateMidiSegmentRanges,
   type AgentAction,
   type AgentPlan,
 } from "../agent/actions.js";
@@ -51,6 +52,8 @@ import {
   type ResolvedSampleSource,
 } from "./sample-source.js";
 import { findTrackAncestor, type LiveTarget } from "./target.js";
+import { midiClipHasAuthoringTiming } from "./midi-clip-timing.js";
+import type { DeviceParameterValue } from "../agent/device-parameter-contracts.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
@@ -76,6 +79,7 @@ export interface AgentPlanBindings {
 
 /** Existing non-Track host objects resolved before a plan starts mutating Live. */
 export interface BoundActionObjects {
+  readonly parameterValues?: readonly DeviceParameterValue[];
   readonly scene?: Scene<"1.0.0">;
   readonly cuePoint?: CuePoint<"1.0.0">;
   readonly deviceTarget?: ResolvedDeviceTarget;
@@ -127,6 +131,10 @@ export function bindAgentPlanTargets(
     actionTracks,
     requestAudioSources,
   );
+  validateMidiSegmentRanges(plan.actions, (_action, index) => {
+    const clip = actionObjects.get(index)?.clip;
+    return clip ? hostObjectHandleId(clip, "MIDI Clip") : undefined;
+  });
   assertStructuralActionDependenciesAreStable(
     context,
     plan,
@@ -450,6 +458,7 @@ function bindActionObjects(
         }
         break;
       case "set_device_parameter":
+      case "set_device_parameters":
       case "duplicate_device":
       case "delete_device":
         if (track) {
@@ -708,6 +717,7 @@ function assertStructuralActionDependenciesAreStable(
   actionObjects: ReadonlyMap<number, BoundActionObjects>,
 ): void {
   const invalidated = new Map<string, number>();
+  const midiClipLooping = new Map<string, boolean>();
 
   plan.actions.forEach((action, index) => {
     const actionTrack = boundTrackFromMaps(action, index, tracks, actionTracks);
@@ -731,11 +741,16 @@ function assertStructuralActionDependenciesAreStable(
     }
 
     if (index === plan.actions.length - 1) return;
+    if (action.type === "set_clip_properties" && action.looping !== undefined &&
+        binding?.clip instanceof MidiClip) {
+      midiClipLooping.set(hostObjectHandleId(binding.clip, "MIDI Clip"), action.looping);
+    }
     for (const object of structurallyInvalidatedObjects(
       context,
       action,
       actionTrack,
       binding,
+      midiClipLooping,
     )) {
       const id = hostObjectHandleId(object, "structurally affected Live object");
       if (!invalidated.has(id)) {
@@ -807,6 +822,7 @@ function structurallyInvalidatedObjects(
   action: AgentAction,
   actionTrack: Track<"1.0.0"> | undefined,
   binding: BoundActionObjects | undefined,
+  midiClipLooping: ReadonlyMap<string, boolean>,
 ): Array<{ handle?: { id?: unknown } }> {
   switch (action.type) {
     case "delete_track":
@@ -844,7 +860,7 @@ function structurallyInvalidatedObjects(
     case "delete_session_clip":
     case "create_session_midi_clip":
     case "create_session_audio_clip": {
-      if (!boundActionReplacesSessionSlotClip(action, binding) || !binding?.slot) {
+      if (!boundActionReplacesSessionSlotClip(action, binding, midiClipLooping) || !binding?.slot) {
         return [];
       }
       return [binding.slot, ...(binding.slot.clip ? [binding.slot.clip] : [])];
@@ -899,12 +915,17 @@ function deviceObjectTree(device: Device<"1.0.0">): Array<{ handle?: { id?: unkn
 function boundActionReplacesSessionSlotClip(
   action: AgentAction,
   binding: BoundActionObjects | undefined,
+  midiClipLooping: ReadonlyMap<string, boolean>,
 ): boolean {
   if (action.type === "delete_session_clip") return true;
   if (action.type === "create_session_midi_clip") {
+    const clip = binding?.slot?.clip;
     return !sessionMidiClipCanBeReused(
-      binding?.slot?.clip,
+      clip,
       action.durationBeats,
+      clip instanceof MidiClip
+        ? midiClipLooping.get(hostObjectHandleId(clip, "MIDI Clip"))
+        : undefined,
     );
   }
   if (action.type === "create_session_audio_clip") {
@@ -922,8 +943,9 @@ function boundActionReplacesSessionSlotClip(
 export function sessionMidiClipCanBeReused(
   clip: Clip<"1.0.0"> | null | undefined,
   durationBeats: number,
+  looping?: boolean,
 ): clip is MidiClip<"1.0.0"> {
-  return clip instanceof MidiClip && Math.abs(clip.duration - durationBeats) < 0.0001;
+  return clip instanceof MidiClip && midiClipHasAuthoringTiming(clip, durationBeats, looping);
 }
 
 export function sessionAudioClipCanBeReused(

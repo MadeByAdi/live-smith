@@ -3,7 +3,7 @@ import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import process from "node:process";
-import { URL } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 import test from "node:test";
 
 import { unzipSync, strFromU8, strToU8, zipSync } from "fflate/browser";
@@ -205,7 +205,7 @@ test("bundled parser runs under a restricted parent VM without runtime node_modu
       'const m={exports:{}};runInNewContext(readFileSync(process.argv[1],"utf8"),{module:m,exports:m.exports,require}, {timeout:5000});' +
       'm.exports.extractOfficeDocumentText({bytes:readFileSync(process.argv[2]),fileType:"docx"}).then(r=>console.log(JSON.stringify(r)));';
     const output = execFileSync(process.execPath, ["-e", code, bundlePath,
-      new URL("./fixtures/score.docx", import.meta.url).pathname], { cwd: directory, env: {}, timeout: 15_000, encoding: "utf8" });
+      fileURLToPath(new URL("./fixtures/score.docx", import.meta.url))], { cwd: directory, env: {}, timeout: 15_000, encoding: "utf8" });
     const result = JSON.parse(output) as { text: string; truncated: boolean };
     assert.match(result.text, /音乐 reference 🎵/); assert.equal(result.truncated, false);
   });

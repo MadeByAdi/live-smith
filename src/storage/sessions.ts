@@ -135,6 +135,11 @@ export async function listSessions(
   return filterByProject(await loadSessionsUnlocked(storageDirectory), projectKey);
 }
 
+/** Durable records only; excludes in-memory Session reservations. */
+export async function listPersistedSessions(storageDirectory: string): Promise<AgentSession[]> {
+  return (await loadSavedSessions(storageDirectory)).map(cloneSession);
+}
+
 export async function listSessionsInTransaction(
   context: StorageTransactionContext,
   storageDirectory: string | undefined,

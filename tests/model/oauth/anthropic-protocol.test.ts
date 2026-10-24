@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { ModelRetryableError } from "../../../src/model/connection-error.js";
 import type { TransportRequest } from "../../../src/model/provider.js";
+import { modelToolsForProfile } from "../../../src/model/tools.js";
 import {
   createAnthropicOAuthProtocol,
 } from "../../../src/model/oauth/anthropic-protocol.js";
@@ -48,6 +49,40 @@ function request(provider: "openai" | "anthropic"): TransportRequest {
   };
 }
 
+test("Anthropic subscription search preserves native results and citations on replay", async () => {
+  const bodies: Record<string, any>[] = [];
+  const content = [
+    { type: "server_tool_use", id: "search-1", name: "web_search", input: { query: "Live manual" } },
+    { type: "web_search_tool_result", tool_use_id: "search-1", content: [{
+      type: "web_search_result", url: "https://www.ableton.com/en/manual/", title: "Live manual", encrypted_content: "opaque-search",
+    }] },
+    { type: "text", text: "The manual explains Warp.", citations: [{ type: "web_search_result_location", url: "https://www.ableton.com/en/manual/", title: "Live manual", cited_text: "Warp", encrypted_index: "opaque-index" }] },
+    { type: "tool_use", id: "inspect-1", name: "inspect", input: {} },
+  ];
+  const protocol = createAnthropicOAuthProtocol({ fetchImpl: async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer search-access");
+    return new Response(JSON.stringify({ type: "message", role: "assistant", stop_reason: "tool_use", content }), {
+      headers: { "content-type": "application/json" },
+    });
+  } });
+  const current = request("anthropic");
+  current.runtimeProfile.model.advanced.hostedTools = { webSearch: true };
+  current.tools = modelToolsForProfile(current.runtimeProfile, [{ type: "function", function: { name: "inspect", description: "Inspect", parameters: { type: "object", properties: {} } } }], 2);
+  const credential = { provider: "anthropic" as const, accessToken: "search-access", refreshToken: "refresh", expiresAt: Date.now() + 60_000 };
+  const turn = await protocol.createToolTurn(current, credential);
+  assert.deepEqual(bodies[0]?.tools.at(-1), { type: "web_search_20250305", name: "web_search", max_uses: 2 });
+  assert.equal(turn.hostedWebSearches?.[0]?.status, "completed");
+  assert.deepEqual(turn.citations, [{ url: "https://www.ableton.com/en/manual/", title: "Live manual" }]);
+  assert.deepEqual(turn.toolCalls, [{ id: "inspect-1", name: "inspect", arguments: "{}" }]);
+  current.agentMessages = [
+    { role: "assistant", content: turn.content, toolCalls: turn.toolCalls, providerState: turn.providerState },
+    { role: "tool", toolCallId: "inspect-1", content: "Live state" },
+  ];
+  await protocol.createToolTurn(current, credential);
+  assert.deepEqual(bodies[1]?.messages.find((message: any) => message.role === "assistant").content, content);
+});
+
 test("Anthropic subscription protocol uses OAuth bearer identity, not x-api-key", async () => {
   let headers: Headers | undefined;
   let body: Record<string, unknown> | undefined;
@@ -73,6 +108,8 @@ test("Anthropic subscription protocol uses OAuth bearer identity, not x-api-key"
 
   assert.equal(headers?.get("authorization"), "Bearer sk-ant-oat-access");
   assert.equal(headers?.has("x-api-key"), false);
+  assert.equal(headers?.get("user-agent"), "claude-cli/2.1.296");
+  assert.equal(headers?.get("anthropic-version"), "2023-06-01");
   assert.match(headers?.get("anthropic-beta") ?? "", /oauth-2025-04-20/u);
   assert.match(String(body?.system), /Claude Code/u);
   assert.equal(turn.content, "Ready");
@@ -160,6 +197,8 @@ test("Anthropic OAuth model discovery also uses bearer identity", async () => {
   });
   assert.equal(headers?.get("authorization"), "Bearer sk-ant-oat-access");
   assert.equal(headers?.has("x-api-key"), false);
+  assert.equal(headers?.get("user-agent"), "claude-cli/2.1.296");
+  assert.equal(headers?.get("anthropic-version"), "2023-06-01");
   assert.deepEqual(models.map((model) => model.id), ["claude-sonnet-4-6"]);
 });
 

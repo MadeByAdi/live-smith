@@ -601,7 +601,8 @@ test("a stale state first introducing a Session preserves its newer approval pat
         '.session-entry[data-session-id="session-2"]',
       ),
     );
-    const formatter = new harness.window.Intl.DateTimeFormat(undefined, {
+    const locale = (harness.window as typeof harness.window & { LiveSmithI18n: { locale: string } }).LiveSmithI18n.locale;
+    const formatter = new harness.window.Intl.DateTimeFormat(locale, {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",

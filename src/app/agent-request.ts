@@ -1,5 +1,7 @@
+import { createLiveSetGuard } from "../live/set-identity.js";
 import { createMidiArtifactAuthoringToolset } from "./midi/midi-artifact-tools.js";
 import { createSessionArtifactToolset } from "./session/session-artifact-tools.js";
+import { createParameterArtifactToolset } from "./parameters/parameter-artifact-tools.js";
 import { creativeBriefProposalTool, proposeCreativeBrief } from "./context/creative-brief.js";
 import { ModelInputTooLargeError } from "../model/connection-error.js";
 import { artifactSourceInstructions, pendingArtifactParentFromEvents, type ArtifactRef } from "../agent/artifact-contracts.js";
@@ -63,7 +65,7 @@ import {
   AgentPlanExecutionError,
   executeAgentPlanWithProgress,
 } from "../live/executor.js";
-import type { LiveInteractionContext } from "../live/context.js";
+import type { LiveConversationContext } from "../live/context.js";
 import { observeLive, readArrangementAudio } from "../live/observer.js";
 import {
   attachmentRequestQuotaIsWithinLimits,
@@ -74,6 +76,7 @@ import { MAX_REQUEST_DOCUMENT_TEXT_CHARACTERS } from "../attachments/document-te
 import {
   captureLiveActionPreflightObservation,
   type LiveActionPreflightObservation,
+  type MidiClipPreflightStates,
 } from "../live/preflight.js";
 import {
   requiredEditScopesForAction,
@@ -175,7 +178,7 @@ const maxConsecutiveInvalidToolCalls = 3;
 export async function handleAgentRequest(
   context: Api,
   storageDirectory: string | undefined,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   prompt: string,
   runtimeProfile: RuntimeProfile,
   projectKey: string,
@@ -187,6 +190,7 @@ export async function handleAgentRequest(
   loadEventsForSearchReconciliation: typeof loadSessionEvents = loadSessionEvents,
   waitForReconnectDelay?: ModelReconnectWait,
 ): Promise<string> {
+  const assertLiveSetCurrent = createLiveSetGuard(context);
   const { profile } = runtimeProfile;
   const session = sessionId === undefined
     ? await getOrCreateDefaultSession(
@@ -333,6 +337,7 @@ export async function handleAgentRequest(
   let audioSampleSourceInstructions = requestAudioSampleSourceInstructions(requestAudioSources);
   const requestAttachmentQuota = prepared.attachmentQuota;
   let requestDocumentTextCharacters = prepared.documentTextCharacters;
+  let audioTools: Awaited<ReturnType<typeof createRequestAudioTools>>;
   const pluginTools: Awaited<ReturnType<typeof createRequestPluginTools>> = await createRequestPluginTools({
     onAudioArtifacts: (artifacts) => audioTools.registerArtifacts(artifacts),
     ...(prepared.userEvent.parentCandidate ? { artifactRevisionOf: prepared.userEvent.parentCandidate } : {}),
@@ -348,31 +353,33 @@ export async function handleAgentRequest(
       ? { withAuthorization: callbacks.withPluginAuthorization }
       : {}),
   });
-  const audioTools: Awaited<ReturnType<typeof createRequestAudioTools>> = await createRequestAudioTools({
-    context, storageDirectory, sessionId: session.id, requestId: prepared.userEvent.id,
-    attachmentRefs: requestAudioAttachmentRefs,
-    hasPluginAudioOutputs: pluginTools.hasAudioOutputs,
-    ...(prepared.userEvent.parentCandidate ? { artifactSource: prepared.userEvent.parentCandidate } : {}),
-    target: interaction.target, signal: callbacks.signal, onProgress: callbacks.onProgress,
-    ...(callbacks.withGenerationAuthorization ? { withGenerationAuthorization: callbacks.withGenerationAuthorization } : {}),
-    ...(callbacks.audioProcessing ? { processing: callbacks.audioProcessing } : {}),
-    ...(supportsArrangementAudioInput ? { modelAudioInput: {
-      canAccept: (byteLength: number) => attachmentRequestQuotaIsWithinLimits([
-        ...requestAttachmentQuota,
-        { kind: "audio", byteLength },
-      ]),
-    } } : {}),
-    onAssets: async (assets) => {
-      await addAudioAssetSampleSources({ context, storageDirectory, sessionId: session.id, signal: callbacks.signal }, requestAudioSources, assets);
-      audioSampleSourceInstructions = [
-        requestAudioSampleSourceInstructions(requestAudioSources),
-        audioAssetSampleSourceInstructions(requestAudioSources),
-      ].filter(Boolean).join("\n\n");
-    },
-  }).catch(async (error: unknown) => { await pluginTools.close(); throw error; });
-  let externalTools: ToolRegistry;
+  let toolResources: Pick<ToolRegistry, "close"> = pluginTools;
+  let unsubscribeEditScopes: (() => void) | undefined;
+  let unsubscribeEditScopesInvalidations: (() => void) | undefined;
   try {
-    externalTools = new ToolRegistry([
+    audioTools = await createRequestAudioTools({
+      context, assertLiveSetCurrent, storageDirectory, sessionId: session.id, requestId: prepared.userEvent.id,
+      attachmentRefs: requestAudioAttachmentRefs,
+      hasPluginAudioOutputs: pluginTools.hasAudioOutputs,
+      ...(prepared.userEvent.parentCandidate ? { artifactSource: prepared.userEvent.parentCandidate } : {}),
+      target: interaction.target, signal: callbacks.signal, onProgress: callbacks.onProgress,
+      ...(callbacks.withGenerationAuthorization ? { withGenerationAuthorization: callbacks.withGenerationAuthorization } : {}),
+      ...(callbacks.audioProcessing ? { processing: callbacks.audioProcessing } : {}),
+      ...(supportsArrangementAudioInput ? { modelAudioInput: {
+        canAccept: (byteLength: number) => attachmentRequestQuotaIsWithinLimits([
+          ...requestAttachmentQuota,
+          { kind: "audio", byteLength },
+        ]),
+      } } : {}),
+      onAssets: async (assets) => {
+        await addAudioAssetSampleSources({ context, storageDirectory, sessionId: session.id, signal: callbacks.signal }, requestAudioSources, assets);
+        audioSampleSourceInstructions = [
+          requestAudioSampleSourceInstructions(requestAudioSources),
+          audioAssetSampleSourceInstructions(requestAudioSources),
+        ].filter(Boolean).join("\n\n");
+      },
+    });
+    const externalTools = new ToolRegistry([
       {
         id: "live-smith.creative-brief",
         tools: () => [creativeBriefProposalTool],
@@ -382,193 +389,177 @@ export async function handleAgentRequest(
         createMidiArtifactAuthoringToolset({ storageDirectory, sessionId: session.id,
         runtimeProfile, signal: callbacks.signal,
         ...(prepared.userEvent.parentCandidate?.kind === "midi" ? { revisionOf: prepared.userEvent.parentCandidate.id } : {}),
+      }), createParameterArtifactToolset({ context, storageDirectory, sessionId: session.id, projectKey, assertLiveSetCurrent,
+        target: interaction.target, runtimeProfile, signal: callbacks.signal,
+        ...(prepared.userEvent.parentCandidate?.kind === "device-parameters" ? { revisionOf: prepared.userEvent.parentCandidate.id } : {}),
       })] : []),
       ...audioTools.toolsets,
       ...pluginTools.toolsets,
     ]);
-  } catch (error) {
-    await pluginTools.close();
-    throw error;
-  }
-  const canReadArrangementAudio = () => supportsArrangementAudioInput &&
-    attachmentRequestQuotaIsWithinLimits([
-      ...requestAttachmentQuota,
-      { kind: "audio", byteLength: 1 },
+    toolResources = externalTools;
+    const canReadArrangementAudio = () => supportsArrangementAudioInput &&
+      attachmentRequestQuotaIsWithinLimits([
+        ...requestAttachmentQuota,
+        { kind: "audio", byteLength: 1 },
+      ]);
+    const knownEventIds = new Set([
+      ...prepared.priorEventIds,
+      prepared.userEvent.id,
     ]);
-  const knownEventIds = new Set([
-    ...prepared.priorEventIds,
-    prepared.userEvent.id,
-  ]);
-  const observedWebSearchIds = new Set<string>();
-  const persistedWebSearches = new Map<string, Promise<SessionEvent>>();
-  const observeWebSearchId = (webSearch: ModelHostedWebSearch): boolean => {
-    if (observedWebSearchIds.has(webSearch.id)) return true;
-    if (observedWebSearchIds.size >= HOSTED_WEB_SEARCH_MAX_EVENTS_PER_SEND) {
-      return false;
-    }
-    observedWebSearchIds.add(webSearch.id);
-    return true;
-  };
-  const ensureTerminalWebSearchEvent = async (
-    webSearch: ModelHostedWebSearch,
-    content = webSearchSummary(webSearch),
-  ): Promise<{ event: SessionEvent; first: boolean } | undefined> => {
-    if (!observeWebSearchId(webSearch)) return undefined;
-    const existing = persistedWebSearches.get(webSearch.id);
-    if (existing) {
-      const event = await existing;
-      if (
-        event.content !== content ||
-        event.webSearch === undefined ||
-        !sameHostedWebSearch(event.webSearch, webSearch)
-      ) {
-        throw new TypeError(
-          "Hosted Web Search ID has conflicting terminal activity.",
-        );
+    const observedWebSearchIds = new Set<string>();
+    const persistedWebSearches = new Map<string, Promise<SessionEvent>>();
+    const observeWebSearchId = (webSearch: ModelHostedWebSearch): boolean => {
+      if (observedWebSearchIds.has(webSearch.id)) return true;
+      if (observedWebSearchIds.size >= HOSTED_WEB_SEARCH_MAX_EVENTS_PER_SEND) {
+        return false;
       }
-      return { event, first: false };
-    }
-
-    const pending = appendTerminalWebSearchEvent(
-      storageDirectory,
-      session.id,
-      { kind: "web_search", content, webSearch },
-      knownEventIds,
-      appendTraceEvent,
-      loadEventsForSearchReconciliation,
-    );
-    persistedWebSearches.set(webSearch.id, pending);
-    try {
-      const event = await pending;
-      knownEventIds.add(event.id);
-      return { event, first: true };
-    } catch (error) {
-      if (persistedWebSearches.get(webSearch.id) === pending) {
-        persistedWebSearches.delete(webSearch.id);
-      }
-      throw error;
-    }
-  };
-  if (!session.title.trim()) {
-    await updateSession(storageDirectory, session.id, {
-      title: sessionTitleForPrompt(prompt, session.scope.label),
-    });
-  }
-  const requestLiveContext = prepared.recoveryContext
-    ? `${interaction.summary}\n\n${prepared.recoveryContext}`
-    : interaction.summary;
-  const requestLiveContextWithListeners = [
-    requestLiveContext,
-    callbacks.agentAudioTapListenerContext,
-    await formatSessionAudioArtifactsForReasoning(storageDirectory, session.id),
-  ].filter((section) => section !== undefined && section.trim().length > 0).join("\n\n");
-  const autoCompactTokenLimit = resolveAutoCompactTokenLimit(runtimeProfile);
-  const maybeCompactContext = async (
-    agentMessages: Parameters<typeof buildModelRequest>[0]["agentMessages"],
-    tools: Parameters<typeof buildModelRequest>[0]["tools"],
-    editScopes: readonly EditScope[],
-    signal: AbortSignal,
-  ): Promise<void> => {
-    if (autoCompactTokenLimit === undefined) return;
-    const activeAgentMessages = agentMessages.slice(compactedAgentMessageCount);
-    const estimatedTokens = estimateTransportContextTokens(buildModelRequest({
-      prompt: activePrompt,
-      liveContext: requestLiveContextWithListeners,
-      runtimeProfile,
-      history: activeHistory,
-      attachmentParts: activeAttachmentParts,
-      ...(audioSampleSourceInstructions
-        ? {
-          requestAudioSampleSourceInstructions:
-            audioSampleSourceInstructions,
+      observedWebSearchIds.add(webSearch.id);
+      return true;
+    };
+    const ensureTerminalWebSearchEvent = async (
+      webSearch: ModelHostedWebSearch,
+      content = webSearchSummary(webSearch),
+    ): Promise<{ event: SessionEvent; first: boolean } | undefined> => {
+      if (!observeWebSearchId(webSearch)) return undefined;
+      const existing = persistedWebSearches.get(webSearch.id);
+      if (existing) {
+        const event = await existing;
+        if (event.content !== content || event.webSearch === undefined ||
+          !sameHostedWebSearch(event.webSearch, webSearch)) {
+          throw new TypeError("Hosted Web Search ID has conflicting terminal activity.");
         }
-        : {}),
-      skillContext: prepared.skillContext,
-      editScopes,
-      creativeBrief: session.creativeBrief ?? "",
-      ...(callbacks.customInstructionsSnapshot === undefined
-        ? {}
-        : { customInstructions: callbacks.customInstructionsSnapshot }),
-      agentMessages: activeAgentMessages,
-      tools,
-    }));
-    const activeTokens = latestAcceptedContextUsage === undefined
-      ? estimatedTokens
-      : latestAcceptedContextUsage.usedTokens + Math.max(
-          0,
-          estimatedTokens - (latestAcceptedProjectionTokens ?? estimatedTokens),
-        );
-    if (activeTokens < autoCompactTokenLimit) return;
-
-    await callbacks.onProgress("Compacting conversation context");
-    const checkpoint = await createConversationCheckpoint({
-      prompt: activePrompt,
-      liveContext: requestLiveContextWithListeners,
-      runtimeProfile,
-      history: activeHistory,
-      attachmentParts: activeAttachmentParts,
-      skillContext: prepared.skillContext,
-      editScopes,
-      creativeBrief: session.creativeBrief ?? "",
-      ...(callbacks.customInstructionsSnapshot === undefined
-        ? {}
-        : { customInstructions: callbacks.customInstructionsSnapshot }),
-      agentMessages: activeAgentMessages,
-      signal,
-      requestTurn: async (input) => (await requestModelWithReconnect({
-        signal,
-        resetTransient: () => {},
-        onProgress: callbacks.onProgress,
-        ...(waitForReconnectDelay
-          ? { waitForDelay: waitForReconnectDelay }
+        return { event, first: false };
+      }
+      const pending = appendTerminalWebSearchEvent(
+        storageDirectory, session.id, { kind: "web_search", content, webSearch },
+        knownEventIds, appendTraceEvent, loadEventsForSearchReconciliation,
+      );
+      persistedWebSearches.set(webSearch.id, pending);
+      try {
+        const event = await pending;
+        knownEventIds.add(event.id);
+        return { event, first: true };
+      } catch (error) {
+        if (persistedWebSearches.get(webSearch.id) === pending) persistedWebSearches.delete(webSearch.id);
+        throw error;
+      }
+    };
+    if (!session.title.trim()) {
+      await updateSession(storageDirectory, session.id, {
+        title: sessionTitleForPrompt(prompt, session.scope.label),
+      });
+    }
+    const requestLiveContext = prepared.recoveryContext
+      ? `${interaction.summary}\n\n${prepared.recoveryContext}`
+      : interaction.summary;
+    const requestLiveContextWithListeners = [
+      requestLiveContext,
+      callbacks.agentAudioTapListenerContext,
+      await formatSessionAudioArtifactsForReasoning(storageDirectory, session.id),
+    ].filter((section) => section !== undefined && section.trim().length > 0).join("\n\n");
+    const autoCompactTokenLimit = resolveAutoCompactTokenLimit(runtimeProfile);
+    const maybeCompactContext = async (
+      agentMessages: Parameters<typeof buildModelRequest>[0]["agentMessages"],
+      tools: Parameters<typeof buildModelRequest>[0]["tools"],
+      editScopes: readonly EditScope[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      if (autoCompactTokenLimit === undefined) return;
+      const activeAgentMessages = agentMessages.slice(compactedAgentMessageCount);
+      const estimatedTokens = estimateTransportContextTokens(buildModelRequest({
+        prompt: activePrompt,
+        liveContext: requestLiveContextWithListeners,
+        runtimeProfile,
+        history: activeHistory,
+        attachmentParts: activeAttachmentParts,
+        ...(audioSampleSourceInstructions
+          ? { requestAudioSampleSourceInstructions: audioSampleSourceInstructions }
           : {}),
-        request: ({ reconnectState }) => requestTurn({
-          ...input,
-          reconnectState,
-        }),
-      })).value,
-    });
-    const event = await appendTraceEvent(storageDirectory, session.id, {
-      kind: "compaction",
-      content: checkpoint,
-    });
-    knownEventIds.add(event.id);
-    await callbacks.onSessionEvent(event);
+        skillContext: prepared.skillContext,
+        editScopes,
+        creativeBrief: session.creativeBrief ?? "",
+        ...(callbacks.customInstructionsSnapshot === undefined
+          ? {}
+          : { customInstructions: callbacks.customInstructionsSnapshot }),
+        agentMessages: activeAgentMessages,
+        tools,
+      }));
+      const activeTokens = latestAcceptedContextUsage === undefined
+        ? estimatedTokens
+        : latestAcceptedContextUsage.usedTokens + Math.max(
+            0,
+            estimatedTokens - (latestAcceptedProjectionTokens ?? estimatedTokens),
+          );
+      if (activeTokens < autoCompactTokenLimit) return;
 
-    activeHistory = [{
-      role: "user",
-      content: [{
-        type: "text",
-        text: conversationCheckpointMessage(checkpoint),
-      }],
-    }];
-    activePrompt = "Continue the current request from the conversation checkpoint.";
-    activeAttachmentParts = [];
-    compactedAgentMessageCount = agentMessages.length;
-    latestAcceptedContextUsage = undefined;
-    latestAcceptedProjectionTokens = undefined;
-    pendingAcceptedProjectionTokens = undefined;
-    await callbacks.onModelTurnAccepted?.(undefined);
-  };
-  // Committed changes update the synchronous action boundary without inserting
-  // a disk await after the final Live-state drift check.
-  const unsubscribeEditScopes = subscribeSessionEditScopesChanges(
-    storageDirectory,
-    (change) => {
-      if (change.sessionId !== session.id) return;
-      editScopesGeneration += 1;
-      activeEditScopes = resolveEditScopes(change.editScopes);
-    },
-  );
-  const unsubscribeEditScopesInvalidations = subscribeSessionEditScopesInvalidations(
-    storageDirectory,
-    (changedSessionId) => {
-      if (changedSessionId !== session.id) return;
-      editScopesGeneration += 1;
-      activeEditScopes = undefined;
-    },
-  );
-  try {
+      await callbacks.onProgress("Compacting conversation context");
+      const checkpoint = await createConversationCheckpoint({
+        prompt: activePrompt,
+        liveContext: requestLiveContextWithListeners,
+        runtimeProfile,
+        history: activeHistory,
+        attachmentParts: activeAttachmentParts,
+        skillContext: prepared.skillContext,
+        editScopes,
+        creativeBrief: session.creativeBrief ?? "",
+        ...(callbacks.customInstructionsSnapshot === undefined
+          ? {}
+          : { customInstructions: callbacks.customInstructionsSnapshot }),
+        agentMessages: activeAgentMessages,
+        signal,
+        requestTurn: async (input) => (await requestModelWithReconnect({
+          signal,
+          resetTransient: () => {},
+          onProgress: callbacks.onProgress,
+          ...(waitForReconnectDelay
+            ? { waitForDelay: waitForReconnectDelay }
+            : {}),
+          request: ({ reconnectState }) => requestTurn({
+            ...input,
+            reconnectState,
+          }),
+        })).value,
+      });
+      const event = await appendTraceEvent(storageDirectory, session.id, {
+        kind: "compaction",
+        content: checkpoint,
+      });
+      knownEventIds.add(event.id);
+      await callbacks.onSessionEvent(event);
+
+      activeHistory = [{
+        role: "user",
+        content: [{
+          type: "text",
+          text: conversationCheckpointMessage(checkpoint),
+        }],
+      }];
+      activePrompt = "Continue the current request from the conversation checkpoint.";
+      activeAttachmentParts = [];
+      compactedAgentMessageCount = agentMessages.length;
+      latestAcceptedContextUsage = undefined;
+      latestAcceptedProjectionTokens = undefined;
+      pendingAcceptedProjectionTokens = undefined;
+      await callbacks.onModelTurnAccepted?.(undefined);
+    };
+    // Committed changes update the synchronous action boundary without inserting
+    // a disk await after the final Live-state drift check.
+    unsubscribeEditScopes = subscribeSessionEditScopesChanges(
+      storageDirectory,
+      (change) => {
+        if (change.sessionId !== session.id) return;
+        editScopesGeneration += 1;
+        activeEditScopes = resolveEditScopes(change.editScopes);
+      },
+    );
+    unsubscribeEditScopesInvalidations = subscribeSessionEditScopesInvalidations(
+      storageDirectory,
+      (changedSessionId) => {
+        if (changedSessionId !== session.id) return;
+        editScopesGeneration += 1;
+        activeEditScopes = undefined;
+      },
+    );
     await callbacks.onProgress("Starting agent loop");
     if (pluginTools.unavailableMidiArtifacts) {
       await callbacks.onProgress(uiMessage(
@@ -811,6 +802,14 @@ export async function handleAgentRequest(
                       ...(value.providerState === undefined
                         ? {}
                         : { providerState: value.providerState }),
+                      ...(value.contextProjection ? {
+                        contextProjection: {
+                          ...value.contextProjection,
+                          messages: value.contextUsage
+                            ? value.contextProjection.messages.slice(0, value.contextProjection.usageMessageCount)
+                            : value.contextProjection.messages,
+                        },
+                      } : {}),
                     },
                   ],
                 }),
@@ -841,6 +840,7 @@ export async function handleAgentRequest(
         return turn;
       },
       observe: async (request) => {
+        assertLiveSetCurrent();
         if (request.type === "capture_agent_audio_tap") {
           if (!storageDirectory) throw new Error("AgentAudioTap capture storage is unavailable.");
           const window = arrangementCaptureWindowFromInteraction(interaction);
@@ -904,6 +904,7 @@ export async function handleAgentRequest(
             signal: callbacks.signal,
           });
         }
+
         if (request.type === "read_arrangement_audio") {
           if (!supportsArrangementAudioInput) {
             throw new Error(
@@ -924,7 +925,10 @@ export async function handleAgentRequest(
             request,
             interaction.target,
             callbacks.signal,
+            undefined,
+            assertLiveSetCurrent,
           );
+          assertLiveSetCurrent();
           const quotaItem: AttachmentQuotaItem = {
             kind: "audio",
             byteLength: rendered.bytes.byteLength,
@@ -967,11 +971,11 @@ export async function handleAgentRequest(
         preflightAgentPlan(
           context, interaction, plan, callbacks.signal,
           undefined, undefined, {
-            refresh: readEditScopes,
-            assert: (requestedPlan, bindings) => assertEditScopesAllow(
-              requiredEditScopesForPlan(context, requestedPlan, bindings),
-              currentEditScopes(),
-            ),
+            refresh: async () => { assertLiveSetCurrent(); await readEditScopes(); assertLiveSetCurrent(); },
+            assert: (requestedPlan, bindings) => {
+              assertLiveSetCurrent();
+              assertEditScopesAllow(requiredEditScopesForPlan(context, requestedPlan, bindings), currentEditScopes());
+            },
           },
           requestAudioSources,
         ),
@@ -988,6 +992,7 @@ export async function handleAgentRequest(
       executeActions: async (plan, rawBindings, revalidateAfterImport) => {
         let bindings = rawBindings as AgentPlanBindings;
         const assertActionBoundary = (actionIndex: number, action: AgentPlan["actions"][number]) => {
+          assertLiveSetCurrent();
           assertEditScopesAllow(
             requiredEditScopesForAction(context, action, actionIndex, bindings),
             currentEditScopes(),
@@ -1009,6 +1014,7 @@ export async function handleAgentRequest(
             bindings,
             callbacks.signal,
             () => {
+              assertLiveSetCurrent();
               assertEditScopesAllow(
                 requiredEditScopesForPlan(context, plan, bindings),
                 currentEditScopes(),
@@ -1137,9 +1143,9 @@ export async function handleAgentRequest(
     }
     throw error;
   } finally {
-    await externalTools.close();
-    unsubscribeEditScopes();
-    unsubscribeEditScopesInvalidations();
+    unsubscribeEditScopes?.();
+    unsubscribeEditScopesInvalidations?.();
+    await toolResources.close();
   }
 }
 
@@ -1155,16 +1161,17 @@ function isAbortCause(error: unknown, signal: AbortSignal): boolean {
 
 export async function preflightAgentPlan(
   context: Api,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   plan: AgentPlan,
   signal: AbortSignal,
   observer: typeof observeLive = observeLive,
   snapshotter: (
     context: Api,
     action: AgentPlan["actions"][number],
-    target: LiveInteractionContext["target"],
+    target: LiveConversationContext["target"],
     requestAudioSources?: RequestAudioSampleSources,
     includePreview?: boolean,
+    midiClipStates?: MidiClipPreflightStates,
   ) => string | LiveActionPreflightObservation | Promise<string | LiveActionPreflightObservation> = captureLiveActionPreflightObservation,
   authorization?: {
     refresh(): Promise<unknown>;
@@ -1190,7 +1197,7 @@ export async function preflightAgentPlan(
     requestAudioSources,
     plan.actions.length === 1,
   );
-  authorization?.assert(plan, initialBindings);
+  authorization?.assert(plan, withPreflightParameters(initialBindings, initialSnapshots));
 
   const guard: AgentActionPreflightGuard<AgentPlanBindings> = async () => {
     await authorization?.refresh();
@@ -1223,8 +1230,9 @@ export async function preflightAgentPlan(
         `Live target or relevant state changed for action ${actionNumber} while confirmation was open. Inspect the current Live state and try again.`,
       );
     }
-    authorization?.assert(plan, currentBindings);
-    return currentBindings;
+    const bindings = withPreflightParameters(currentBindings, currentSnapshots);
+    authorization?.assert(plan, bindings);
+    return bindings;
   };
   Object.defineProperty(guard, "actionKeys", {
     enumerable: true,
@@ -1235,6 +1243,19 @@ export async function preflightAgentPlan(
     Object.defineProperty(guard, "previews", { enumerable: true, value: [preview] });
   }
   return guard;
+}
+
+function withPreflightParameters(
+  bindings: AgentPlanBindings,
+  snapshots: readonly LiveActionPreflightObservation[],
+): AgentPlanBindings {
+  return {
+    ...bindings,
+    actionObjects: new Map([...bindings.actionObjects].map(([index, objects]) => {
+      const parameterValues = snapshots[index]?.executionParameters;
+      return [index, parameterValues ? { ...objects, parameterValues } : objects];
+    })),
+  };
 }
 
 function planActionIdentityKeys(
@@ -1295,22 +1316,24 @@ function normalizedIdentityText(value: string): string {
 
 async function captureAgentPlanPreflightSnapshots(
   context: Api,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   plan: AgentPlan,
   signal: AbortSignal,
   observer: typeof observeLive,
   snapshotter: (
     context: Api,
     action: AgentPlan["actions"][number],
-    target: LiveInteractionContext["target"],
+    target: LiveConversationContext["target"],
     requestAudioSources?: RequestAudioSampleSources,
     includePreview?: boolean,
+    midiClipStates?: MidiClipPreflightStates,
   ) => string | LiveActionPreflightObservation | Promise<string | LiveActionPreflightObservation>,
   bindings: AgentPlanBindings,
   requestAudioSources?: RequestAudioSampleSources,
   includePreview = false,
 ): Promise<LiveActionPreflightObservation[]> {
   const snapshots: LiveActionPreflightObservation[] = [];
+  const midiClipStates: MidiClipPreflightStates = new Map();
   for (const [actionIndex, action] of plan.actions.entries()) {
     throwIfAborted(signal);
     const boundTrack = boundTrackForAction(action, actionIndex, bindings);
@@ -1333,6 +1356,7 @@ async function captureAgentPlanPreflightSnapshots(
       actionTarget,
       requestAudioSources,
       includePreview,
+      midiClipStates,
     );
     snapshots.push(typeof captured === "string" ? { fingerprint: captured } : captured);
     throwIfAborted(signal);
@@ -1415,9 +1439,9 @@ async function resolvePendingAttachmentRefs(
 }
 
 function arrangementCaptureWindowFromInteraction(
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
 ): AgentAudioTapArrangementWindow | undefined {
-  const range = interaction.presentation.origin === "arrangement-selection"
+  const range = interaction.presentation?.origin === "arrangement-selection"
     ? interaction.presentation.range
     : undefined;
   if (range?.coordinate !== "arrangement-beats" ||
@@ -1440,6 +1464,7 @@ async function appendAgentLoopTraceEvent(
       kind: event.kind,
       name: event.name,
       content: event.content,
+      ...(event.kind === "tool_result" ? { outcome: event.outcome } : {}),
       ...(event.kind === "tool_result" && event.artifacts ? { artifacts: event.artifacts } : {}),
       ...(event.kind === "tool_call" && parentCandidate ? { parentCandidate,
         ...(requestEventId ? { requestEventId } : {}) } : {}),

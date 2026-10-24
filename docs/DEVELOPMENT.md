@@ -37,7 +37,11 @@ document-conversion runtime is required by the installed extension.
 
 Adjust the Live application path for your installation. `npm start` builds the
 development bundle and starts the Extensions CLI. Enable the extension in the
-CLI, then right-click a supported object in Live and choose **Ask Live Smith**.
+CLI. On SDK activation, either build starts a Set-scoped browser bridge
+and writes a VST3 handoff without opening a dialog. A Live Smith View editor can
+then attach; right-click a supported object to bind its context. Native installed
+Extension activation at Live launch has been observed in Ableton Live 12 Beta;
+other Live versions and shutdown of in-flight work require host verification.
 
 Rebuilding `dist/extension.js` does not replace code already loaded by a running
 Extension Host. Before testing changed code in Live, close the Live Smith dialog,
@@ -63,7 +67,7 @@ npm run build
 Both build variants type-check the source, compile the Tailwind entries under
 `src/ui/styles/` to static CSS, and verify Extension Host runtime compatibility
 before writing the bundle to `dist/extension.js`. The compiled styles are
-embedded into each data-URL dialog; the WebView does not load Tailwind, a CDN,
+embedded into the generated dialog HTML; the WebView does not load Tailwind, a CDN,
 or a separate stylesheet at runtime.
 
 The Suno verification helper is our own macOS AppKit/WebKit application, not a
@@ -389,7 +393,9 @@ npm run verify:package
 `verify:package` can check an existing package and rejects a stale bundle or an
 unsafe Plugin compatibility fixture. Keep generated bundles and packages out of
 source control. Package notices are maintained in
-[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). Build and package verification
+check declared dependency versions against `package-lock.json` so notices must
+be updated with dependency upgrades.
 
 ## Development data
 
@@ -413,7 +419,9 @@ metadata. `live-smith-settings.json` contains Direct API and built-in Plugin
 connection keys as plain text;
 `oauth/credentials.json` contains private provider OAuth credentials.
 Audio-processing jobs and input/output assets are stored under
-`live-smith-audio/<sessionId>/`. Immutable installed archives, their catalog,
+`live-smith-audio/<sessionId>/`. Device parameter snapshots and their application
+baselines, progress and results live under `live-smith-device-parameters/<sessionId>/`;
+preserve the complete Session directory when copying this data. Immutable installed archives, their catalog,
 materialized runtime files, and mutable per-Plugin data live under
 `live-smith-plugins/`; do not edit or partially copy that directory.
 Processing tests use injected services and local audio fixtures; they do not

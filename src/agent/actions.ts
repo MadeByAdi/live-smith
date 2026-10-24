@@ -27,6 +27,7 @@ const NON_REGULAR_TRACK_ACTION_TYPES = new Set<AgentAction["type"]>([
   "insert_chain_device",
   "create_rack_chain",
   "set_device_parameter",
+  "set_device_parameters",
   "duplicate_device",
   "delete_device",
   "set_track_mixer_parameter",
@@ -277,6 +278,7 @@ export function observationRequestForAction(
         ...(action.slotIndex === undefined ? {} : { slotIndex: action.slotIndex }),
       };
     case "set_device_parameter":
+    case "set_device_parameters":
       return action.devicePath
         ? {
             type: "inspect_device_tree",
@@ -526,7 +528,7 @@ export function summarizeAgentAction(action: AgentAction): string {
     case "create_session_midi_clip":
       return `Create or replace Session MIDI clip${action.name ? ` "${action.name}"` : ""} in slot ${action.slotIndex} on ${targetTrack(action)} for ${action.durationBeats} beats with ${action.notes.length} notes.`;
     case "replace_midi_clip_segment":
-      return `Replace notes in MIDI clip "${action.clipName}" on ${targetTrack(action)} at arrangement beat ${action.startBeat}, relative beats ${action.segmentStartTime}-${action.segmentStartTime + action.segmentDurationBeats}, with ${action.notes.length} notes.`;
+      return `Replace notes in MIDI clip "${action.clipName}" on ${targetTrack(action)} at arrangement beat ${action.startBeat}, source beats ${action.segmentStartTime}-${action.segmentStartTime + action.segmentDurationBeats}, with ${action.notes.length} notes.`;
     case "transpose_midi_notes":
       return `Transpose every note in ${clipLocatorText(action)} on ${targetTrack(action)} by ${action.semitones} semitones.`;
     case "quantize_midi_notes":
@@ -543,6 +545,8 @@ export function summarizeAgentAction(action: AgentAction): string {
       return `Append one empty Chain to non-Drum Rack "${action.rackName}"${action.rackPath ? ` at ${devicePathText(action.rackPath)}` : ""} on ${targetTrack(action)}.`;
     case "set_device_parameter":
       return `Set "${action.parameterName}" on "${action.deviceName}"${deviceLocatorText(action.devicePath, action.deviceIndex)} in ${targetTrack(action)} to ${action.value}.`;
+    case "set_device_parameters":
+      return `Set ${action.values.length} parameters on "${action.deviceName}"${deviceLocatorText(action.devicePath, action.deviceIndex)} in ${targetTrack(action)}: ${action.values.map((entry) => `[${entry.parameterIndex}] "${entry.parameterName}" = ${entry.value}`).join(", ")}.`;
     case "duplicate_device":
       return `Duplicate device "${action.deviceName}"${deviceLocatorText(action.devicePath, action.deviceIndex)} in ${targetTrack(action)}.`;
     case "delete_device":
@@ -681,7 +685,7 @@ function validateActionLocators(action: AgentAction): void {
     throw new Error("Take Lane audio creation requires durationBeats.");
   }
   if (
-    (action.type === "set_device_parameter" ||
+    (action.type === "set_device_parameter" || action.type === "set_device_parameters" ||
       action.type === "duplicate_device" ||
       action.type === "delete_device") &&
     action.devicePath !== undefined &&
@@ -844,7 +848,10 @@ function validateMidiActionTiming(action: AgentAction): void {
   }
 }
 
-function validateMidiSegmentRanges(actions: AgentAction[]): void {
+export function validateMidiSegmentRanges(
+  actions: readonly AgentAction[],
+  clipIdentity: (action: Extract<AgentAction, { type: "replace_midi_clip_segment" }>, index: number) => string | undefined = midiSegmentLocatorIdentity,
+): void {
   const tolerance = 1e-7;
   const ranges = new Map<
     string,
@@ -853,16 +860,8 @@ function validateMidiSegmentRanges(actions: AgentAction[]): void {
 
   actions.forEach((action, index) => {
     if (action.type !== "replace_midi_clip_segment") return;
-    const target = action.trackRef
-      ? `ref:${action.trackRef.toLocaleLowerCase()}`
-      : action.trackName
-        ? `name:${action.trackName.toLocaleLowerCase()}`
-        : "selected-track";
-    const key = [
-      target,
-      action.clipName.toLocaleLowerCase(),
-      String(action.startBeat),
-    ].join("\u0000");
+    const key = clipIdentity(action, index);
+    if (key === undefined) return;
     const start = action.segmentStartTime;
     const end = start + action.segmentDurationBeats;
     const priorRanges = ranges.get(key) ?? [];
@@ -876,6 +875,13 @@ function validateMidiSegmentRanges(actions: AgentAction[]): void {
     priorRanges.push({ actionNumber: index + 1, start, end });
     ranges.set(key, priorRanges);
   });
+}
+
+function midiSegmentLocatorIdentity(action: Extract<AgentAction, { type: "replace_midi_clip_segment" }>): string {
+  const target = action.trackRef
+    ? `ref:${action.trackRef}`
+    : action.trackName ? `name:${action.trackName.toLocaleLowerCase()}` : "selected-track";
+  return [target, action.clipName.toLocaleLowerCase(), String(action.startBeat)].join("\u0000");
 }
 
 function validateSceneIndexStability(actions: AgentAction[]): void {
@@ -1216,6 +1222,7 @@ function requiresNamedTrackTarget(
 function requiresObservedExistingTrack(action: AgentAction): boolean {
   return (
     action.type === "set_device_parameter" ||
+    action.type === "set_device_parameters" ||
     action.type === "duplicate_device" ||
     action.type === "delete_device" ||
     action.type === "insert_chain_device" ||
@@ -1226,6 +1233,7 @@ function requiresObservedExistingTrack(action: AgentAction): boolean {
     action.type === "set_chain_mixer_parameter" ||
     action.type === "set_clip_properties" ||
     action.type === "set_audio_clip_warp" ||
+    action.type === "replace_midi_clip_segment" ||
     isMidiTransformAction(action) ||
     action.type === "delete_session_clip" ||
     action.type === "rename_take_lane" ||

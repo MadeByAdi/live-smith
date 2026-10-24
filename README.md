@@ -63,14 +63,20 @@ Tempo, meter and controller events remain in the saved file; import writes notes
 only and leaves the Set's tempo and meter unchanged. An interrupted import
 preserves recovery information and must be inspected before retrying.
 
-**Session → Artifacts** collects this Session's saved MIDI, downloaded service audio and Plugin WAV/MP3 results. Other supported
-file formats remain chat attachments. Each MIDI or audio work has one entry containing its
-versions. Open the entry and choose a version to inspect, export, attach or add
-to Live. The version's source is shown explicitly; the source can be an older
+**Session → Artifacts** collects this Session's saved MIDI, downloaded service audio,
+Plugin WAV/MP3 results and device parameter snapshots. Other supported
+file formats remain chat attachments. Each work has one entry containing its
+versions. Open the entry and choose a version to inspect or use its available
+actions. The version's source is shown explicitly; the source can be an older
 version in the same group. **Make primary** saves the work's default version;
 reopening its entry selects that version, while an explicitly selected version
 remains the target of export, attachment and further work. Clearing the primary
 returns the default to the latest available version.
+
+**Search artifacts** searches names, version labels and localized sources across
+this Session's complete saved catalog. Results are grouped and paginated after
+matching; opening a match selects its matching version. Clear the search to
+return to the full catalog. Searching does not call a model or audio provider.
 
 For MIDI, **Version comparison** defaults to the source version and allows any other
 version in the same work as the comparison baseline. It reads both complete MIDI files and
@@ -103,8 +109,8 @@ saved file or export; **Add to Live** carries the part choice into the import di
 They reuse the exact saved file without calling a model or audio provider.
 Repeated attachment of the same pending file reuses its existing reference;
 distinct MIDI versions and audio outputs remain separate. Model input support
-and attachment budgets still apply when sending. A missing historical tool call
-leaves its generation parameters unavailable. Refreshing the list retains the
+and attachment budgets still apply when sending. **Generation parameters** appears
+when the original tool call is available. Refreshing the list retains the
 selected version and audio playback; **Back to chat** pauses artifact audio and
 returns to the composer.
 
@@ -115,8 +121,31 @@ Steer and manual tool calls do not consume it. The resulting tool calls retain
 their parent artifact even if a later request uses another source. Clearing the
 next-request source leaves the original files intact. MIDI artifacts use the
 same mapped import preview; audio import is prepared in chat and uses the existing
-scoped audio action and approval preview. The artifact library does not audition
-Live instruments or roll back applied changes.
+scoped audio action and approval preview.
+
+**Save device parameter snapshot** captures all exposed parameters of one selected
+device, including devices inside Racks. Captured snapshots and AI-proposed versions
+have distinct source labels. Ask the model to capture a device or select a saved
+snapshot as the next-chat source to propose a new version. Saving and comparing
+versions do not change Live. The parameter table shows complete saved values and
+ranges, with filtering and a **Compare with** choice for current Live values or
+another version in the same work.
+
+**Apply to Live** writes the changed parameters after the Session's usual Scope,
+approval and state checks. Listen through Live, then choose **Keep current values**
+or **Restore previous values**. Application details retain the original values,
+verified readbacks and unfinished writes across browser reconnection. Restore
+rechecks the target and values; conflicting edits, parameter layout changes and
+unconfirmed writes require inspection before continuing. Parameter side effects
+are checked across the complete device. An operation can partially complete, and
+does not promise one Live Undo step. After the Live runtime changes, applying a
+saved version requires explicitly choosing a compatible destination; restoring an
+old application requires its original runtime binding.
+
+Snapshots contain raw SDK-exposed parameters. They do not contain automation,
+sample files or private plugin preset state, and value labels do not define units
+or numeric enum mappings. Complete snapshots are limited to 4,096 parameters and
+4 MiB; exceeding a storage limit fails the capture without truncating its values.
 
 Ask the current model to save a MIDI artifact to generate a file without changing
 Live; no external MIDI generator is required. MIDI revisions are grouped as
@@ -161,6 +190,21 @@ Choose **Settings → App → Interface language** to use **English**, **简体�
 system language. The preference is shared across Live Smith windows. Switching
 languages keeps drafts and ongoing work; user messages, model replies, object
 names, and raw provider/SDK output stay in their original language.
+
+Choose **Settings → App → Conversation & Display → Open Live Smith in** to open Live
+Smith in the **Live modal** (default) or your **System browser**. The choice applies
+to the next invocation. The browser lets you keep working in Live; closing its tab
+preserves admitted tasks and pending approvals while the Extension is running.
+Use **Ask Live Smith** on the same object or selection to reopen its Session, or
+use **Stop** to cancel its current task. Asking about a different selection replaces
+an idle browser runtime; finish or Stop its work first when it is busy. Switching
+Live Sets prevents the old runtime from applying further edits. Drafts and queued
+follow-ups belong to the page and are lost when its tab closes.
+
+After a connection interruption, Live Smith refreshes the current state before
+accepting new work. Temporary failures retry automatically; if recovery still
+fails, use **Retry connection** beside the status message. Recovery preserves
+unsent drafts and does not resend prompts or commands.
 
 > [!NOTE]
 > Live Smith is beta software. See the [development guide](docs/DEVELOPMENT.md#prerequisites)
@@ -208,8 +252,9 @@ names, and raw provider/SDK output stay in their original language.
   shows Thinking while in progress and disappears when complete. See
   [visible reasoning output](docs/MODEL_PROVIDERS.md#visible-reasoning-output)
   for connection-specific summary behavior.
-- **Search when needed.** Compatible Direct API connections can enable hosted
-  Web Search, with search activity and citations visible in the conversation.
+- **Search when needed.** Compatible Direct API and subscription connections can
+  enable Web Search, with search activity and citations visible in the conversation.
+  See [provider support and limits](docs/MODEL_PROVIDERS.md#provider-hosted-web-search).
 - **Generate music and sound effects.** Add an ElevenLabs connection under
   **Settings → Extensions → Audio services**, then describe the music or sound you want.
   Multiple named audio connections, including separate accounts at the same
@@ -376,9 +421,13 @@ Messages, and Google uses the Antigravity product backend. Anthropic currently
 assigns third-party OAuth traffic to Claude Extra Usage when it is enabled.
 Antigravity uses the account's default entitlement and region; Live Smith does
 not import CLI-local license-tier or project-region overrides.
-Hosted Web Search is not exposed through subscription Profiles. If an account
-check is unavailable, use Sign out to clear its saved OAuth session before
-signing in again.
+Each subscription model can opt in to Web Search. Claude uses its native search
+tool. ChatGPT uses the Codex standalone search service with the selected model
+and returns the results to the conversation. Antigravity uses a separate search
+request with a model advertised by the signed-in account, then returns the results to the selected
+conversation model. Availability depends on provider and account support.
+If an account check is unavailable, use Sign out to clear its saved OAuth
+session before signing in again.
 
 See [model connections](docs/MODEL_PROVIDERS.md) for setup requirements and
 provider-specific limitations.
@@ -467,11 +516,11 @@ consecutive operations share a group. **Manual** shows Apply and Cancel; automat
 runs without those buttons. Applied, cancelled, failed, and partially applied
 operations have distinct states. Approval alone never counts as a completed edit.
 
-For a single supported MIDI Clip creation, note edit, or device/mixer parameter edit,
+For a single supported MIDI Clip creation, note edit, device parameter set, or device/mixer parameter edit,
 expand the card to view the observed **Before** and **Proposed after**.
 MIDI previews use Clip-relative beats and the same pitch/time scales on both
-sides. Large previews show at most 256 notes per side and state how many were
-omitted. Parameter previews show raw SDK values and observed ranges; they do not
+sides. They retain the complete validated note set and draw notes in the visible
+time range. Parameter previews show raw SDK values and observed ranges; they do not
 guess display units or map value labels to numbers. The full action list remains
 visible. MIDI creation previews cover empty Arrangement or Session destinations
 and exact reusable MIDI Clips. Plans involving several actions, other new
@@ -492,13 +541,30 @@ rename, duplicate, and delete-track actions.
 
 ## Sessions, Skills, and attachments
 
+**Search sessions** finds displayed Session names and saved user/assistant messages
+across current, historical and archived Sessions. Untitled Sessions use their
+saved Live context label. Message matches show an excerpt; the existing Session
+navigation and Continue actions remain available.
+Matching ignores letter case and treats the query as literal text. Clear the
+search or press Escape to restore the full list. Searches read local history;
+unreadable histories are reported separately from an empty result.
+Within Current, History and Archived, results are ordered by the latest saved
+user/assistant message or Session metadata update. The Session's Updated date
+uses the same activity time.
+
 **Sessions** keep conversation and action history with their Live context.
+If the original Live object is deleted, the Session can still receive messages
+and compact its conversation. Its context is marked unavailable and has no
+default Live target. Live operations that need an object require an explicit
+current target.
 Opening the dialog or choosing New Session does not save an untouched empty
-conversation. Messages, Session settings, and attachments are saved when used;
-the Sessions list keeps empty entries that were active in the current window and
-hides unvisited empty entries across tracks and History. Closing the window clears
-that temporary visibility. Conversations and unsent drafts remain visible; hiding
-empty entries does not delete existing data.
+conversation. Messages, Session settings, and attachments are saved when used.
+With search cleared, the Sessions list keeps empty entries that were active in
+the current window and hides unvisited empty entries across tracks and History.
+Closing the window clears that temporary visibility. Conversations and unsent
+drafts remain visible; hiding empty entries does not delete existing data.
+The Live modal's **Close** button asks before discarding unsaved drafts, including
+messages and creative briefs from other Sessions used in that window.
 Previous Sessions can be restored explicitly; matching names alone do not make
 an old conversation the same Live object.
 
@@ -512,7 +578,7 @@ local draft and **Save brief** explicitly accepts it. Suggestions never save
 preferences automatically. Unsaved drafts remain separate for each Session in
 that window. If another window changes the saved brief, review its current text
 before keeping or replacing your draft. The brief records creative intent;
-current BPM, meter, and other Live facts are read from the Set.
+current BPM and other SDK-exposed Live facts come from fresh observations.
 
 Hover over a message, or focus its controls with the keyboard, to copy its
 original text. **Use as draft** puts a user message back in the composer;
@@ -526,7 +592,7 @@ generation and attachment upload.
 **Skills** provide musical workflow guidance. Three built-ins cover section
 energy, musical variation, and instrument roles. They start disabled; **View**
 opens the full instructions without enabling them. Import and manage standalone
-[SKILL.md](docs/MODEL_PROVIDERS.md#skill-instructions) files in
+[SKILL.md](docs/ARCHITECTURE.md#definitions-and-presentation) files in
 **Settings → Extensions → Skills**. The library groups built-in, user, and
 Plugin-provided Skills by source, including disabled Plugin packages. Enable up to four Skills in
 **Session → Skills**, or use `$skill-id` for one request.
@@ -607,7 +673,7 @@ Credentials remain write-only environment variables or HTTP headers, never model
 tool arguments. Plugin connections bind to the exact installed package and
 server; direct connections bind to their exact launch configuration or URL.
 Changing that target requires entering credentials again. Direct local MCP
-connections have separate audio-input and MIDI-output grants. Disabling or
+connections have separate audio/MIDI-input and audio/MIDI-output grants. Disabling or
 removing a connection closes its active MCP clients and preserves saved Session
 artifacts.
 
@@ -714,8 +780,8 @@ Queue and Steer are configured under
 **Settings → App → Conversation & Display**.
 The same section can show or hide the compact context-window indicator in the
 composer.
-Queued follow-ups belong to the open window; Live Smith warns before closing
-with pending work.
+Queued follow-ups belong to the open page. The Live modal warns before closing
+with pending work; browser tabs use their native close control.
 
 ## Privacy
 

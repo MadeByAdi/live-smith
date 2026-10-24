@@ -149,6 +149,7 @@ test("a reconnect snapshot replaces same-epoch transient state and restores its 
 test("a reopened frontend adopts an active replayed send without posting a duplicate send", async () => {
   const state = stateFixture();
   state.openSettingsOnLoad = false;
+  state.sessionActivities = [{ sessionId: "session-1", sendId: "replayed-send", status: "running", message: "Thinking after reconnect", unread: false }];
   const harness = await createDialogHarness(state);
   try {
     const sendId = "replayed-send";
@@ -197,6 +198,7 @@ test("a reopened frontend adopts an active replayed send without posting a dupli
 test("an adopted replayed send receives pending confirmations and cleans up on completion", async () => {
   const state = stateFixture();
   state.openSettingsOnLoad = false;
+  state.sessionActivities = [{ sessionId: "session-1", sendId: "replayed-confirm-send", status: "waiting_confirmation", message: "Waiting for replayed confirmation", unread: false }];
   const harness = await createDialogHarness(state);
   try {
     const sendId = "replayed-confirm-send";
@@ -822,7 +824,9 @@ test("connection overlay reveals the latest state, profile gate, command, Queue,
   await context.test("Queue and Stop", async () => {
     const state = stateFixture();
     state.openSettingsOnLoad = false;
-    const harness = await createDialogHarness(state);
+    const harness = await createDialogHarness(state, undefined, {
+      defaultStopTerminal: false,
+    });
     try {
       await startHeldSend(harness);
       harness.emitServerEventError();
@@ -835,10 +839,12 @@ test("connection overlay reveals the latest state, profile gate, command, Queue,
       harness.emitServerEventOpen();
       assert.equal(harness.document.querySelector("#status")?.textContent, "Follow-up queued.");
 
-      harness.queueStopOutcomes({ terminal: false });
       harness.emitServerEventError();
       harness.click("#sendButton");
-      await harness.settle();
+      await waitForCondition(
+        () => harness.stopIds.length >= 2,
+        "Expected Stop to keep polling its nonterminal outcome.",
+      );
       assert.match(
         harness.document.querySelector("#status")?.textContent ?? "",
         /Stop requested|Stopping/,

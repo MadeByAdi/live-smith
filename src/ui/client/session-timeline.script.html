@@ -18,11 +18,15 @@
         isConfirmationLocked,
         resolveConfirm,
         runCommand,
+        readSessionSearch,
+        readSessionPreview,
         showStatus,
         onInspectorTabChange = () => {},
       }) {
       const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const { message } = window.LiveSmithI18n;
+      const sessionActivityAt = window.LiveSmithFactories.sessionActivityAt;
+      const isWireSessionPreview = window.LiveSmithFactories.isWireSessionPreview;
       const builtInAudioToolNames = __BUILT_IN_AUDIO_TOOL_NAMES__;
       const sessionActionLabels = new WeakMap();
       const maximumSessionTitleCodePoints = __MAX_SESSION_TITLE_CODE_POINTS__;
@@ -44,6 +48,12 @@
       const selectedSessionIds = new Set();
       let sessionSelectionAnchorId = null;
       let pendingSessionSwitchId = null;
+      let previewSessionId = null;
+      let previewActiveSessionId = null;
+      let previewController = null;
+      let previewRevision = 0;
+      let previewOffset = 0;
+      let previewControlsReady = false;
       let nextSessionSelectionStatusId = 0;
       let renderedTimelineKey = null;
       let renderedTimelineSessionId = null;
@@ -58,6 +68,90 @@
       let pendingTimelinePosition = null;
       const activeSessionIdsThisWindow = new Set([getState().activeSessionId]);
       const scrollbarIdleDelayMs = 650;
+      const sessionSearch = window.LiveSmithFactories.createSessionSearch({
+        readSessionSearch,
+        onFilterChange: () => { clearSessionSelection(); closeSessionMenus(); },
+        onResultsChange: () => renderSessions(),
+      });
+
+      function closeHistoryPreview() {
+        previewRevision++;
+        previewController?.abort();
+        previewController = null;
+        previewSessionId = null;
+        previewActiveSessionId = null;
+        document.getElementById("sessionHistoryPreview").hidden = true;
+        document.getElementById("timeline").hidden = false;
+      }
+
+      async function loadHistoryPreviewPage(sessionId, offset, revision) {
+        previewController?.abort();
+        const controller = new window.AbortController();
+        previewController = controller;
+        const status = document.getElementById("sessionHistoryPreviewStatus");
+        const more = document.getElementById("sessionHistoryPreviewMore");
+        more.hidden = true;
+        status.textContent = t("Loading read-only history…");
+        try {
+          const input = { sessionId, offset };
+          const result = await readSessionPreview(input, controller.signal);
+          if (revision !== previewRevision || controller.signal.aborted) return;
+          if (!isWireSessionPreview(result, input)) throw new Error("Invalid Session preview response.");
+          const messages = document.getElementById("sessionHistoryPreviewMessages");
+          if (offset === 0) messages.replaceChildren();
+          const artifacts = document.getElementById("sessionHistoryPreviewArtifacts");
+          artifacts.textContent = result.artifactCount
+            ? t("Saved artifacts: {count}", { count: String(result.artifactCount) }) + " (" +
+              result.artifacts.map((artifact) => artifact.kind).join(", ") + ")"
+            : "";
+          for (const entry of result.messages) {
+            const item = document.createElement("article");
+            item.className = "session-history-preview-message";
+            const label = document.createElement("strong");
+            label.textContent = entry.kind === "user" ? t("You") : t("Live Smith");
+            const content = document.createElement("span");
+            content.textContent = entry.content + (entry.truncated ? "…" : "");
+            item.append(label, content);
+            if (entry.artifacts.length) {
+              const artifacts = document.createElement("span");
+              artifacts.className = "session-history-preview-artifacts";
+              artifacts.textContent = entry.artifacts.map((artifact) => artifact.kind).join(", ");
+              item.append(artifacts);
+            }
+            messages.append(item);
+          }
+          previewOffset = offset + result.messages.length;
+          more.hidden = previewOffset >= result.total;
+          status.textContent = t("Read-only history. Send still uses the active Session.");
+        } catch {
+          if (revision !== previewRevision || controller.signal.aborted) return;
+          status.textContent = t("Session preview is unavailable.");
+        } finally {
+          if (previewController === controller) previewController = null;
+        }
+      }
+
+      function openHistoryPreview(session) {
+        previewRevision++;
+        previewSessionId = session.id;
+        previewActiveSessionId = getState().activeSessionId;
+        previewOffset = 0;
+        const panel = document.getElementById("sessionHistoryPreview");
+        document.getElementById("sessionHistoryPreviewTitle").textContent = session.title || session.scope.label;
+        document.getElementById("sessionHistoryPreviewMessages").replaceChildren();
+        panel.hidden = false;
+        document.getElementById("timeline").hidden = true;
+        void loadHistoryPreviewPage(session.id, 0, previewRevision);
+      }
+
+      function initializeHistoryPreviewControls() {
+        if (previewControlsReady) return;
+        document.getElementById("sessionHistoryPreviewClose").addEventListener("click", closeHistoryPreview);
+        document.getElementById("sessionHistoryPreviewMore").addEventListener("click", () => {
+          if (previewSessionId) void loadHistoryPreviewPage(previewSessionId, previewOffset, previewRevision);
+        });
+        previewControlsReady = true;
+      }
 
       function retainActiveSessionForWindow() {
         activeSessionIdsThisWindow.add(getState().activeSessionId);
@@ -65,6 +159,7 @@
 
       function isSessionVisible(session, archived = false) {
         const state = getState();
+        if (sessionSearch.active) return sessionSearch.includes(session.id);
         return archived || session.id === state.activeSessionId ||
           activeSessionIdsThisWindow.has(session.id) ||
           session.hasContent !== false || hasSessionLocalWork(session.id) ||
@@ -77,9 +172,9 @@
         retainActiveSessionForWindow();
         const state = getState();
         return [
-          ...(state.sessions || []).map((session) => ({ session, archived: false })),
-          ...(state.previousSessions || []).map((session) => ({ session, archived: false })),
-          ...(state.archivedSessions || []).map((session) => ({ session, archived: true })),
+          ...sessionSearch.orderSessions(state.sessions || []).map((session) => ({ session, archived: false })),
+          ...sessionSearch.orderSessions(state.previousSessions || []).map((session) => ({ session, archived: false })),
+          ...sessionSearch.orderSessions(state.archivedSessions || []).map((session) => ({ session, archived: true })),
         ].filter(({ session, archived }) => isSessionVisible(session, archived));
       }
 
@@ -868,7 +963,7 @@
         const archivedDate = session.archivedAt
           ? formatSessionDate(session.archivedAt)
           : "";
-        const date = formatSessionDate(session.updatedAt || session.createdAt);
+        const date = formatSessionDate(sessionActivityAt(session));
         return [
           archivedDate ? t("Archived {date}", { date: archivedDate }) : "",
           date ? t("Updated {date}", { date }) : "",
@@ -1060,9 +1155,42 @@
         });
       }
 
+      function focusSessionSearchMatch(sessionId, eventId) {
+        if (!eventId || sessionId !== getState().activeSessionId ||
+          sessionSearch.getMatch(sessionId)?.eventId !== eventId ||
+          document.activeElement === document.getElementById("sessionSearch")) return false;
+        const item = [...document.querySelectorAll("#timeline [data-event-id]")]
+          .find((node) => node.dataset.eventId === eventId);
+        if (!item) return false;
+        cancelPendingTimelinePosition();
+        item.tabIndex = -1;
+        item.focus({ preventScroll: true });
+        item.scrollIntoView?.({ block: "center" });
+        return true;
+      }
+
+      function syncSessionSearchExcerpt(entry, session) {
+        const match = sessionSearch.getMatch(session.id);
+        let excerpt = entry.querySelector(".session-search-excerpt");
+        if (!sessionSearch.active || !match || match.excerpt === (session.title || session.scope.label)) {
+          excerpt?.remove();
+          return;
+        }
+        if (!excerpt) {
+          excerpt = document.createElement("span");
+          excerpt.className = "session-search-excerpt";
+          entry.querySelector(".session-row").append(excerpt);
+        }
+        if (excerpt.textContent !== match.excerpt) excerpt.textContent = match.excerpt;
+      }
+
       function renderSessions() {
+        initializeHistoryPreviewControls();
+        if (previewSessionId && (previewActiveSessionId !== getState().activeSessionId ||
+            !(getState().previousSessions || []).some((session) => session.id === previewSessionId))) closeHistoryPreview();
         retainActiveSessionForWindow();
         const state = getState();
+        sessionSearch.syncState(state);
         const currentSessions = state.sessions.filter((session) => isSessionVisible(session));
         const previousSessions = (state.previousSessions || []).filter(
           (session) => isSessionVisible(session),
@@ -1146,7 +1274,7 @@
         );
         const desiredNodes = [];
 
-        if (!currentSessions.length) {
+        if (!currentSessions.length && !sessionSearch.active) {
           const empty = list.querySelector(".session-empty") ||
             document.createElement("div");
           if (!empty.classList.contains("session-empty")) {
@@ -1176,6 +1304,7 @@
               activity,
               isActive,
             );
+            syncSessionSearchExcerpt(existing, session);
             desiredNodes.push(existing);
             return;
           }
@@ -1218,16 +1347,25 @@
           row.onclick = (event) => {
             if (handleModifiedSessionSelection(event, session.id)) return;
             if (mode === "current") {
+              closeHistoryPreview();
               clearSessionSelection();
               sessionSelectionAnchorId = session.id;
-              if (session.id === getState().activeSessionId) return;
-              selectionPromise = selectCurrentSession();
-              if (event.detail === 0) {
-                selectionPromise.then(() => focusSessionRow(session.id));
+              const matchedEventId = sessionSearch.getMatch(session.id)?.eventId;
+              if (session.id === getState().activeSessionId) {
+                focusSessionSearchMatch(session.id, matchedEventId);
+                return;
               }
+              selectionPromise = selectCurrentSession();
+              selectionPromise.then((selected) => {
+                if (!selected || document.activeElement === document.getElementById("sessionSearch")) return;
+                if (!focusSessionSearchMatch(session.id, matchedEventId) && event.detail === 0) {
+                  focusSessionRow(session.id);
+                }
+              });
               return selectionPromise;
             }
             selectOnlySession(session.id);
+            if (mode === "history") openHistoryPreview(session);
           };
 
           const title = document.createElement("span");
@@ -1290,6 +1428,7 @@
             );
             continueButton.onclick = (event) => {
               event.stopPropagation();
+              closeHistoryPreview();
               clearSessionSelection();
               sessionSelectionAnchorId = session.id;
               return runCommand("restore_session", { sessionId: session.id });
@@ -1303,22 +1442,25 @@
             activity,
             isActive,
           );
+          syncSessionSearchExcerpt(entry, session);
           if (continueButton) entry.append(continueButton);
           entry.append(menuButton, menu);
           desiredNodes.push(entry);
         };
 
-        for (const session of currentSessions) appendSession(session, "current");
+        for (const session of sessionSearch.orderSessions(currentSessions)) appendSession(session, "current");
 
         if (previousSessions.length) {
           desiredNodes.push(sessionSection("history", t("History"), existingSections));
-          for (const session of previousSessions) appendSession(session, "history");
+          for (const session of sessionSearch.orderSessions(previousSessions)) appendSession(session, "history");
         }
 
-        const archivedSessions = state.archivedSessions || [];
+        const archivedSessions = (state.archivedSessions || []).filter(
+          (session) => isSessionVisible(session, true),
+        );
         if (archivedSessions.length) {
           desiredNodes.push(sessionSection("archived", t("Archived"), existingSections));
-          for (const session of archivedSessions) appendSession(session, "archived");
+          for (const session of sessionSearch.orderSessions(archivedSessions)) appendSession(session, "archived");
         }
         reconcileChildNodes(list, desiredNodes);
         if (renameState && !renameState.input.isConnected && renameState.sessionId) {
@@ -1930,6 +2072,7 @@
       function renderTimeline() {
         attachmentViewer.sync();
         const state = getState();
+        sessionSearch.syncState(state);
         syncMessageActions();
         const assistantDraft = getAssistantDraft();
         const reasoningDraft = getReasoningDraft?.() ?? null;
@@ -2382,14 +2525,23 @@
           if (step.operationId) {
             content.push(renderOperationReview(step.operationId, step.events, confirm));
           } else {
-            const midiRefs = step.events.flatMap((event) => event.artifacts || []).filter((ref) => ref.kind === "midi");
-            if (midiRefs.length) {
-              for (const ref of midiRefs) { const preview = artifactPreviews.render(ref); if (preview) content.push(preview); }
-            } else for (const event of step.events) {
+            const savedRefs = step.events.flatMap((event) => event.artifacts || []).filter((ref) => ref.kind === "midi" || ref.kind === "device-parameters");
+            if (savedRefs.length) {
+              for (const ref of savedRefs) { const preview = artifactPreviews.render(ref); if (preview) content.push(preview); }
+            }
+            const eventDetails = [];
+            for (const event of step.events) {
               const section = document.createElement("section"); section.className = "timeline-activity-detail-section"; section.dataset.eventId = event.id;
               const label = document.createElement("div"); label.className = "timeline-activity-detail-label"; label.textContent = activityEventLabel(event);
               const body = document.createElement("div"); body.className = "timeline-activity-detail-content"; body.textContent = event.content || "";
-              section.append(label, body); content.push(section);
+              section.append(label, body); eventDetails.push(section);
+            }
+            if (savedRefs.length && eventDetails.length) {
+              const details = document.createElement("details");
+              const summary = document.createElement("summary"); summary.textContent = t("Tool details");
+              details.append(summary, ...eventDetails); content.push(details);
+            } else {
+              content.push(...eventDetails);
             }
           }
           reconcileChildNodes(view.detail, content); view.snapshot = snapshot;
@@ -2450,7 +2602,7 @@
       }
 
       function activityStatusNeedsAttention(status) {
-        return ["failed", "partial", "stopped"].includes(status);
+        return ["failed", "partial", "stopped", "unconfirmed"].includes(status);
       }
 
       function activityStepsGainedAttention(steps, previousStates) {
@@ -2472,6 +2624,7 @@
         if (!terminal) return "pending";
         if (terminal.kind === "error") return "failed";
         if (terminal.kind === "tool_result") {
+          if (terminal.outcome) return activityEventOutcome(terminal);
           if (call?.name === "apply_live_actions") return "failed";
           if (call?.name === "resolve_live_recovery") return "stopped";
         }
@@ -2487,7 +2640,10 @@
           if (status === "waiting") return t("Needs approval");
           if (["approved", "unconfirmed"].includes(status)) return t("Live changes");
         }
-        if (step.events.some((event) => event.artifacts?.some((ref) => ref.kind === "midi"))) return t("Saved MIDI");
+        if (isSavedPreviewArtifactStep(step)) {
+          const refs = step.events.flatMap((event) => event.artifacts || []);
+          return t(refs.every((ref) => ref.kind === "midi") ? "Saved MIDI" : refs.every((ref) => ref.kind === "device-parameters") ? "Saved device parameters" : "Saved artifacts");
+        }
         const call = step.events.find((event) => event.kind === "tool_call");
         const terminal = [...step.events].reverse().find(
           (event) =>
@@ -2528,7 +2684,7 @@
           return step.events.find((event) => event.applyOperation?.previews?.length)?.applyOperation.previews[0].targetLabel ||
             step.events.find((event) => event.kind === "apply_requested")?.content.split("\n")[0] || "";
         }
-        if (step.events.some((event) => event.artifacts?.some((ref) => ref.kind === "midi"))) return "";
+        if (isSavedPreviewArtifactStep(step)) return "";
         const call = step.events.find((event) => event.kind === "tool_call");
         const applyLifecycle = call?.name === "apply_live_actions" || (
           !call && step.events.some((event) => event.kind.startsWith("apply_"))
@@ -2554,6 +2710,13 @@
       function activityEventPreview(event) {
         const value = (event?.content || "").trim();
         if (!value || value === "{}") return "";
+        if (event?.kind === "tool_result") {
+          try {
+            const parsed = JSON.parse(value);
+            const text = Array.isArray(parsed?.content) && parsed.content.find((entry) => entry?.type === "text" && typeof entry.text === "string" && entry.text.trim());
+            if (text) return text.text.trim();
+          } catch { /* Plain-text tool results already supply their own preview. */ }
+        }
         if (event?.kind === "tool_call") {
           try {
             const parsed = JSON.parse(value);
@@ -2565,6 +2728,19 @@
           }
         }
         return value.split("\n")[0]?.trim() || "";
+      }
+
+      function isPreviewArtifactOnlyResult(event) {
+        if (event.kind !== "tool_result" || !event.artifacts?.length || event.artifacts.some((ref) => ref.kind !== "midi" && ref.kind !== "device-parameters")) return false;
+        try {
+          const value = JSON.parse(event.content);
+          return value && Object.keys(value).length === 1 && Array.isArray(value.artifacts);
+        } catch { return false; }
+      }
+
+      function isSavedPreviewArtifactStep(step) {
+        const results = step.events.filter((event) => event.kind !== "tool_call");
+        return results.length > 0 && results.every(isPreviewArtifactOnlyResult);
       }
 
       function activityStepChangeCount(step) {
@@ -3109,6 +3285,9 @@
       }
 
       function activityEventOutcome(event) {
+        if (event?.kind === "tool_result" && event.outcome) {
+          return event.outcome === "unknown" ? "unconfirmed" : event.outcome;
+        }
         if (event?.kind === "error") return "failed";
         if (event?.kind === "apply_result" && activityEventFirstLine(event) === "Applied:") {
           return "success";
@@ -3121,6 +3300,7 @@
           isRecoveryToolTerminalResult(event) ||
           isRejectedToolResult(event)
         ) return "stopped";
+        if (event?.kind === "tool_result") return "unconfirmed";
         return event?.kind === "apply_result" ? "stopped" : "success";
       }
 
@@ -3178,6 +3358,7 @@
 
       return {
         announceAssistantMessage,
+        invalidateSessionSearch: sessionSearch.invalidate,
         humanizeToolName,
         handleInspectorTabKeydown,
         renderAssistantDraft,

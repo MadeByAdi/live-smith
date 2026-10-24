@@ -97,8 +97,8 @@ section above.
 
 ### Model Context Protocol
 
-- `@modelcontextprotocol/client` 2.0.0
-- `@modelcontextprotocol/core` 2.0.0
+- `@modelcontextprotocol/client` 2.2.0
+- `@modelcontextprotocol/core` 2.2.0
 - `@modelcontextprotocol/ext-apps` 2.0.0
 
 Copyright (c) 2024-2025 Model Context Protocol, a Series of LF Projects, LLC.
@@ -199,6 +199,73 @@ PERFORMANCE OF THIS SOFTWARE.
 
 Each WebSocket and proxy-routing package above is distributed under the MIT
 License reproduced in the Document parser section above.
+
+## Markdown source analysis
+
+- `character-entities` 2.0.2
+- `decode-named-character-reference` 1.3.0
+- `devlop` 1.1.0
+- `longest-streak` 3.1.0
+- `markdown-table` 3.0.4
+- `mdast-util-from-markdown` 2.1.0
+- `mdast-util-gfm-strikethrough` 2.0.1
+- `mdast-util-gfm-table` 2.0.0
+- `mdast-util-phrasing` 4.1.0
+- `mdast-util-to-markdown` 2.2.0
+- `mdast-util-to-string` 4.0.0
+- `micromark` 4.0.3
+- `micromark-core-commonmark` 2.0.4
+- `micromark-extension-gfm-strikethrough` 2.1.0
+- `micromark-extension-gfm-table` 2.1.2
+- `micromark-factory-destination` 2.0.1
+- `micromark-factory-label` 2.0.1
+- `micromark-factory-space` 2.1.0
+- `micromark-factory-title` 2.0.1
+- `micromark-factory-whitespace` 2.0.1
+- `micromark-util-character` 2.1.1
+- `micromark-util-chunked` 2.0.1
+- `micromark-util-classify-character` 2.0.1
+- `micromark-util-combine-extensions` 2.0.1
+- `micromark-util-decode-numeric-character-reference` 2.0.2
+- `micromark-util-decode-string` 2.0.1
+- `micromark-util-edit-map` 1.0.0
+- `micromark-util-encode` 2.0.1
+- `micromark-util-html-tag-name` 2.0.1
+- `micromark-util-normalize-identifier` 2.0.1
+- `micromark-util-resolve-all` 2.0.1
+- `micromark-util-sanitize-uri` 2.0.1
+- `micromark-util-subtokenize` 2.1.0
+- `unist-util-is` 6.0.1
+- `unist-util-stringify-position` 4.0.0
+- `unist-util-visit` 5.1.0
+- `unist-util-visit-parents` 6.0.2
+- `zwitch` 2.0.4
+
+Copyright (c) Titus Wormer <tituswormer@gmail.com>
+
+`character-entities`, `mdast-util-to-string`, `unist-util-is` and
+`unist-util-visit` include this copyright notice:
+Copyright (c) 2015 Titus Wormer <tituswormer@gmail.com>
+
+`longest-streak` includes this copyright notice:
+Copyright (c) 2015 Titus Wormer <mailto:tituswormer@gmail.com>
+
+`unist-util-stringify-position`, `unist-util-visit-parents` and `zwitch`
+include this copyright notice:
+Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+
+`mdast-util-phrasing` includes this copyright notice:
+Copyright (c) 2017 Titus Wormer <tituswormer@gmail.com>
+
+`mdast-util-gfm-table` and `micromark-extension-gfm-strikethrough`
+include this copyright notice:
+Copyright (c) 2020 Titus Wormer <tituswormer@gmail.com>
+
+`devlop` includes this copyright notice:
+Copyright (c) 2023 Titus Wormer <tituswormer@gmail.com>
+
+These packages are distributed under the MIT License reproduced in the Document
+parser section above.
 
 ## Markdown renderer
 

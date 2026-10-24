@@ -2360,7 +2360,8 @@ test("Session metadata keeps object labels separate from locale-aware dates", as
   state.sessions[1]!.updatedAt = "not-a-date";
   const harness = await createDialogHarness(state);
   try {
-    const formatter = new harness.window.Intl.DateTimeFormat(undefined, {
+    const locale = (harness.window as typeof harness.window & { LiveSmithI18n: { locale: string } }).LiveSmithI18n.locale;
+    const formatter = new harness.window.Intl.DateTimeFormat(locale, {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",

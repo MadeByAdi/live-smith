@@ -2,11 +2,12 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 
 import { EDIT_SCOPES, resolveEditScopes } from "../../agent/edit-scopes.js";
 import type { AgentLoopInitialRecoveryState } from "../../agent/loop.js";
-import type { LiveInteractionContext } from "../../live/context.js";
+import type { LiveConversationContext, LiveInteractionContext } from "../../live/context.js";
 import { throwIfAborted } from "../../runtime/host.js";
 import { listSessionAttachments } from "../../storage/attachments.js";
 import { listAudioJobs } from "../../storage/audio-jobs.js";
 import { loadSessionEvents, type SessionEvent } from "../../storage/events.js";
+import { hasSessionMidiContent } from "../../storage/midi-artifacts.js";
 import { createStorageId } from "../../storage/id.js";
 import {
   createSession,
@@ -24,6 +25,7 @@ import {
   sessionIsClaimedByAnotherOwner,
 } from "../session/session-claims.js";
 import type { ChatSessionSummary } from "../../ui/chat-state.js";
+import { lastSessionMessageAt } from "../session/session-activity.js";
 
 type Api = ExtensionContext<"1.0.0">;
 const maxRecoveryEvents = 12;
@@ -33,6 +35,17 @@ const activationProjectKeys = new WeakMap<
   { songHandleId: bigint; projectKey: string }
 >();
 const sessionCreationFence = new SessionMutationFence();
+
+export function conversationContextForSession(
+  session: Pick<AgentSession, "scope">,
+  interaction: LiveInteractionContext | undefined,
+): LiveConversationContext {
+  return interaction ?? {
+    summary: `The Live object for this Session is unavailable: ${session.scope.label}. No default Live target is available.`,
+    target: {},
+    scope: session.scope,
+  };
+}
 
 export function withSessionCreationScope<T>(
   storageDirectory: string | undefined,
@@ -70,7 +83,7 @@ export function isReusableEmptySessionMetadata(
 
 export async function getOrCreateDefaultSession(
   storageDirectory: string | undefined,
-  interaction: LiveInteractionContext,
+  interaction: LiveConversationContext,
   projectKey: string,
   preferredSessionId?: string | undefined,
   signal?: AbortSignal | undefined,
@@ -199,17 +212,23 @@ export async function sessionSummaries(
 ): Promise<ChatSessionSummary[]> {
   return Promise.all(sessions.map(async (session) => {
     let hasContent = session.title.trim().length > 0 || (session.creativeBrief ?? "").trim().length > 0;
-    if (!hasContent) {
-      try {
-        hasContent = (await loadSessionEvents(storageDirectory, session.id)).length > 0 ||
+    let lastMessageAt: string | undefined;
+    try {
+      const events = await loadSessionEvents(storageDirectory, session.id);
+      lastMessageAt = lastSessionMessageAt(events);
+      if (!hasContent) {
+        hasContent = events.length > 0 ||
           (await listSessionAttachments(storageDirectory, session.id)).length > 0 ||
           storageDirectory !== undefined && (await listAudioJobs(storageDirectory, session.id)).length > 0;
-      } catch {
-        // Unreadable content is not evidence of emptiness.
-        hasContent = true;
+        if (!hasContent) {
+          hasContent = await hasSessionMidiContent(storageDirectory, session.id);
+        }
       }
+    } catch {
+      // Unreadable content is not evidence of emptiness.
+      hasContent = true;
     }
-    return { ...session, hasContent };
+    return { ...session, hasContent, ...(lastMessageAt === undefined ? {} : { lastMessageAt }) };
   }));
 }
 

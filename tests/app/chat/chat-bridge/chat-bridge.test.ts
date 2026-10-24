@@ -870,7 +870,7 @@ test("the originating Profile command relies on its correlated state instead of 
   const events = await fetch(endpoint("/events"));
 
   try {
-    const nextPayload = readNextSsePayload(events);
+    const nextPayload = readNextSsePayload(events, ["command_activity"]);
     const response = await fetch(endpoint("/command"), {
       method: "POST",
       headers: {
@@ -1324,9 +1324,9 @@ test("stop fences late stream publications without hiding durable Session events
     assert.equal(confirmationAfterStop, false);
     assert.deepEqual(
       payloads.map((payload) => payload.type),
-      ["session_event", "error"],
+      ["send_activity", "session_event", "error"],
     );
-    assert.deepEqual(payloads[0]?.activity, {
+    assert.deepEqual(payloads[1]?.activity, {
       status: "stopped",
       message: "Stopped",
     });
@@ -1835,7 +1835,8 @@ test("closing the chat bridge aborts an active command", async () => {
   await bridge.close();
   assert.equal(commandSignal?.aborted, true);
   assert.equal((await command).status, 500);
-  assert.equal(await events.text(), "\n");
+  const published = (await events.text()).split("\n").filter((line) => line.startsWith("data: ")).map((line) => JSON.parse(line.slice(6)));
+  assert.ok(published.every((event) => event.type === "command_activity"));
 });
 
 test("closing the chat bridge aborts an active send with an event stream connected", async () => {
@@ -1870,7 +1871,7 @@ test("closing the chat bridge aborts an active send with an event stream connect
   await bridge.close();
   assert.equal(sendSignal?.aborted, true);
   assert.equal((await send).status, 500);
-  assert.equal(await events.text(), "\n");
+  assert.match(await events.text(), /"type":"send_activity"/u);
 });
 
 test("closing waits for an active handler to reach its terminal state", async () => {
@@ -3269,7 +3270,7 @@ test("different-Session attachment failures stay on their initiating HTTP respon
       body: JSON.stringify({ prompt: "probe", sessionId: "session-success" }),
     });
     assert.equal(send.status, 200);
-    const firstPayload = await readNextSsePayload(events);
+    const firstPayload = await readNextSsePayload(events, ["send_activity"]);
     assert.equal(firstPayload.type, "progress");
     assert.equal(firstPayload.sessionId, "session-success");
     assert.equal(firstPayload.message, "correlated probe");
@@ -3817,6 +3818,7 @@ async function readSsePayload(
 
 async function readNextSsePayload(
   response: Response,
+  ignoredTypes: readonly string[] = [],
 ): Promise<Record<string, unknown>> {
   assert.ok(response.body);
   const reader = response.body.getReader();
@@ -3830,7 +3832,10 @@ async function readNextSsePayload(
         const data = block.split("\n")
           .find((line) => line.startsWith("data: "))
           ?.slice("data: ".length);
-        if (data) return JSON.parse(data) as Record<string, unknown>;
+        if (data) {
+          const event = JSON.parse(data) as Record<string, unknown>;
+          if (!ignoredTypes.includes(String(event.type))) return event;
+        }
       }
     }
   } finally {
@@ -3901,3 +3906,31 @@ async function rawHttpStatus(
   assert.ok(match, `Expected an HTTP response, received ${JSON.stringify(statusLine)}.`);
   return Number(match[1]);
 }
+
+test("remove_session_skill admits one bounded Skill intent and rejects whole-selection payloads", async () => {
+  const received: unknown[] = [];
+  const state = {} as ChatDialogState;
+  const bridge = await createChatBridge({
+    buildState: async () => state,
+    renderHtml: () => "<html></html>",
+    handleCommand: async (input) => { received.push(input); return state; },
+    handleSend: async () => undefined,
+  });
+  const endpoint = new URL(bridge.url);
+  endpoint.pathname = "/command";
+  const command = { kind: "remove_session_skill", sessionId: "session-1", skillId: "music-tools:convert" };
+  try {
+    const accepted = await fetch(endpoint, {
+      method: "POST", headers: correlatedJsonHeaders("command"), body: JSON.stringify(command),
+    });
+    assert.equal(accepted.status, 200, await accepted.text());
+    assert.deepEqual(received, [command]);
+    for (const patch of [{ skillId: "../unsafe" }, { skillId: "" }, { skillId: undefined }, { skillIds: [] }, { profileId: "profile" }]) {
+      const invalid = await fetch(endpoint, {
+        method: "POST", headers: correlatedJsonHeaders("command"), body: JSON.stringify({ ...command, ...patch }),
+      });
+      assert.equal(invalid.status, 400, await invalid.text());
+    }
+    assert.equal(received.length, 1);
+  } finally { await bridge.close(); }
+});

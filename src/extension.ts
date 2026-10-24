@@ -1,3 +1,5 @@
+import { createWindowHostController } from "./app/window-hosts.js";
+import { error as logError } from "node:console";
 import {
   initialize,
   type ActivationContext,
@@ -7,7 +9,7 @@ import {
   type Handle,
 } from "@ableton-extensions/sdk";
 
-import { runAgentFlow, showAgentError } from "./app/agent-flow.js";
+import { showAgentError } from "./app/agent-flow.js";
 import { ensureAgentAudioTapRegistryDirectory } from "./app/agent-audio-tap.js";
 import { LiveMutationQueue } from "./app/live-mutation-queue.js";
 import {
@@ -17,27 +19,40 @@ import {
 } from "./live/context.js";
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
 import { openChatInVst3 } from "./runtime/vst3-handoff.js";
+import { assertIsolatedNativeStorage, isolatedNativeBuild } from "./runtime/native-isolation.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
 export function activate(activation: ActivationContext) {
   const context = initialize(activation, "1.0.0");
-  const liveMutationQueue = new LiveMutationQueue();
+  try {
+    assertIsolatedNativeStorage(context.environment.storageDirectory);
+  } catch {
+    logError("Live Smith isolated native storage validation failed.");
+    return;
+  }
   void ensureAgentAudioTapRegistryDirectory();
+  const windowHost = createWindowHostController(context, {
+    liveMutationQueue: new LiveMutationQueue(), openOAuthAuthorizationUrl, openVst3: openChatInVst3,
+  });
+  void windowHost.start().catch(() => logError("Live Smith bridge startup failed."));
 
-  context.commands.registerCommand("live-smith.ask-object", (arg: unknown) => {
-    void askAboutObject(context, arg as Handle, liveMutationQueue).catch((error) =>
+  const commandBase = isolatedNativeBuild ? "t7-live-smith-native-dev" : "live-smith";
+  const actionLabel = isolatedNativeBuild ? "Ask T7 Live Smith Native Dev" : "Ask Live Smith";
+
+  context.commands.registerCommand(`${commandBase}.ask-object`, (arg: unknown) => {
+    void askAboutObject(context, arg as Handle, windowHost).catch((error) =>
       showAgentError(context, error),
     );
   });
 
   context.commands.registerCommand(
-    "live-smith.ask-arrangement-selection",
+    `${commandBase}.ask-arrangement-selection`,
     (arg: unknown) => {
       void askAboutArrangementSelection(
         context,
         arg as ArrangementSelection,
-        liveMutationQueue,
+        windowHost,
       ).catch(
         (error) => showAgentError(context, error),
       );
@@ -45,12 +60,12 @@ export function activate(activation: ActivationContext) {
   );
 
   context.commands.registerCommand(
-    "live-smith.ask-clip-slot-selection",
+    `${commandBase}.ask-clip-slot-selection`,
     (arg: unknown) => {
       void askAboutClipSlotSelection(
         context,
         arg as ClipSlotSelection,
-        liveMutationQueue,
+        windowHost,
       ).catch(
         (error) => showAgentError(context, error),
       );
@@ -70,60 +85,54 @@ export function activate(activation: ActivationContext) {
   ] as const) {
     void context.ui.registerContextMenuAction(
       scope,
-      "Ask Live Smith",
-      "live-smith.ask-object",
+      actionLabel,
+      `${commandBase}.ask-object`,
     );
   }
 
   void context.ui.registerContextMenuAction(
     "AudioTrack.ArrangementSelection",
-    "Ask Live Smith about selection",
-    "live-smith.ask-arrangement-selection",
+    `${actionLabel} about selection`,
+    `${commandBase}.ask-arrangement-selection`,
   );
   void context.ui.registerContextMenuAction(
     "MidiTrack.ArrangementSelection",
-    "Ask Live Smith about selection",
-    "live-smith.ask-arrangement-selection",
+    `${actionLabel} about selection`,
+    `${commandBase}.ask-arrangement-selection`,
   );
   void context.ui.registerContextMenuAction(
     "ClipSlotSelection",
-    "Ask Live Smith about selected slots",
-    "live-smith.ask-clip-slot-selection",
+    `${actionLabel} about selected slots`,
+    `${commandBase}.ask-clip-slot-selection`,
   );
 }
 
 async function askAboutObject(
   context: Api,
   handle: Handle,
-  liveMutationQueue: LiveMutationQueue,
+  windowHost: ReturnType<typeof createWindowHostController>,
 ): Promise<void> {
-  await runAgentFlow(
-    context,
+  await windowHost.open(
     objectInteractionContext(context, handle),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }
 
 async function askAboutArrangementSelection(
   context: Api,
   selection: ArrangementSelection,
-  liveMutationQueue: LiveMutationQueue,
+  windowHost: ReturnType<typeof createWindowHostController>,
 ): Promise<void> {
-  await runAgentFlow(
-    context,
+  await windowHost.open(
     arrangementSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }
 
 async function askAboutClipSlotSelection(
   context: Api,
   selection: ClipSlotSelection,
-  liveMutationQueue: LiveMutationQueue,
+  windowHost: ReturnType<typeof createWindowHostController>,
 ): Promise<void> {
-  await runAgentFlow(
-    context,
+  await windowHost.open(
     clipSlotSelectionInteractionContext(context, selection),
-    { liveMutationQueue, openOAuthAuthorizationUrl, openNonBlockingChat: openChatInVst3 },
   );
 }

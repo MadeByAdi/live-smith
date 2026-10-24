@@ -353,6 +353,12 @@
           transfer: transferArtifact,
           getState, read: bridgeClient.readSessionArtifacts, readArtifact: bridgeClient.readSessionArtifact,
           readMidiArtifactDiff: bridgeClient.readMidiArtifactDiff, readMidiPartPreview: bridgeClient.readMidiPartPreview,
+          readDeviceParameters: bridgeClient.readDeviceParameters,
+          parameterCommand: async (input) => {
+            let known = false;
+            const completed = await bridgeClient.runCommand(input.kind, input, { cancellable: true, onOutcome: (outcome) => { known = outcome.known; } });
+            return completed && known;
+          },
           select: async (input) => {
             let known = false;
             const completed = await bridgeClient.runCommand("select_artifact", input, { onOutcome: (outcome) => { known = outcome.known; } });
@@ -373,7 +379,11 @@
             artifactLibrary.openArtifact(artifact);
           },
         });
-        window.addEventListener("pagehide", () => chatArtifactPreviews.dispose());
+        window.addEventListener("pagehide", (event) => {
+          if (event.persisted) chatArtifactPreviews.suspend();
+          else chatArtifactPreviews.dispose();
+        });
+        window.addEventListener("pageshow", (event) => { if (event.persisted) chatArtifactPreviews.resume(); });
         const pluginApps = factories.createPluginApps({
           resultActions: pluginResults,
           getState,
@@ -441,6 +451,8 @@
           editMessageDraft: bridgeClient.editMessageDraft,
           isMessageEditLocked: bridgeClient.isDraftEditLocked,
           hasSessionLocalWork: (sessionId) => bridgeClient.hasSessionLocalWork(sessionId) || creativeBriefEditor.hasDraft(sessionId),
+          readSessionSearch: bridgeClient.readSessionSearch,
+          readSessionPreview: bridgeClient.readSessionPreview,
           isCommandInProgress: bridgeClient.isCommandInProgress,
           isConfirmationLocked: bridgeClient.isConfirmationLocked,
           resolveConfirm: bridgeClient.resolveConfirm,
@@ -1097,19 +1109,28 @@
         }
 
         async function requestClose() {
+          if (!hostAdapter.canClose) return;
           const operationActive = bridgeClient.isOperationInProgress() ||
             bridgeClient.hasAnySendInProgress();
-          const draftDirty = profileEditor.getDraftState().dirty;
+          const profileDirty = profileEditor.getDraftState().dirty;
+          const otherDraftDirty = creativeBriefEditor.hasUnsavedChanges() || bridgeClient.hasUnsavedChanges() ||
+            connectionsManager.hasUnsavedChanges() || midiContinuation.hasUnsavedChanges() || skillManager.hasUnsavedChanges() ||
+            pluginUserConfig.hasUnsavedChanges();
+          const draftDirty = profileDirty || otherDraftDirty;
           const queuedFollowUpCount = bridgeClient.getQueuedFollowUpCount();
           const queuedFollowUpWarning = queuedFollowUpCount
             ? (queuedFollowUpCount === 1 ? i18n.message(" {count} queued follow-up will be discarded.", { count: queuedFollowUpCount }) : i18n.message(" {count} queued follow-ups will be discarded.", { count: queuedFollowUpCount }))
             : "";
           const warning = operationActive && draftDirty
-            ? i18n.message("Close Live Smith and discard unsaved Profile changes? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning: queuedFollowUpWarning })
+            ? otherDraftDirty
+              ? i18n.message("Close Live Smith and discard unsaved drafts? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning })
+              : i18n.message("Close Live Smith and discard unsaved Profile changes? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning: queuedFollowUpWarning })
             : operationActive
               ? i18n.message("Close Live Smith? The current operation will stop where possible; completed changes stay saved.{queuedFollowUpWarning}", { queuedFollowUpWarning: queuedFollowUpWarning })
               : draftDirty
-                ? i18n.message("Discard unsaved Profile changes and close Live Smith?")
+                ? otherDraftDirty
+                  ? i18n.message("Discard unsaved drafts and close Live Smith?")
+                  : i18n.message("Discard unsaved Profile changes and close Live Smith?")
                 : "";
           if (warning) {
             bridgeClient.setCloseDecisionPending(true);
@@ -1536,8 +1557,9 @@
 
         function syncSessionControlsLock(locked) {
           const pane = document.querySelector(".sessions-pane");
+          const mutationControls = "#newSessionButton, #sessions button, #sessions input";
           const changed = sessionControlsLocked !== locked;
-          if (locked && changed && pane?.contains(document.activeElement)) {
+          if (locked && changed && document.activeElement?.matches(mutationControls)) {
             const control = document.activeElement;
             const selector = [
               ".session-rename-input",
@@ -1552,7 +1574,7 @@
             };
           }
           sessionControlsLocked = locked;
-          document.querySelectorAll(".sessions-pane button, .sessions-pane input")
+          document.querySelectorAll(mutationControls)
             .forEach((control) => {
               control.disabled = locked;
           });
@@ -1678,6 +1700,7 @@
           archive_session: { status: t("Archiving Session…") },
           unarchive_session: { status: t("Returning Session…") },
           set_session_skills: { status: t("Updating Session Skills…") },
+          remove_session_skill: { status: t("Updating Session Skills…") },
         });
         let activeCommandControl = null;
         let activeCommandAriaLabel = null;
@@ -1802,7 +1825,10 @@
           networkProxyDirty,
           customInstructionsDirty,
           uiLanguageSaving,
+          interfaceModeSaving,
+          bridgeRecoveryCanRetry,
         }) {
+          document.getElementById("bridgeRetryButton").hidden = !bridgeRecoveryCanRetry;
           composerOperationState = {
             attachmentInProgress,
             commandCanStop,
@@ -1854,6 +1880,8 @@
           const sessionSettingDisabled = Boolean(commandKind) || attachmentInProgress ||
             skillInProgress;
           bridgeClient.setAudioToolsBusy(sessionSettingDisabled, operationBusy);
+          setPropertyIfChanged(document.getElementById("closeButton"), "hidden", !hostAdapter.canClose);
+          setPropertyIfChanged(document.getElementById("interfaceMode"), "disabled", sessionSettingDisabled || interfaceModeSaving);
           setPropertyIfChanged(document.getElementById("uiLanguage"), "disabled",
             sessionSettingDisabled || uiLanguageSaving);
           if (approvalMode.disabled !== sessionSettingDisabled) {
@@ -1935,6 +1963,7 @@
 
         bridgeClient.connectView({
           announceAssistantMessage: sessionTimeline.announceAssistantMessage,
+          invalidateSessionSearch: sessionTimeline.invalidateSessionSearch,
           clearGlobalSettingsFieldError:
             profileEditor.clearGlobalSettingsFieldError,
           clearFieldErrors: profileEditor.clearFieldErrors,
@@ -2018,12 +2047,14 @@
           openInspectorSection,
           refreshOAuthAccount: profileEditor.refreshOAuthAccount,
           requestClose,
+          retryBridgeConnection: bridgeClient.retryEventStreamRefresh,
           runCommand: bridgeClient.runCommand,
           saveApprovalMode: profileEditor.saveApprovalMode,
           saveContextUsageVisibility: bridgeClient.saveContextUsageVisibility,
           saveSessionTabs: bridgeClient.saveSessionTabs,
           saveDefaultFollowUpBehavior: bridgeClient.saveDefaultFollowUpBehavior,
           setUiLanguage: bridgeClient.setUiLanguage,
+          setInterfaceMode: bridgeClient.setInterfaceMode,
           saveNetworkProxySettings: bridgeClient.saveNetworkProxySettings,
           saveCustomInstructions: bridgeClient.saveCustomInstructions,
           saveProfile: profileEditor.saveProfile,

@@ -20,7 +20,9 @@ src/
 
   app/
     agent-flow.ts
-      Coordinates modal state, bridge commands, OAuth readiness, and errors.
+      Owns the Agent runtime, bridge commands, OAuth readiness, and errors.
+    window-hosts.ts
+      Selects the persisted window host and owns one reusable browser runtime.
     agent-request.ts
       Runs one provider-neutral agent request, including attachment/Skill
       context, trace persistence, approval, preflight, and Live execution.
@@ -87,6 +89,12 @@ src/
         Serialize same-Session mutations and track active dialog ownership.
       session-tool-catalog.ts
         Assemble Session tool views without invoking tools.
+      session-search.ts, search-contracts.ts
+        Search local Session names and chat messages with bounded result pages.
+      session-activity.ts
+        Derive chat activity time independently of Session metadata revisions.
+      session-artifacts.ts
+        Project saved MIDI/audio/parameter versions and filter the artifact catalog.
       session-lifecycle.ts
         Own metadata-first deletion, pending cleanup and startup orphan
         reconciliation through the shared Session mutation boundary.
@@ -319,6 +327,9 @@ src/
       separate mutable data directories, and recoverable catalog mutations.
     midi-artifacts.ts
       Immutable Session-owned Standard MIDI files and their version metadata.
+    device-parameter-artifacts.ts
+      Immutable parameter snapshots, durable application baselines and small
+      per-parameter progress records, with Session-owned cleanup.
     audio-artifacts.ts, audio-storage-budget.ts
       Immutable Plugin audio, shared exact audio reads and the aggregate budget
       across Plugin files and provider-job assets.
@@ -340,11 +351,15 @@ src/
       dependency and operation-policy wiring.
     client/markdown-renderer.ts
       Shared sanitized Markdown rendering for conversation content and the
-      read-only built-in Skill viewer.
+      read-only built-in Skill viewer. Unresolved provider citation markers,
+      including partial streaming markers, stay out of rendered prose; code
+      spans and fenced code retain their literal content.
     client/wire-contracts/
       Browser-safe validators for untrusted model, Session, Plugin and bridge
       state data. Inputs are unknown; output guards and allowed field names
       reference canonical public DTO types.
+    client/session-search.ts
+      Owns Session search queries, cancellation, refresh and pagination state.
     client/connection-state.ts
       Owns one confirmed Connection snapshot, audio drafts and editor selection.
       Audio form values are derived projections; the full snapshot retains
@@ -447,6 +462,10 @@ bounded result and lifecycle are described under external audio processing.
    encrypted reasoning, and other provider replay state remain transport-owned,
    never enter the visible reasoning contract, and hosted provider tools never
    enter the client tool executor.
+   Adapters that add internal tool results after sampling expose a normalized
+   context projection and its usage sampling boundary. Context estimation uses
+   that projection without interpreting opaque protocol state; the projection
+   never grants tool execution and does not alter reported provider usage.
 9. Before confirmation, `agent-request.ts` performs a fresh action-specific Live
    preflight observation and captures an opaque guard from actual SDK handle
    identities plus every current value the action can overwrite, including
@@ -504,7 +523,12 @@ reusable MIDI Clip. Ambiguous overlap effects and non-reusable Session replaceme
 omit previews. Unsupported observations and multi-action plans omit the
 preview and retain the complete existing action summaries.
 
-The `confirm_request` projection carries bounded proposed facts under its
+MIDI action previews retain all validated notes from both snapshots. The piano
+roll renders notes intersecting the visible time range, and its full view can
+show the complete score. Older saved previews retain their omission counts;
+missing historical notes cannot be reconstructed from a later Live state.
+
+The `confirm_request` projection carries proposed facts under its
 existing send, Session, model-turn epoch, confirmation ID and generation. Replays
 must preserve both the action summaries and preview data. The client validates
 the optional union before admitting a confirmation, and the dedicated
@@ -553,11 +577,16 @@ provider-neutral tool union from client-executed Live function tools. A Saved
 Profile must explicitly opt in. The ordinary path exposes the tool with
 automatic selection and adds fixed policy instructions for explicit lookup
 requests and current or changing facts. The composer does not override provider
-tool choice. OpenAI Responses and Anthropic Messages map the hosted member to
-their native server tool; Chat Completions rejects it before HTTP. Search result
-blocks remain opaque replay state. Transports separately normalize bounded
+tool choice. Direct API OpenAI Responses and Anthropic Messages, including Claude
+OAuth, map the hosted member to their native server tool; Chat Completions rejects
+it before HTTP. ChatGPT and Antigravity resolve private search calls inside their
+protocol adapters with separate account-owned search requests. Their shared
+internal search runner owns retries, completed results and continuation state.
+These exchanges never enter the Live function executor and remain adapter-owned
+replay state, including when an ordinary function shares a response with search.
+Search result blocks remain opaque replay state. Transports separately normalize bounded
 provider call IDs, actions, queries, returned result URLs, and answer citation
-annotations. OpenAI Responses explicitly requests
+annotations. Direct API OpenAI Responses explicitly requests
 `web_search_call.action.sources`; Anthropic result blocks supply the returned
 pages. Streaming activity crosses the bridge as a correlated
 `web_search_update`, then the agent loop durably persists each terminal action
@@ -657,7 +686,7 @@ Consequently no accepted tool result or Live mutation can be replayed.
 Terminal hosted-search events keep their existing durable-first semantics;
 every observed search ID reduces the allowance exposed to the rebuilt request.
 Output-limit continuations remain one unfinished logical response and do not
-advance the accepted-turn boundary until their final non-continuation turn.
+advance the accepted-turn boundary until a turn without an output-limit continuation.
 
 ## Model connection boundary
 
@@ -934,6 +963,47 @@ or automatic replenishment; Fill/Refill and Use next are user actions.
 
 ### Saved artifacts, versions and lineage
 
+Device parameter snapshots use the `device-parameters` Artifact kind.
+`app/parameters/` owns capture, model authoring, comparisons and explicit
+Apply/Keep/Restore commands. Captures contain the complete SDK parameter layout,
+raw values and runtime/Set/Track/Device/parameter identities. Model revisions copy
+an exact saved source and replace validated indexed values; they preserve the
+remaining parameters and cannot invent a target binding. The same version,
+primary, source and search contracts apply. Native parameter tools appear in the
+Session tool catalog; Plugin file contracts remain MIDI/audio-only.
+
+Parameter application resolves the original runtime binding or an explicitly
+chosen compatible device, then builds a validated `set_device_parameters` action.
+Preflight observations validate the complete preparation snapshot before approval,
+including parameters that need no write, and supply the approval table and internal
+execution baselines. The executor preserves those baselines, validates every
+parameter before the first write, and rechecks cancellation, authorization,
+identity and current value after asynchronous reads immediately before each
+write. Complete-device reconciliation detects changed layouts and side effects
+outside the explicitly written values.
+
+`storage/device-parameter-artifacts.ts` stores create-only snapshot JSON under
+`live-smith-device-parameters/<sessionId>/`. Snapshot bounds are 4,096 parameters,
+4 MiB per snapshot, 64 snapshots and 64 MiB per Session. Application baselines are
+immutable; separate small progress files are flushed before individual SDK
+writes and after verified readback. Terminal results retain Keep/Restore decisions.
+Storage reserves space for progress, a restore baseline and the final result
+before writing to Live, with a 64 MiB application-history budget and 256 records
+per Session. Newly created private directories are durably linked before their
+contents are published. Session deletion and startup orphan reconciliation cover
+both snapshots and application data.
+
+An application result remains separate from immutable Artifact content.
+Unknown writes and full-device conflicts remain explicit and prevent automatic
+restoration. Restore checks confirmed values, retains its own starting snapshot,
+and reports partial restoration; it does not assume that multiple parameter
+writes are atomic or that SDK automation state is available. Browser reads may
+be cancelled or superseded without replaying a command. Restarted runtimes require
+explicit destination binding for a new application; old application receipts do
+not authorize writes to a replacement device. Parameter Artifacts offer native
+comparison/application controls and are rejected by binary export/attachment
+commands.
+
 Ordinary chat registers MIDI authoring from `app/midi/midi-artifact-tools.ts`
 and shared list/inspection tools from `app/session/session-artifact-tools.ts`
 whenever private storage is available. Plugin discovery
@@ -947,7 +1017,7 @@ are excluded from the artifact library. Each future section is an independent
 version group, while explicit revisions of a section preserve its existing group.
 
 `agent/artifact-contracts.ts` owns the media-neutral version, source and primary
-selection contracts. Version metadata remains on each immutable media record.
+selection contracts. Version metadata remains on each immutable artifact record.
 The shared allocator runs inside its owning store transaction; unavailable bytes
 do not release a reserved version number. Legacy records project as independent
 v1 groups. Explicit revisions record their actual parent; independent generation
@@ -962,12 +1032,13 @@ Resource-only tickets bind the media kind and expire independently of the bridge
 control token. Attaching uses the existing upload admission and pending-attachment
 flow, including during an active model request.
 
-`app/session/session-artifacts.ts` projects Session-owned MIDI artifacts and
+`app/session/session-artifacts.ts` projects Session-owned MIDI and parameter artifacts,
 committed provider audio results and standalone Plugin audio into the paginated
-artifact library. Version groups are assembled before pagination. Each work
-selects its saved primary when available, otherwise the latest available version;
-explicit references still resolve exactly. Audio catalog/detail reads use metadata
-and blob presence; consumption validates complete bytes. MIDI previews validate
+artifact library. Version groups are assembled before pagination. Without a
+search filter, each work selects its saved primary when available, otherwise the
+latest available version; explicit references still resolve exactly. Audio
+catalog/detail reads use metadata and blob presence; consumption validates
+complete bytes. MIDI previews validate
 the selected small SMF. `/session-artifact` reads one exact version
 with the same ownership and projection contract. It creates no media
 copies or artifact database. Audio bytes stay behind the existing authenticated
@@ -975,7 +1046,13 @@ asset route; MIDI overviews contain at most 256 notes with source-part identity
 and bounded part summaries. The read-only `/midi-artifact-preview` route reads a
 selected part in full. Exact artifact details also return complete notes; both
 retain the saved-file limit of 4096 notes, while the paginated catalog keeps its
-256-note overview. The browser loads exact details when opening a truncated entry. It reads only saved media and never observes or mutates Live.
+256-note overview. The browser loads exact details when opening a truncated MIDI entry.
+These media reads use saved files without observing or mutating Live. Parameter
+cards use the authenticated read-only `/device-parameters` route for current
+device comparisons and restoration eligibility. Application results name their
+exact saved version; all open parameter cards refresh after a parameter command
+settles. Browser suspension cancels catalog, version and parameter reads, and
+resumption starts fresh reads without replaying commands.
 
 `export_artifact` and `attach_artifact` share a typed artifact reference and
 read original bytes from the existing MIDI/audio stores. Provider audio results
@@ -1009,6 +1086,9 @@ dialog closes before invoking the shared command/confirmation flow. Plugin
 results and buffered continuation use this same importer. `inspect_midi_artifact` in the host artifact toolset reads one exact
 source part with a 256-note page and `nextOffset`, allowing subsequent chat turns
 to inspect the saved material without first importing it into Live.
+Chat MIDI cards retain the tool's original input and output in a collapsed
+Tool details section. Plugin diagnostics and structured results remain available
+alongside the saved-file preview.
 
 The persisted `candidate`, `candidateSelection`, and `parentCandidate` names
 remain compatible with existing Session histories. The `candidate` event records
@@ -1038,6 +1118,16 @@ a composer draft, MIDI import uses the ordinary mapped import path, and audio
 import uses the existing chat action/preflight path. Read-only browsing, differences and
 playback remain available during generation; selection commands share the Session
 mutation fence and validate ownership again before writing their event.
+
+Artifact catalog search filters names, version labels and source labels before
+group pagination. Source labels include aliases from the supported UI catalogs;
+user-authored names remain literal. A matching exact version is selected even
+when the group's primary version does not match; the group's complete version
+and provenance metadata remains available. The query belongs to the library view and resets
+on Session changes. Read cancellation is independent of artifact mutations, so
+typing a new query cannot release an outstanding selection or transfer command.
+If a catalog shrinks beyond the requested page, the library reads the last valid
+page, including page zero for an empty catalog.
 
 `ui/client/plugin-parameters.script.html` renders the native controls inside
 Session Tools. Optional parameters have an explicit inclusion control; omitted
@@ -1137,7 +1227,10 @@ the package ID, digest, exact MCP server, optional named Connection ID and
 private credential snapshot, exposed tool, server approval, and artifact
 approvals. Execution rechecks that admission inside the Plugin
 authorization fence. A changed, disabled, replaced, or unapproved package cannot
-reuse an older model-visible tool call.
+reuse an older model-visible tool call. Package MCP and artifact permission
+commands carry the reviewed archive digest. Grant and revoke compare that digest
+inside the storage transaction before accepting either a change or a no-op; a
+replaced package requires a new review.
 Standalone MCP Connections use the same transport, schema, result, and tool
 routing boundary without an installed package or digest. Their enabled state
 authorizes the exact saved launch configuration or endpoint. Execution rechecks
@@ -1172,7 +1265,9 @@ MCP tools cannot call the Live executor. An approved artifact-input contract
 replaces an opaque Session audio or MIDI reference with one read-only temporary file for
 the duration of the call. An independently approved artifact-output contract
 supplies one host-owned temporary destination, accepts only a regular contained
-file, parses bounded Standard MIDI, and stores an immutable Session artifact.
+file, validates its declared MIDI or WAV/MP3 format, and stores an immutable
+Session artifact. The output grant covers both audio and MIDI; it grants no Live
+mutation authority.
 The MIDI bytes are durably written before their metadata commit. Listing under
 the storage transaction admits only structurally complete pairs. Unpaired files
 remain private and count toward the storage limit; missing blobs retain their
@@ -1319,7 +1414,10 @@ HTTPS, and mailto destinations.
 same global per-storage transaction queue as Sessions. Install/replace/delete
 uses a recoverable pending mutation plus private staging, durable atomic writes,
 directory identity checks before and after mutation, and strict catalog
-validation. Stable catalog listing reads summaries and safe file metadata only;
+validation. The cleanup boundary includes initial directory creation and staging
+before a pending mutation is recorded. Startup removes empty or staging-only
+unreferenced owned directories, while rejecting links and foreign contents.
+Stable catalog listing reads summaries and safe file metadata only;
 only selected definitions are opened, bounded, hash-checked, and parsed. Catalog
 capabilities are scoped to an active opaque storage transaction, and detached
 operations are drained before the transaction releases.
@@ -1914,6 +2012,12 @@ siblings; they do not turn completed generation into a failed generation.
 One process-local owner excludes concurrent execution of the
 same job. Remote processing does not acquire the Live mutation queue.
 
+Paid submission receipts that reach true response EOF may finish bounded local
+validation when cancellation or the request deadline arrives in the same turn.
+The validated remote identifier is saved before cancellation ends the local
+workflow. Partial responses and responses without EOF remain unconfirmed;
+ordinary status reads and downloads retain their cancellation checks.
+
 `storage/audio-jobs.ts` and `storage/audio-assets.ts` own bounded, private,
 Session-scoped metadata and create-only audio files. An input snapshot and each
 output are immutable and integrity-checked. The asset metadata receipt commits
@@ -1976,9 +2080,9 @@ without routing or persisting its media. The top-level `integrationConnections`
 view is the sole browser projection of Connection settings; it includes only
 configuration and configured-secret names, while the private secret values and
 settings collection are omitted. Saved keys are omitted from full-state and
-incremental UI projections. Stop or window closure ends local processing and
-attempts bounded remote cancellation where available; retained remote tasks may
-be resumed explicitly, without replaying a stopped Live plan. Session deletion
+incremental UI projections. Stop or runtime shutdown cancels unfinished local
+work and attempts bounded remote cancellation where available; retained remote
+tasks may be resumed explicitly, without replaying a stopped Live plan. Session deletion
 and orphan cleanup remove private audio data alongside other Session data, while
 Live-managed imported copies remain owned by Live.
 
@@ -1989,8 +2093,9 @@ User settings, limits, and provider-specific behavior are documented under
 
 Only profile CRUD/activation and the dedicated global-settings command write the
 settings file. The global command owns the default Queue/Steer follow-up
-behavior, context-usage visibility, chat shortcut visibility, interface language,
-and network proxy selection. It applies exactly one setting per
+behavior, context-usage visibility, chat shortcut visibility, interface mode and
+language, network proxy selection, custom instructions, and Integration
+Connections. It applies exactly one setting per
 transaction, advances only that setting's revision, and is allowed while sends
 are active. It broadcasts the complete committed global settings to every open
 dialog for the same storage directory. Sending,
@@ -2041,6 +2146,12 @@ notices, progress and terminal status carry descriptors; historical strings and
 provider diagnostics remain original data. Model-facing audio tool results format
 descriptor messages into English without translating raw parameters. Storage and
 wire readers bound and validate descriptors before rendering them.
+
+Parameter comparison errors use the same descriptors. App-authored command and
+parameter-read failures may carry a validated `displayMessage` beside their
+English error text; command SSE errors preserve the same descriptor. The browser
+retains descriptors across locale changes and keeps bound device and parameter
+names literal. Unknown technical errors retain their original text.
 
 Action-confirmation headings and rows carry serializable `{ source, values }`
 messages rather than preformatted English. Nested messages describe application
@@ -2111,9 +2222,10 @@ collapsing history. On POSIX hosts, read paths as well as writes tighten storage
 directories to `0700` and private JSON/blob files to `0600`. Storage failures
 cross the attachment HTTP boundary only as fixed typed diagnostics; absolute
 paths and credential-bearing causes are never returned to the WebView.
-Session deletion durably removes its event log before metadata; if event
-removal fails or has an unknown commit outcome, the session remains visible and
-retryable instead of leaving an unreachable conversation log.
+Session deletion commits metadata removal before cleaning its event log and
+associated files. Uncertain deletion or cleanup enters the Session lifecycle's
+pending-cleanup path. Cleanup retries recheck that the Session is absent; startup
+reconciliation also removes orphaned Session data.
 
 ### Settings schema compatibility
 
@@ -2290,13 +2402,17 @@ using it after an insertion would authorize a different sequential meaning.
 
 Whole-Clip main Arrangement-lane MIDI authoring uses `create_midi_clip` and
 accepts 0-4096 notes per action. An empty named Clip is the staging anchor for
-longer work.
+longer work. Newly authored notes use `[0, durationBeats]`. Reusing a Clip
+requires its start marker and first playback pass to map this complete section
+directly; incompatible playback geometry uses the normal replacement policy.
+Arrangement, Session and Take Lane paths share this reuse decision.
 `replace_midi_clip_segment` then targets that exact arrangement Clip by track,
-name, and start beat. Notes are relative to the Clip; each segment removes only
-notes whose intervals overlap its range, preserves non-overlapping notes, and
-sorts the result deterministically. Plans reject overlapping segment actions
-for the same Clip. Preflight fingerprints the full current Clip and execution
-rechecks the segment against the current Clip duration before assigning notes.
+name, and start beat. Existing note times and segment ranges use Clip source
+beats, independent of Arrangement position and playback markers. Each segment
+removes only overlapping notes, preserves non-overlapping notes, and sorts the
+result deterministically. Overlap checks use the bound Clip handle so different
+track locators cannot bypass them. Preflight fingerprints the full current Clip
+and execution rechecks the source range before assigning notes.
 Every note must state its velocity explicitly; validation never invents a hidden
 musical default.
 
@@ -2304,9 +2420,20 @@ Deterministic whole-Clip MIDI transforms target exactly one Arrangement or
 Session MIDI Clip. The action binding captures the Clip handle before
 confirmation, preflight fingerprints every current note, and execution applies
 transpose, start quantization, velocity scaling, or beat shifting locally. A
-transform writes the complete resulting note set only after validating every
-pitch, start, and end against MIDI and Clip bounds; invalid output performs no
-mutation. Optional SDK note fields are preserved unchanged.
+transform writes the complete resulting note set only after validation. Pitch
+and velocity edits preserve existing source timing, including hidden notes.
+Timing edits use the source extent defined by the end marker, active loop end
+and stored note ends; the visible Arrangement duration does not truncate that
+extent. Invalid output performs no mutation. Optional SDK note fields are
+preserved unchanged.
+
+Each preflight pass evaluates deterministic MIDI edits in plan order against
+temporary note state keyed by the bound Clip handle. Whole-Clip and segment
+replacement, transforms, and relevant Clip properties advance that state before
+later edits are checked. A known invalid result rejects the plan before approval
+or mutation, independently of whether a preview can be displayed. Drift
+fingerprints still describe the observed Live state. Actions that recreate a
+Clip require a fresh observation before a later action can target its replacement.
 
 ### Take Lane Clip creation
 
@@ -2407,8 +2534,11 @@ failed action, but does not prove that the device name is unavailable. The model
 re-inspects the target and continues only with missing work using a changed name,
 placement, or target only when observed evidence supports that repair. Repeating
 an insertion is a literal request for another instance; the executor never
-silently reuses a same-name device. Device parameters resolve by exact observed
-name after case/whitespace normalization, never by substring guessing.
+silently reuses a same-name device. Single parameter writes resolve by exact
+observed name after case/whitespace normalization. Bulk parameter writes bind
+observed indexes, exact names and parameter handles, allowing duplicate names
+without guessing. Ordered bulk actions inherit only verified values written by
+earlier actions in the same plan; unrelated changes still invalidate execution.
 
 Rack Chains use the existing Track plus Rack `devicePath` locator followed by a
 zero-based Chain index. `inspect_rack_chain` makes empty Chains observable and
@@ -2468,13 +2598,21 @@ every current category. Present scope lists must contain distinct,
 supported values; malformed persisted permissions fail validation rather than
 falling back to All. Deleting a Session removes these settings with the same
 metadata record.
+Live object availability is independent of Session availability. Send and manual
+compaction preserve the saved conversation when the original object or opening
+selection cannot be resolved. `app/context/session-context.ts` supplies a shared
+unavailable-context summary and an empty default target. Explicitly addressed
+Live observations and actions retain their ordinary validation and authorization
+boundaries. Availability resolution never automatically rebinds the Session by
+name or current selection.
 The dialog reserves an active Session ID before the first message, but opening
 a scope or choosing New Session does not persist an untouched empty Session.
 The storage module shares these transient records across dialogs for the same
 canonical storage directory. Session reads include them, so Approval mode, model
 selection, Skills, attachments, and Send keep using the same ID. An explicit
-metadata change, archive/restore, or the first event or attachment write persists
-that Session under the existing storage transaction; unrelated transient records
+metadata change, archive/restore, or the first event, attachment, MIDI artifact
+or continuation-buffer write persists that Session under the existing storage
+transaction; unrelated transient records
 are never included in the write. A confirmed saved record supersedes its
 in-memory reservation, including after an uncertain commit. The persisted
 Session format is unchanged. New and renamed titles are limited to 80 Unicode
@@ -2489,7 +2627,7 @@ win the same find-or-create race. New Session reuses the current candidate first
 then the newest matching candidate, only when its current state is
 pristine: blank title, no origin/archive marker, no model choice or creative
 brief, no non-default Approval mode, unrestricted Edit Scope, no active Skills, no events, no
-attachments, and no active or queued send. Event and attachment absence are
+attachments, audio jobs, MIDI content, and no active or queued send. Content absence is
 rechecked under the candidate's Session mutation fence, and the final decision
 rejects any Session operation queued behind that check. Approval and Edit Scope
 writes share a separate
@@ -2505,20 +2643,64 @@ absent from storage. The claim lasts until that dialog closes; explicit Session
 selection may still join a claimed Session.
 
 Current and History lists keep Sessions with a title, creative brief, events,
-attachments, or window-local draft/queued/running work. The current dialog also keeps every
+attachments, audio jobs, MIDI artifacts or continuation settings, or window-local
+draft/queued/running work. The current dialog also keeps every
 Session that has been active in that dialog, so an untouched empty Session remains
-reachable after switching until the dialog closes. Unvisited empty Sessions stay
-hidden, and a new dialog does not inherit the prior dialog's visibility. Explicitly
-archived Sessions remain visible for management. Track identity, timestamps, and
+reachable after switching until the dialog closes. With search cleared, unvisited
+empty Sessions stay hidden, and a new dialog does not inherit the prior dialog's
+visibility. Explicitly archived Sessions remain visible for management. Track identity, timestamps, and
 permission or model settings do not count as conversation content.
-The app derives `ChatSessionSummary.hasContent` under the storage transaction;
-this is UI metadata and is never persisted. Unreadable content remains visible
+The app derives `ChatSessionSummary.hasContent` and `lastMessageAt` under the
+storage transaction; these are UI metadata and are never persisted.
+`lastMessageAt` comes from saved user/assistant events. Displayed activity time
+is the later of that timestamp and the Session's metadata `updatedAt`; metadata
+revision ordering retains its existing meaning. MIDI content reads do not reacquire
+the transaction held by the state snapshot. Unreadable content remains visible
 instead of being assumed empty. The complete Session membership stays in bridge
 state because the client uses missing IDs to reconcile deleted Sessions and
 their local drafts. Only list rendering and bulk selection omit inactive empty
 records; hiding them never deletes or rewrites their saved data.
 
 ### Session context, concurrency, and Approval
+
+Session search is an authenticated read-only bridge operation over the same local
+Session collection exposed by Current, History and Archived. It matches each
+Session's displayed name (`title || scope.label`) and saved user/assistant text,
+returning one bounded excerpt per matching
+Session with an optional message reference. Results are sorted by activity and
+paginated after matching; the UI preserves that order within Current, History
+and Archived, including range selection.
+Unreadable histories are counted, and deleted Session IDs are removed before
+delivery. Results use the same activity time as Session timestamps, including
+historical messages without rewriting their Session metadata. A name match
+remains available when its history cannot be read. Search keeps no persistent
+index and does not inspect model settings,
+credentials, binary attachments or Live state. The browser owns query, pagination
+and cancellation, validates each response against its query receipt, and retains
+the existing list's navigation and mutation boundaries.
+
+History preview is a separate authenticated read-only bridge operation. It accepts
+only a persisted, unarchived Session ID from a prior activation in the same
+extension storage directory. Each page exposes at most 25 saved user/assistant
+messages with bounded text and validated artifact kind/ID metadata. Tool events,
+attachment contents and audio bytes are excluded. Preview does not bind a Live
+target, change the active Session, or grant Send or artifact-read access. The
+client renders preview text separately from the active timeline; explicit
+Continue still requires a compatible current opening scope and performs its
+ordinary server-owned restore.
+
+The client combines message timestamps from events and authoritative snapshots
+by retaining the latest confirmed value, independently of metadata revisions.
+Committed chat messages from foreground or background Sessions, peer Session
+invalidations and successful event-stream recovery invalidate active searches.
+Input composition defers these refreshes until composition ends, even if the
+query text is unchanged. Active-message tracking excludes tool and reasoning
+events; generic peer invalidations still refresh search because their payload
+does not identify which Session fields changed.
+
+Bulk Skill disable submits a remove-one-Skill intent for each confirmed Session.
+The server filters the current saved selection inside its Session/storage
+mutation boundary, preserving unrelated concurrent additions or removals.
 
 The Live context observer produces both the detailed summary and a structured
 presentation for the same resolved interaction. `ChatDialogState.liveContext`
@@ -2541,7 +2723,8 @@ Concurrency boundaries have distinct ownership:
 | Boundary | Scope | Responsibility |
 | --- | --- | --- |
 | Storage transaction | Canonical storage directory | Serialize durable settings, Session, event, attachment, and Skill mutations. |
-| Session mutation fence | Storage directory and Session ID | Hold one Session's send, attachment, Skill activation, and lifecycle boundary through reconciliation. |
+| Session mutation fence | Storage directory and Session ID | Hold one Session's send, Skill activation, and lifecycle boundary through reconciliation. |
+| Attachment mutation fence | Storage directory and Session ID | Serialize uploads, pending-file deletion, and admission of attachment snapshots for Send and Steer. Lifecycle operations acquire the Session fence first. |
 | OAuth auth/send fence | Canonical storage directory and Profile ID | Keep one editable connection lifecycle coherent with its sends while tracking pending login, activity, and generations per provider. |
 | Live mutation queue | Extension activation | Execute one validated Live plan at a time across dialogs, including request-audio import and revalidation after import. |
 
@@ -2564,8 +2747,9 @@ active send per Session while different Sessions may observe and plan in
 parallel. A process-wide lease keyed by normalized storage directory and
 Session ID spans exact Session lookup, attachment consumption, the provider/tool
 loop, all trace/error persistence, and the final authoritative state snapshot.
-Upload/delete, Skill activation, and Session rename/archive/unarchive/delete use
-the same lease, so
+Skill activation and Session rename/archive/unarchive/delete use the same
+Session lease. Pending-file upload/deletion uses the separate short attachment
+fence; lifecycle operations acquire both in Session-then-attachment order, so
 another dialog cannot delete a Session and then have a running send recreate its
 event log. A send never falls back to another Session when its requested ID is
 missing. Waiting operations recheck cancellation immediately after acquiring
@@ -2782,8 +2966,15 @@ moves only that record.
 
 ### Bridge publications and authoritative receipts
 
+Tool results carry an optional persisted `outcome`: `success`, `failed`,
+`unknown` or `stopped`. New Agent and manual tool paths record the known outcome
+independently of loop continuation. Storage and browser validators accept it only
+on tool results. The timeline uses this field directly; historical results with
+no reliable outcome remain readable and display as unconfirmed. Existing Apply
+operation metadata retains its own lifecycle.
+
 `agent-flow.ts` produces an unversioned domain state. At the WebView boundary,
-each modal bridge stamps every full `ChatBridgeState` exactly once with its own
+each runtime bridge stamps every full `ChatBridgeState` exactly once with its own
 monotonic decimal publication revision; the matching HTTP and SSE payload share
 that identity. A full state also carries the publication revision captured
 before its asynchronous request work as `bridgeStateCoveredThroughRevision`.
@@ -2792,16 +2983,36 @@ and before building the snapshot; mutation responses retain their request cut.
 That cut, not the later publication identity, says which projection patches the
 snapshot is guaranteed to include. Incremental SSE patches that change the
 client-held projection carry revisions from the same local sequence, including
-reconnect replays. The sequence is neither persisted nor compared across modals
+reconnect replays. The sequence is neither persisted nor compared across runtimes
 and is not a storage freshness clock: an async snapshot can finish after a newer
 patch. Mutable patches are skipped only when the current full-state cut already
 covers them. Confirmation state is processed by its exact ID and generation.
-If an SSE socket falls behind, the bridge permits the accepted frame to drain
-but closes the client before a second frame can accumulate. EventSource
-reconnection alone is not treated as recovery: the client blocks new work and
-loads one authoritative full state before reopening Send. That state also
-settles a completed active Send whose HTTP and terminal SSE deliveries were both
-lost.
+The bridge publishes revisioned `send_activity` ownership at admission and
+before each active Send's reconnect replay. Pages adopt only known Sessions
+and newer, non-retired owners; transient model output cannot establish Send
+ownership. A competing local Send retains its own outcome and draft recovery
+before reconnecting to the admitted peer. Peer command activity and pending
+approval remain deferred while a local command outcome is pending; terminal
+or replacement activity invalidates the deferred approval.
+
+Each SSE connection has one ordered writer for initial replay and live publications.
+A write that reaches Node's high-water mark is already accepted; the writer waits
+for `drain` and queues subsequent frames. Pending work is limited to 4 MiB and
+4096 frames per client, with a 15-second drain deadline. Overflow or a stalled
+socket retires only that client. One large accepted snapshot or initial replay
+can drain without being treated as a failed connection. Closing a connection
+releases its queue, timer and listeners.
+
+EventSource reconnection alone is not treated as recovery: the client blocks new
+work until one authoritative full state is validated for the current connection.
+Disconnect, timeout and page disposal cancel the old read; its late response
+cannot apply state, settle Sends or release queued work. A recovery read has a
+15-second deadline. Transport errors and HTTP 408, 429 and 5xx responses receive
+up to three retries after 500, 1000 and 2000 milliseconds. Invalid state and other
+HTTP failures remain blocked. After recovery fails, **Retry connection** starts a
+new read sequence without resubmitting commands or prompts. Page restoration
+opens a fresh stream and reconciles state. A recovered snapshot also settles
+completed Sends whose HTTP and terminal SSE deliveries were both lost.
 Durable steering correlation is represented in both incremental and full-state
 Session-event projections, so either one can reconcile an unresolved steer. The
 client runs every authoritative HTTP/SSE state through one complete wire
@@ -2895,8 +3106,9 @@ lower epochs, and uses the confirmation frontier plus each request's generation
 to prevent a resolved or steering-superseded decision from reopening.
 Background Sessions retain their own projection until selected.
 
-Context utilization is scoped to the latest accepted, non-continuation model
-turn. A transport attaches it only when both provider-reported used tokens and
+Context utilization is scoped to the latest accepted model turn, including
+hosted-tool continuations and excluding output-limit fragments. A transport
+attaches it only when both provider-reported used tokens and
 an authoritative context-window size are available. Direct API and OAuth
 protocol adapters normalize terminal protocol usage when their model metadata
 or the selected model's explicit local context setting supplies the denominator.
@@ -2925,6 +3137,8 @@ does not silently discard history. The manual `compact_session` command acquires
 the same Session mutation boundary and saved Profile/model/OAuth requester as a
 Send, but disables tools and appends only a compaction event. Its optional
 instructions add one-time preservation priorities without becoming a user turn.
+Manual and automatic compaction both receive the admitted global Custom
+Instructions and Session creative brief.
 A new manual checkpoint requires conversation activity after the latest
 checkpoint, so repeated `/compact` commands cannot accumulate empty checkpoint
 markers. Model reconnect notices for a manual checkpoint use command-correlated,
@@ -3103,11 +3317,73 @@ the failure remains fatal so the model can never retry without knowing what
 already changed. Device parameter values outside the freshly observed range are
 rejected rather than silently clamped after confirmation.
 
+### Window host lifetime
+
+Request tool resources have one cleanup owner from the first external resource
+acquisition through later initialization, event persistence and execution. Once
+the complete tool registry is available it owns that cleanup; earlier setup
+failures still release the admitted Plugin connections.
+
+`createAgentRuntime` owns an authenticated loopback HTTP/SSE bridge, Session claims,
+subscriptions and provider resources independently of a page. `runAgentFlow` owns
+the modal wrapper and closes that runtime when `showModalDialog` returns.
+`window-hosts.ts` retains one browser runtime per Extension activation and launches
+its exact tokenized URL through the loopback-enabled system browser opener. An
+opening failure retires newly created resources and reports a URL-free host error.
+Both build variants start that runtime at SDK activation with a Set-scoped,
+target-free context and write a fresh VST3 launch handoff without opening UI.
+A startup failure is logged without preventing command registration. The SDK
+documents no deactivate callback; normal Live quit depends on native ExtensionHost
+process lifetime, and graceful draining of in-flight work is not established.
+The native view attaches only
+after its local handoff passes validation and reachability checks.
+
+The saved `interfaceMode` preference defaults to `modal` for historical settings;
+its decimal revision orders command responses and peer publications. The document's
+host capability is fixed when created, so changing the preference only affects
+future invocations. Browser documents hide the modal Close control.
+The modal Close decision queries existing draft owners, including drafts in
+inactive Sessions and write-only credential inputs, before discarding edits.
+These checks do not persist drafts or credentials.
+
+Repeated browser invocations with the same Set, object and exact selection reuse
+the runtime and its Session claim owner, and restore its invocation Session even
+if the page selected another Session. A different invocation in the same Set
+adopts its context on the idle runtime without replacing the bridge; a busy
+runtime rejects that change until its work finishes or is stopped.
+A subsequent modal invocation owns a separate runtime without cancelling browser
+work. Set changes retire the old browser runtime on the next browser invocation.
+The SDK exposes no Extension deactivation hook; otherwise the retained runtime
+lasts for the Extension process. `close` remains idempotent and owns resource cleanup.
+
+A persisted `pagehide` suspends preview reads and media playback while retaining
+cached-page views. `pageshow` resumes preview loading; final page destruction
+disposes the views. Reconnection restores the bridge without leaving retained
+MIDI cards bound to disposed resources.
+
+Disconnecting browser HTTP/SSE connections does not cancel admitted sends or pending
+confirmations. Reopening replays authoritative activity, transient model output and
+pending confirmation state. The authenticated `command_activity` SSE projection
+publishes the admitted command ID, optional Session ID and stopping flag, and
+replays its current value before command confirmations. A terminal null clears
+remote command ownership on reconnect. Its independent revision ordering rejects
+stale activity; fresh pages consume the same command confirmation, progress,
+terminal state and Stop protocol as the initiating page.
+Stop and runtime shutdown still cancel work. Page-local
+drafts and queued follow-ups are not durable background jobs. Set identity is captured before asynchronous opening and checked before exposing
+the runtime. It is checked again at send admission, observation, preflight, queued mutation acquisition
+and between executor actions; MIDI import consumes the same runtime guard.
+Managed sample staging checks that authority immediately before importing into
+the project and after recording the completed import. Arrangement-derived audio
+carries an ephemeral authority callback through queued rendering, returned-byte
+validation and provider dispatch. Persisted attachments and audio artifacts are
+independent snapshots and retain their existing upload/resume semantics.
+
 ### Reconciliation and dialog shutdown
 
 Command mutations whose follow-up state cannot be built use the same
 unknown-outcome reconciliation path as uncertain storage commits. Closing the
-dialog aborts active work and
+modal or retiring its runtime aborts active work and
 waits for send and command handlers to finish their terminal cleanup. Read-only
 chat/state connections are destroyed instead, so an unresponsive state build
 cannot prevent the modal flow from returning.
@@ -3155,9 +3431,9 @@ reconciliation, only the byte-identical guidance may retry
 with the retained ID; edited Steer text and Queue submission cannot abandon the
 possibly committed receipt. Queue starts another request through the unchanged
 Send contract; its mode is never added to that body. The global-settings command
-accepts `kind: "save_global_settings"` plus exactly one of
-`defaultFollowUpBehavior: "queue" | "steer"` or
-`showContextUsage: boolean` or a validated `networkProxy` selection.
+accepts `kind: "save_global_settings"` plus exactly one validated field:
+`defaultFollowUpBehavior`, `showContextUsage`, `networkProxy`, `interfaceMode`,
+`uiLanguage`, `integrationConnections`, `customInstructions`, or `sessionTabs`.
 Session, Profile, and subscription-auth commands accept only their
 command-specific fields; confirmation and Stop reject body fields they do not
 own. Stop targets the exact send ID in its header. While that send is active it
@@ -3176,7 +3452,8 @@ cannot reopen the send's terminal activity; a durable late Session event may
 still publish, but it carries the stopped activity. If a Stop-first terminal
 classification is `unknown` while the original Send response is outstanding,
 the client waits up to the five-second reconciliation budget for a
-definitive Send outcome before falling back to unknown recovery. Every JSON
-body is bounded
-to 1 MiB before parsing. User Skill Markdown source is never a JSON field; it
-uses the separate authenticated raw route described above.
+definitive Send outcome before falling back to unknown recovery. JSON bodies
+are bounded to 1 MiB before parsing, except for the MCP App resource-pagination
+requests described above, whose budget accommodates opaque MCP cursors. User
+Skill Markdown source is never a JSON field; it uses the separate authenticated
+raw route described above.

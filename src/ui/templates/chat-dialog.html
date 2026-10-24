@@ -54,10 +54,30 @@
               <button id="newSessionButton" class="icon-button" type="button" title="New Session" aria-label="New Session" data-idle-label="+" onclick="LiveSmithUI.runCommand('new_session')" data-i18n-title="New Session" data-i18n-aria-label="New Session">+</button>
             </div>
           </div>
+          <div class="session-search">
+            <label for="sessionSearch" class="visually-hidden" data-i18n="Search sessions">Search sessions</label>
+            <input id="sessionSearch" type="search" maxlength="200" placeholder="Search titles and messages" data-i18n-placeholder="Search titles and messages" autocomplete="off" aria-controls="sessions" />
+            <p id="sessionSearchStatus" class="field-hint" role="status" hidden></p>
+            <div id="sessionSearchControls" class="session-search-controls" hidden>
+              <button id="sessionSearchPrevious" class="secondary" type="button" data-i18n="Previous page">Previous page</button>
+              <button id="sessionSearchNext" class="secondary" type="button" data-i18n="Next page">Next page</button>
+              <button id="sessionSearchRetry" class="secondary" type="button" data-i18n="Retry">Retry</button>
+            </div>
+          </div>
           <div id="sessions" class="sessions"></div>
         </aside>
 
         <section class="chat-pane">
+          <section id="sessionHistoryPreview" class="session-history-preview" aria-label="Read-only Session preview" hidden>
+            <div class="session-history-preview-header">
+              <strong id="sessionHistoryPreviewTitle"></strong>
+              <button id="sessionHistoryPreviewClose" class="secondary" type="button">Close preview</button>
+            </div>
+            <p id="sessionHistoryPreviewStatus" role="status">Read-only history. Send still uses the active Session.</p>
+            <p id="sessionHistoryPreviewArtifacts" class="session-history-preview-artifacts"></p>
+            <div id="sessionHistoryPreviewMessages" class="session-history-preview-messages"></div>
+            <button id="sessionHistoryPreviewMore" class="secondary" type="button" hidden>More messages</button>
+          </section>
           <div id="timeline" class="timeline" aria-label="Conversation" data-i18n-aria-label="Conversation"></div>
           <div id="conversationAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="messageActionAnnouncements" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -67,13 +87,16 @@
               <div id="audioJobs"></div>
             </section>
           </details>
-          <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div class="bridge-status">
+            <div id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></div>
+            <button id="bridgeRetryButton" class="secondary" type="button" onclick="LiveSmithUI.retryBridgeConnection()" hidden data-i18n="Retry connection">Retry connection</button>
+          </div>
           <div class="composer">
             <div id="pendingAttachments" class="pending-attachments" role="list" aria-label="Pending file attachments" aria-busy="false" hidden data-i18n-aria-label="Pending file attachments"></div>
             <div id="composerAutocomplete" class="composer-autocomplete floating-surface" role="listbox" aria-label="Composer suggestions" hidden data-i18n-aria-label="Composer suggestions"></div>
             <div class="composer-surface">
             <div id="composerShortcuts" class="composer-shortcuts" role="group" aria-label="Chat shortcuts" data-i18n-aria-label="Chat shortcuts" hidden>
-              <button id="liveContextSummaryButton" class="composer-shortcut live-context-summary" data-session-shortcut="context" type="button" aria-controls="contextPanel" onclick="LiveSmithUI.openInspector('context')" hidden><span class="context-caption" data-i18n="Context">Context</span><span id="liveContextTitle" class="context-title"></span><span id="liveContextLocation" class="context-location"></span></button>
+              <button id="liveContextSummaryButton" class="composer-shortcut live-context-summary" data-session-shortcut="context" type="button" aria-controls="context" onclick="LiveSmithUI.openInspectorSection('context', 'context')" hidden><span class="context-caption" data-i18n="Context">Context</span><span id="liveContextTitle" class="context-title"></span><span id="liveContextLocation" class="context-location"></span></button>
               <button id="briefShortcut" class="composer-shortcut" data-session-shortcut="brief" type="button" aria-controls="creativeBriefSection" onclick="LiveSmithUI.openInspectorSection('context', 'creativeBriefSection')" hidden data-i18n="Brief">Brief</button>
               <button id="artifactsShortcut" class="composer-shortcut" data-session-shortcut="artifacts" type="button" aria-controls="artifactsPanel" onclick="LiveSmithUI.openInspector('artifacts')" hidden data-i18n="Artifacts">Artifacts</button>
               <button id="skillsShortcut" class="composer-shortcut" data-session-shortcut="skills" type="button" aria-controls="skillsPanel" onclick="LiveSmithUI.openInspector('skills')" hidden data-i18n="Skills">Skills</button>
@@ -499,6 +522,14 @@
               <section id="followUpSettingsSection" class="settings-section conversation-settings-section" aria-labelledby="followUpSettingsHeading">
                 <h3 id="followUpSettingsHeading" data-i18n="Conversation &amp; Display">Conversation &amp; Display</h3>
                 <div class="field">
+                  <label for="interfaceMode" data-i18n="Open Live Smith in">Open Live Smith in</label>
+                  <select id="interfaceMode" name="interfaceMode" aria-describedby="interfaceModeHint" onchange="LiveSmithUI.setInterfaceMode(this.value)">
+                    <option value="modal" data-i18n="Live modal">Live modal</option>
+                    <option value="browser" data-i18n="System browser">System browser</option>
+                  </select>
+                  <p id="interfaceModeHint" class="hint" data-i18n="Applies next time you open Live Smith. Browser tasks continue when the tab closes.">Applies next time you open Live Smith. Browser tasks continue when the tab closes.</p>
+                </div>
+                <div class="field">
                   <label for="uiLanguage" data-i18n="Interface language">Interface language</label>
                   <select id="uiLanguage" name="uiLanguage" autocomplete="off" aria-label="Interface language" onchange="LiveSmithUI.setUiLanguage(this.value)" data-i18n-aria-label="Interface language">
                     <option value="system" data-i18n="System language">System language</option>
@@ -875,7 +906,7 @@
                   <button id="useCreativeBriefProposalButton" class="secondary" type="button" data-i18n="Edit suggestion">Edit suggestion</button>
                 </details>
               </section>
-              <div id="context" class="context"></div>
+              <div id="context" class="context" tabindex="-1"></div>
               <section class="settings-scope" aria-labelledby="contextInputsHeading">
                 <div class="inspector-scope-header"><h2 id="contextInputsHeading" data-i18n="Message context">Message context</h2></div>
                 <p id="inspectorContextUsage" class="field-hint"></p>

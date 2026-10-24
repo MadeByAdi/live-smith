@@ -8,6 +8,7 @@ import process from "node:process";
 import { URL } from "node:url";
 
 import { throwIfAborted } from "./host.js";
+import { isolatedNativeBuild } from "./native-isolation.js";
 
 declare const __LIVE_SMITH_COMPANION_CAPSULE__: string;
 
@@ -32,6 +33,7 @@ export function createSmithCompanionOpener(
   const platform = options.platform ?? process.platform;
   const launch = options.launch ?? launchNativeCompanion;
   return async (url, signal) => {
+    if (isolatedNativeBuild) throw new Error("Smith Companion is unavailable in the isolated native test.");
     throwIfAborted(signal);
     assertCompanionLaunchUrl(url);
     if (platform !== "darwin") {

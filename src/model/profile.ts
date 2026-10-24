@@ -1,3 +1,5 @@
+import { type InterfaceMode } from "./interface-mode.js";
+export { isInterfaceMode, type InterfaceMode } from "./interface-mode.js";
 import { validateHeaderValue } from "node:http";
 import { isIP } from "node:net";
 import { URL, URLSearchParams } from "node:url";
@@ -145,7 +147,7 @@ export type OAuthSubscriptionModelConfig = ModelConfigFields & {
   };
   advanced: {
     capabilityOverrides?: never;
-    hostedTools?: never;
+    hostedTools?: HostedToolSettings;
     extraBody?: never;
   };
 };
@@ -206,6 +208,8 @@ export interface AgentSettings {
   contextUsageVisibilityRevision: ContextUsageVisibilityRevision;
   networkProxy: NetworkProxySettings;
   networkProxyRevision: NetworkProxyRevision;
+  interfaceMode: InterfaceMode;
+  interfaceModeRevision: string;
   uiLanguage: UiLanguage;
   uiLanguageRevision: UiLanguageRevision;
   sessionTabs: SessionShortcutId[];
@@ -257,6 +261,8 @@ export function freshEmptyAgentSettings(): AgentSettings {
     contextUsageVisibilityRevision: "0",
     networkProxy: { mode: "none", url: "" },
     networkProxyRevision: "0",
+    interfaceMode: "modal",
+    interfaceModeRevision: "0",
     uiLanguage: "system",
     uiLanguageRevision: "0",
     sessionTabs: [...defaultSessionTabs],
@@ -641,16 +647,19 @@ function draftModelConfigs(
   }
   return value.map((entry) => {
     const record = isRecord(entry) ? entry : {};
+    const advanced = draftAdvanced(record.advanced);
     return connection.kind === "oauth-subscription"
       ? {
           model: draftString(record.model, "model"),
           parameters: draftOAuthSubscriptionParameters(record.parameters),
-          advanced: {},
+          advanced: advanced.hostedTools
+            ? { hostedTools: advanced.hostedTools }
+            : {},
         }
       : {
           model: draftString(record.model, "model"),
           parameters: draftDirectApiParameters(record.parameters),
-          advanced: draftAdvanced(record.advanced),
+          advanced,
         };
   });
 }
@@ -748,7 +757,8 @@ function savedModelConfig(
       );
 
   if (connection.kind === "oauth-subscription") {
-    assertOnlyKeys(advanced, [], advancedField);
+    assertOnlyKeys(advanced, ["hostedTools"], advancedField);
+    const { hostedTools } = advancedSettings(advanced, advancedField);
     const context = contextManagementParameters(parameters, parametersField);
     return {
       model,
@@ -756,7 +766,7 @@ function savedModelConfig(
         ...context,
         reasoning: reasoningSettings(reasoning, reasoningField),
       },
-      advanced: {},
+      advanced: hostedTools ? { hostedTools } : {},
     };
   }
 
@@ -1507,5 +1517,17 @@ export function compareSessionTabsRevisions(
 }
 
 export function incrementSessionTabsRevision(revision: SessionTabsRevision): SessionTabsRevision {
+  return incrementCanonicalSettingsRevision(revision);
+}
+
+export function isInterfaceModeRevision(value: unknown): value is string {
+  return isCanonicalSettingsRevision(value);
+}
+
+export function compareInterfaceModeRevisions(left: string, right: string): number {
+  return compareCanonicalSettingsRevisions(left, right);
+}
+
+export function incrementInterfaceModeRevision(revision: string): string {
   return incrementCanonicalSettingsRevision(revision);
 }

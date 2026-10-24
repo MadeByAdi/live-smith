@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { URL } from "node:url";
 
 import { throwIfAborted } from "./host.js";
+declare const __LIVE_SMITH_HANDOFF_ID__: string;
 
 const launchTicket = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const extensionDataDirectory = path.join(
@@ -11,7 +12,7 @@ const extensionDataDirectory = path.join(
   "Application Support",
   "Ableton",
   "Extensions Data",
-  "sam-kuler.live-smith",
+  typeof __LIVE_SMITH_HANDOFF_ID__ === "undefined" ? "sam-kuler.live-smith" : __LIVE_SMITH_HANDOFF_ID__,
 );
 
 export interface Vst3HandoffOpenerOptions {

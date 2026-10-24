@@ -14,6 +14,7 @@ export const timelineMessages: Record<string, string> = {
   "Archive": "归档",
   "Unarchive": "取消归档",
   "Working": "处理中",
+  "Working…": "处理中…",
   "Needs approval": "需要批准",
   "Completed": "已完成",
   "Failed": "失败",

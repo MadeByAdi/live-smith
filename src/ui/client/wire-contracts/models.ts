@@ -1,3 +1,4 @@
+import { isInterfaceMode } from "../../../model/interface-mode.js";
 import { isSessionTabs } from "../../../model/session-tabs.js";
 import { isUiLanguage } from "../../../i18n/languages.js";
 import type {
@@ -23,7 +24,7 @@ import type {
   ProviderReportedModelMetadata,
   ReasoningCapabilities,
 } from "../../../model/provider.js";
-import type { ChatConfiguredModel, ChatModelStateSource, ChatRuntimeSummary, ChatSessionSummary } from "../../chat-state.js";
+import type { ChatCommandActivity, ChatConfiguredModel, ChatModelStateSource, ChatRuntimeSummary, ChatSessionSummary } from "../../chat-state.js";
 import {
   WIRE_CURRENT_AGENT_SETTINGS_SCHEMA_VERSION,
   maximumDiscoveredModelContextWindowTokens,
@@ -43,6 +44,7 @@ import {
   isWireArray,
   isWireRecord,
   isWireStorageId,
+  isWireCorrelationId,
   wireCodePointLengthAtMost,
 } from "./primitives.js";
 
@@ -354,7 +356,8 @@ export function isWireSavedModelConfig(value: unknown, subscription: boolean): v
       isWireContextManagementParameters(value.parameters) &&
       value.parameters.reasoning.mode !== "disabled" &&
       value.parameters.reasoning.budgetTokens === undefined &&
-      hasOnlyWireKeys(value.advanced, []);
+      hasOnlyWireKeys(value.advanced, ["hostedTools"]) &&
+      isWireModelAdvanced(value.advanced);
   }
   return hasOnlyWireKeys(value.parameters, [
       "maxOutputTokens",
@@ -439,6 +442,8 @@ export function isWireAgentSettings(value: unknown): value is AgentSettings {
       "contextUsageVisibilityRevision",
       "networkProxy",
       "networkProxyRevision",
+      "interfaceMode",
+      "interfaceModeRevision",
       "uiLanguage",
       "uiLanguageRevision",
       "sessionTabs",
@@ -457,6 +462,8 @@ export function isWireAgentSettings(value: unknown): value is AgentSettings {
     typeof value.showContextUsage !== "boolean" ||
     !isDecimalRevision(value.contextUsageVisibilityRevision) ||
     !isNetworkProxySettings(value.networkProxy) ||
+    !isInterfaceMode(value.interfaceMode) ||
+    !isDecimalRevision(value.interfaceModeRevision) ||
     !isUiLanguage(value.uiLanguage) ||
     !isDecimalRevision(value.uiLanguageRevision) ||
     !isSessionTabs(value.sessionTabs) ||
@@ -690,4 +697,10 @@ export function isWireOAuthAuth(value: unknown): value is OAuthAuthState {
 
 export function isWireApprovalMode(value: unknown): value is ApprovalMode {
   return includes(["manual", "low-risk", "everything"], value);
+}
+
+export function isWireCommandActivity(value: unknown): value is ChatCommandActivity | null {
+  return value === null || isWireRecord(value) && hasOnlyWireKeys(value, ["id", "sessionId", "stopping"]) &&
+    isWireCorrelationId(value.id) && (value.sessionId === null || isWireStorageId(value.sessionId)) &&
+    typeof value.stopping === "boolean";
 }

@@ -1,3 +1,5 @@
+import { createLiveSetGuard } from "../live/set-identity.js";
+import type { InterfaceMode } from "../model/interface-mode.js";
 import { Buffer } from "node:buffer";
 import { readMidiArtifactFile } from "./midi/artifact-file.js";
 
@@ -24,6 +26,8 @@ import { createSessionLifecycle } from "./session/session-lifecycle.js";
 import { importMidiArtifact } from "./midi-artifact-import.js";
 import { prepareMidiArtifactImport } from "./midi-artifact-preview.js";
 import { readMidiArtifactDiff } from "./midi/midi-artifact-diff.js";
+import { captureParameterArtifact, readParameterArtifactPreview } from "./parameters/parameter-artifacts.js";
+import { runParameterApplication } from "./parameters/parameter-application.js";
 import { listSessionArtifacts, readSessionArtifact, readSessionMidiPartPreview, selectSessionArtifact } from "./session/session-artifacts.js";
 import type { ExtensionContext } from "@ableton-extensions/sdk";
 
@@ -49,6 +53,9 @@ import { createAttachmentOpener } from "./attachments/attachment-opener.js";
 import { integrationConnectionsView } from "../storage/settings.js";
 import { AudioArtifactNotFoundError, readSessionAudioArtifact } from "../storage/audio-artifacts.js";
 import { listAudioJobs } from "../storage/audio-jobs.js";
+import { hasSessionMidiContent } from "../storage/midi-artifacts.js";
+import { searchSessions } from "./session/session-search.js";
+import { readSessionPreview } from "./session/session-preview.js";
 import {
   type AgentConfirmationDecision,
 } from "../agent/loop.js";
@@ -222,6 +229,7 @@ import {
   sessionSummaries,
   projectKeyForContext,
   continuableSessionsForScope,
+  conversationContextForSession,
   withSessionCreationScope,
 } from "./context/session-context.js";
 import {
@@ -295,7 +303,7 @@ export interface AgentFlowDependencies extends DialogModelStateDependencies {
   updateSessionInTransaction?: typeof updateSessionInTransaction;
   renderHtml?(
     state: ChatBridgeState,
-    bridge: { baseUrl: string; token: string },
+    bridge: { baseUrl: string; token: string; hostMode?: InterfaceMode },
   ): string;
   /** Shared by every dialog opened from one extension activation. */
   liveMutationQueue?: LiveMutationQueue;
@@ -314,11 +322,34 @@ export interface AgentFlowDependencies extends DialogModelStateDependencies {
   beforeSessionEditScopesCommit?(): Promise<void> | void;
 }
 
+export interface AgentRuntime {
+  readonly url: string;
+  readonly browserUrl: string;
+  readonly busy: boolean;
+  reopen(): Promise<void>;
+  adopt(interaction: LiveInteractionContext): void;
+  close(): Promise<void>;
+}
+
 export async function runAgentFlow(
   context: Api,
   interaction: LiveInteractionContext,
   dependencies: AgentFlowDependencies = {},
 ): Promise<void> {
+  const runtime = await createAgentRuntime(context, interaction, dependencies);
+  try { await context.ui.showModalDialog(runtime.url, 1040, 720); }
+  finally { await runtime.close(); }
+}
+
+export async function createAgentRuntime(
+  context: Api,
+  initialInteraction: LiveInteractionContext,
+  dependencies: AgentFlowDependencies = {},
+  hostMode: InterfaceMode = "modal",
+): Promise<AgentRuntime> {
+  let interaction = initialInteraction;
+  const assertLiveSetCurrent = createLiveSetGuard(context);
+  const projectKey = projectKeyForContext(context);
   let status: UiMessage | undefined;
   let openSettingsOnLoad = false;
   let activeSessionId: string | undefined;
@@ -333,6 +364,7 @@ export async function runAgentFlow(
   const storageDirectory = context.environment.storageDirectory === undefined
     ? undefined
     : await canonicalStorageDirectory(context.environment.storageDirectory);
+  assertLiveSetCurrent();
   const providerFetch = providerFetchForStorage(storageDirectory);
   const sunoSessions = new SunoSessionManager(storageDirectory,
     dependencies.verifySunoSession ?? createSunoSessionVerifier(providerFetch));
@@ -341,7 +373,6 @@ export async function runAgentFlow(
   const attachmentOpener = createAttachmentOpener({
     ...(context.environment?.tempDirectory === undefined ? {} : { temporaryDirectory: context.environment.tempDirectory }),
   });
-  const projectKey = projectKeyForContext(context);
   const liveMutationQueue = dependencies.liveMutationQueue ?? new LiveMutationQueue();
   const selectionInteractionsBySessionId = new Map<
     string,
@@ -479,6 +510,7 @@ export async function runAgentFlow(
   const resolveSessionInteraction = (
     session: { id: string; scope: LiveInteractionContext["scope"] },
   ): LiveInteractionContext | undefined => {
+    if (projectKeyForContext(context) !== projectKey) return undefined;
     if (interaction.selectionContext && invocationSelectionReady) {
       const refreshed = interaction.selectionContext.refresh(context);
       if (refreshed) {
@@ -499,6 +531,7 @@ export async function runAgentFlow(
   };
 
   const resolveContinueInteraction = (): LiveInteractionContext | undefined => {
+    if (projectKeyForContext(context) !== projectKey) return undefined;
     if (interaction.selectionContext) {
       const refreshed = interaction.selectionContext.refresh(context);
       return refreshed &&
@@ -754,8 +787,7 @@ export async function runAgentFlow(
       const catalog = await sunoModelCatalog.view(settings.integrationConnections?.revision);
       throwIfAborted(signal);
       const state: ChatDialogState & { midiContinuation?: MidiContinuationView } = {
-        contextSummary: activeInteraction?.summary ??
-          `The Live object for this session is unavailable: ${activeSession.scope.label}`,
+        contextSummary: conversationContextForSession(activeSession, activeInteraction).summary,
         liveContext: activeInteraction
           ? {
               sessionId: activeSession.id,
@@ -1456,6 +1488,8 @@ export async function runAgentFlow(
                 ? { showContextUsage: commandInput.showContextUsage }
                 : "sessionTabs" in commandInput
                 ? { sessionTabs: commandInput.sessionTabs }
+                : "interfaceMode" in commandInput
+                ? { interfaceMode: commandInput.interfaceMode }
                 : "uiLanguage" in commandInput
                 ? { uiLanguage: commandInput.uiLanguage }
                 : "integrationConnections" in commandInput
@@ -1488,7 +1522,9 @@ export async function runAgentFlow(
               customInstructionsRevision: settings.customInstructionsRevision,
               networkProxy: settings.networkProxy,
               networkProxyRevision: settings.networkProxyRevision,
+              interfaceMode: settings.interfaceMode,
               uiLanguage: settings.uiLanguage,
+              interfaceModeRevision: settings.interfaceModeRevision,
               uiLanguageRevision: settings.uiLanguageRevision,
               sessionTabs: settings.sessionTabs,
               sessionTabsRevision: settings.sessionTabsRevision,
@@ -1517,7 +1553,9 @@ export async function runAgentFlow(
                 customInstructionsRevision: settings.customInstructionsRevision,
                 networkProxy: settings.networkProxy,
                 networkProxyRevision: settings.networkProxyRevision,
+                interfaceMode: settings.interfaceMode,
                 uiLanguage: settings.uiLanguage,
+                interfaceModeRevision: settings.interfaceModeRevision,
                 uiLanguageRevision: settings.uiLanguageRevision,
                 sessionTabs: settings.sessionTabs,
                 sessionTabsRevision: settings.sessionTabsRevision,
@@ -1681,6 +1719,38 @@ export async function runAgentFlow(
       });
     }
 
+    if (commandInput.kind === "capture_device_parameters" || commandInput.kind === "apply_device_parameters" || commandInput.kind === "restore_device_parameters" || commandInput.kind === "keep_device_parameters") {
+      if (!storageDirectory) throw new Error("Private storage is required for device parameter artifacts.");
+      if (commandInput.sessionId !== activeSessionId || sessionMutationFence.hasQueuedOrActive(
+        sessionMutationFenceKey(storageDirectory, commandInput.sessionId), "send",
+      )) throw new ChatBridgeConflictError("Choose an idle active Session for device parameters.");
+      return withNamedSessionMutation(commandInput.sessionId, "send", signal, async () => {
+        if (commandInput.sessionId !== activeSessionId) throw new ChatBridgeConflictError("The active Session changed before the parameter operation.");
+        const session = (await listSessions(storageDirectory, projectKey)).find((entry) => entry.id === commandInput.sessionId && !entry.archivedAt);
+        if (!session) throw new ChatBridgeResourceNotFoundError("That Session is not available in this Live Set.");
+        const sessionInteraction = resolveSessionInteraction(session);
+        if (!sessionInteraction) throw new ChatBridgeResourceNotFoundError("The Live object for this Session is no longer available.");
+        const common = { context, storageDirectory, sessionId: session.id, projectKey, signal, assertLiveSetCurrent };
+        try {
+          if (commandInput.kind === "capture_device_parameters") {
+            await captureParameterArtifact({ ...common, ...commandInput });
+            status = uiMessage("Device parameter snapshot saved.");
+          } else {
+            const result = await runParameterApplication({ ...common, ...commandInput, interaction: sessionInteraction, mutationQueue: liveMutationQueue,
+              confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
+                if (!commandContext.requestConfirmation) throw new Error("Device parameter confirmation is unavailable.");
+                return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
+                  groups: actionDiffGroups(plan.actions, plan.targets), ...(guard.previews ? { previews: guard.previews } : {}) });
+              }),
+            });
+            status = uiMessage(result === "applied" ? "Device parameters applied." : result === "restored" ? "Previous device parameters restored."
+              : result === "kept" ? "Current device parameters kept." : result === "unchanged" ? "Device parameters already match this version." : "Device parameter application cancelled.");
+          }
+        } finally { notifySessionStateChanged(session.id); }
+        return buildStateAfterCommandMutation(undefined, { heldSessionId: session.id, sessionMutationHeld: true });
+      });
+    }
+
     if (commandInput.kind === "import_midi_artifact" || commandInput.kind === "import_midi_continuation") {
       if (commandInput.sessionId !== activeSessionId || sessionMutationFence.hasQueuedOrActive(
         sessionMutationFenceKey(storageDirectory, commandInput.sessionId), "send",
@@ -1690,6 +1760,7 @@ export async function runAgentFlow(
         const session = (await listSessions(storageDirectory, projectKey)).find((entry) =>
           entry.id === commandInput.sessionId && !entry.archivedAt);
         if (!session) throw new ChatBridgeResourceNotFoundError("That Session is not available in this Live Set.");
+        assertLiveSetCurrent();
         const sessionInteraction = resolveSessionInteraction(session);
         if (!sessionInteraction) throw new ChatBridgeResourceNotFoundError("The Live object for this Session is no longer available.");
         try {
@@ -1700,6 +1771,7 @@ export async function runAgentFlow(
           const applied = await importMidiArtifact({
             ...commandInput, kind: "import_midi_artifact", ...continuation, context, storageDirectory, projectKey, interaction: sessionInteraction,
             signal, mutationQueue: liveMutationQueue,
+            assertLiveSetCurrent,
             confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
               if (!commandContext.requestConfirmation) throw new Error("MIDI import confirmation is unavailable.");
               return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
@@ -1725,6 +1797,7 @@ export async function runAgentFlow(
         const session = (await listSessions(storageDirectory, projectKey)).find((entry) =>
           entry.id === commandInput.sessionId && !entry.archivedAt);
         if (!session) throw new ChatBridgeResourceNotFoundError("That Session is not available in this Live Set.");
+        assertLiveSetCurrent();
         const sessionInteraction = resolveSessionInteraction(session);
         if (!sessionInteraction) throw new ChatBridgeResourceNotFoundError("The Live object for this Session is no longer available.");
         let observations = manualAudioObservations.get(session.id);
@@ -1732,7 +1805,7 @@ export async function runAgentFlow(
         try {
           await commandContext.progress(uiMessage("Running audio tool…"));
           const result = await runAudioParameterTool({
-            ...commandInput, context, storageDirectory, signal, target: sessionInteraction.target,
+            ...commandInput, context, assertLiveSetCurrent, storageDirectory, signal, target: sessionInteraction.target,
             observedMusicClips: observations,
             onProgress: (message) => commandContext.progress(message),
             onAssets: () => { notifySessionStateChanged(session.id); },
@@ -2098,12 +2171,8 @@ export async function runAgentFlow(
               "That Session is not available in this Live Set.",
             );
           }
-          const sessionInteraction = resolveSessionInteraction(session);
-          if (!sessionInteraction) {
-            throw new ChatBridgeResourceNotFoundError(
-              `The Live object for this Session is no longer available: ${session.scope.label}.`,
-            );
-          }
+          assertLiveSetCurrent();
+          const sessionInteraction = conversationContextForSession(session, resolveSessionInteraction(session));
           const events = await (
             dependencies.loadSessionEvents ?? loadSessionEvents
           )(storageDirectory, session.id);
@@ -2153,6 +2222,7 @@ export async function runAgentFlow(
                 : { skillContext: snapshot.skillContext }),
               editScopes: resolveEditScopes(session.editScopes),
               creativeBrief: session.creativeBrief ?? "",
+              customInstructions: snapshot.settings.customInstructions,
               agentMessages: [],
               ...(commandInput.instructions === undefined
                 ? {}
@@ -2330,6 +2400,7 @@ export async function runAgentFlow(
 
     if (commandInput.kind === "export_artifact" || commandInput.kind === "attach_artifact") {
       const { sessionId, artifact } = commandInput;
+      if (artifact.kind === "device-parameters") throw new Error("Device parameter versions are opened and applied from Artifacts.");
       await attachmentSession(sessionId);
       if (commandInput.kind === "attach_artifact") {
         const file = artifact.kind === "midi"
@@ -2525,7 +2596,7 @@ export async function runAgentFlow(
       return buildStateAfterCommandMutation();
     }
 
-    if (commandInput.kind === "set_session_skills") {
+    if (commandInput.kind === "set_session_skills" || commandInput.kind === "remove_session_skill") {
       const mutationKey = sessionMutationFenceKey(
         storageDirectory,
         commandInput.sessionId,
@@ -2535,7 +2606,7 @@ export async function runAgentFlow(
           "Stop this Session's active request before changing its Skills.",
         );
       }
-      const requestedSkillIds = [...commandInput.skillIds].sort();
+      let requestedSkillIds: string[] = [];
       await withNamedSessionMutation(
         commandInput.sessionId,
         "skills",
@@ -2563,28 +2634,33 @@ export async function runAgentFlow(
                         "That Session does not exist.",
                       );
                     }
-                    const installed = await listInstalledSkillsInTransaction(
-                      transaction,
-                      storageDirectory,
-                    );
-                    const pluginSkills = await pluginSkillsFromPackages(
-                      await readEnabledPluginPackagesInTransaction(transaction, storageDirectory),
-                    );
-                    const availableIds = new Set(
-                      availableSkillSummaries(installed, pluginSkills).map(
-                        (skill) => skill.id,
-                      ),
-                    );
-                    const unavailable = requestedSkillIds.find(
-                      (skillId) => !availableIds.has(skillId),
-                    );
-                    if (unavailable !== undefined) {
-                      throw new ChatBridgeSkillValidationError(
-                        `Skill ${unavailable} is not available.`,
+                    const currentSkillIds = session.activeSkillIds ?? [];
+                    requestedSkillIds = commandInput.kind === "remove_session_skill"
+                      ? currentSkillIds.filter((skillId) => skillId !== commandInput.skillId)
+                      : [...commandInput.skillIds].sort();
+                    if (commandInput.kind === "set_session_skills") {
+                      const installed = await listInstalledSkillsInTransaction(
+                        transaction,
+                        storageDirectory,
                       );
+                      const pluginSkills = await pluginSkillsFromPackages(
+                        await readEnabledPluginPackagesInTransaction(transaction, storageDirectory),
+                      );
+                      const availableIds = new Set(
+                        availableSkillSummaries(installed, pluginSkills).map(
+                          (skill) => skill.id,
+                        ),
+                      );
+                      const unavailable = requestedSkillIds.find(
+                        (skillId) => !availableIds.has(skillId),
+                      );
+                      if (unavailable !== undefined) {
+                        throw new ChatBridgeSkillValidationError(
+                          `Skill ${unavailable} is not available.`,
+                        );
+                      }
                     }
 
-                    const currentSkillIds = session.activeSkillIds ?? [];
                     const removalOnly = requestedSkillIds.every(
                       (skillId) => currentSkillIds.includes(skillId),
                     );
@@ -2750,6 +2826,7 @@ export async function runAgentFlow(
             )(storageDirectory, current.id);
             if (events.length) return undefined;
             if (storageDirectory !== undefined && (await listAudioJobs(storageDirectory, current.id)).length) return undefined;
+            if (await hasSessionMidiContent(storageDirectory, current.id)) return undefined;
             const attachments = await listPendingSessionAttachments(
               storageDirectory,
               current.id,
@@ -3025,6 +3102,7 @@ export async function runAgentFlow(
     steering: SteeringChannel,
     sendContext: ChatBridgeSendContext,
   ) => {
+    assertLiveSetCurrent();
     const prompt = sendInput.prompt;
     if (!prompt.trim()) {
       throw new Error("Prompt is empty.");
@@ -3068,13 +3146,8 @@ export async function runAgentFlow(
           sendFailureKind = "session_unavailable";
           throw new Error("That Session is not available in this Live Set.");
         }
-        const sessionInteraction = resolveSessionInteraction(session);
-        if (!sessionInteraction) {
-          sendFailureKind = "session_unavailable";
-          throw new Error(
-            `The Live object for this Session is no longer available: ${session.scope.label}.`,
-          );
-        }
+        assertLiveSetCurrent();
+        const sessionInteraction = conversationContextForSession(session, resolveSessionInteraction(session));
         const modelRequest = await acquireSessionModelRequester(
           session,
           requestSnapshot.settings,
@@ -3086,6 +3159,7 @@ export async function runAgentFlow(
         let requestFailed = false;
         let requestError: unknown;
         try {
+          assertLiveSetCurrent();
           const discoverAgentAudioTap = dependencies.discoverAgentAudioTapListeners ?? discoverAgentAudioTapListeners;
           const agentAudioTapListenerContext = formatAgentAudioTapListenersForReasoning(
             await discoverAgentAudioTap().catch(() => []),
@@ -3138,7 +3212,7 @@ export async function runAgentFlow(
                 notifySessionStateChanged(session.id);
               },
               withActionExecutionLock: (operation) =>
-                liveMutationQueue.run(signal, operation),
+                liveMutationQueue.run(signal, () => { assertLiveSetCurrent(); return operation(); }),
               confirmActions: (plan, guard, operationId) => decidePlanApproval(
                 storageDirectory,
                 session.id,
@@ -3261,6 +3335,25 @@ export async function runAgentFlow(
   const pendingSessionStateInvalidations = new Set<string>();
   let pendingGlobalStateInvalidation = false;
   let pendingProfileSettingsChange: ProfileSettingsChange | undefined;
+  let closePromise: Promise<void> | undefined;
+  const close = (): Promise<void> => closePromise ??= (async () => {
+    const bridgeClosed = bridge?.close();
+    attachmentOpener.close();
+    unsubscribeApprovalModes?.();
+    unsubscribeEditScopes?.();
+    unsubscribeModelSelections?.();
+    unsubscribeGlobalSettings?.();
+    unsubscribeProfileSettings?.();
+    unsubscribeSessionState?.();
+    unsubscribeGlobalState?.();
+    releaseSessionClaims(storageDirectory, modalSessionOwner);
+    await modelState.stopBrowserLaunches();
+    try {
+      await bridgeClosed;
+    } finally {
+      await modelState.close();
+    }
+  })();
   try {
     unsubscribeSessionState = subscribeSessionStateInvalidations(
       storageDirectory,
@@ -3310,6 +3403,8 @@ export async function runAgentFlow(
     });
     bridge = await createChatBridge({
       readAttachment,
+      searchSessions: (input, signal) => searchSessions({ ...input, storageDirectory, signal }),
+      readSessionPreview: (input, signal) => readSessionPreview({ ...input, storageDirectory, projectKey, signal }),
       handlePluginAppRequest: (input, signal) => pluginApps.request(input, signal),
       prepareMidiImport: async (input, signal) => {
         if (input.sessionId !== activeSessionId) throw new ChatBridgeConflictError("Choose the active Session before preparing MIDI import.");
@@ -3317,6 +3412,12 @@ export async function runAgentFlow(
         const result = await prepareMidiArtifactImport({ ...input, context, storageDirectory, projectKey, signal,
           ...(sessionInteraction ? { interaction: sessionInteraction } : {}) });
         if (input.sessionId !== activeSessionId) throw new ChatBridgeConflictError("The active Session changed while preparing MIDI import.");
+        return result;
+      },
+      readDeviceParameters: async (input, signal) => {
+        if (!storageDirectory || input.sessionId !== activeSessionId) throw new ChatBridgeConflictError("Choose the active Session before reading device parameters.");
+        const result = await readParameterArtifactPreview({ ...input, context, storageDirectory, projectKey, signal, assertLiveSetCurrent });
+        if (input.sessionId !== activeSessionId) throw new ChatBridgeConflictError("The active Session changed while reading device parameters.");
         return result;
       },
       readSessionArtifacts: async (input, signal) => {
@@ -3357,7 +3458,7 @@ export async function runAgentFlow(
         signal === undefined ? {} : { signal },
       ),
       buildInvalidatedSessionState,
-      renderHtml,
+      renderHtml: (state, configuration) => renderHtml(state, { ...configuration, hostMode }),
       handleCommand,
       handleSend,
       lookupSteeringReceipt,
@@ -3412,28 +3513,39 @@ export async function runAgentFlow(
         bridge?.publishGlobalSettings(change);
       },
     );
-    if (dependencies.openNonBlockingChat) {
-      await dependencies.openNonBlockingChat(bridge.browserUrl);
-      await bridge.waitForFrontendClose();
-    } else {
-      await context.ui.showModalDialog(bridge.url, 1040, 720);
-    }
-  } finally {
-    attachmentOpener.close();
-    unsubscribeApprovalModes?.();
-    unsubscribeEditScopes?.();
-    unsubscribeModelSelections?.();
-    unsubscribeGlobalSettings?.();
-    unsubscribeProfileSettings?.();
-    unsubscribeSessionState?.();
-    unsubscribeGlobalState?.();
-    releaseSessionClaims(storageDirectory, modalSessionOwner);
-    await modelState.stopBrowserLaunches();
-    try {
-      await bridge?.close();
-    } finally {
-      await modelState.close();
-    }
+    assertLiveSetCurrent();
+    let invocationSessionId: string | undefined = hostMode === "browser" ? (await resolveActiveSession()).id : undefined;
+    assertLiveSetCurrent();
+    return {
+      url: bridge.url,
+      get browserUrl() { return bridge!.browserUrl; },
+      get busy() { return bridge!.busy; },
+      async reopen() {
+        assertLiveSetCurrent();
+        if (closePromise) throw new Error("This Live Smith window has closed.");
+        activeSessionId = invocationSessionId;
+        invocationSessionId = (await resolveActiveSession()).id;
+        assertLiveSetCurrent();
+        bridge!.publishGlobalStateInvalidation();
+      },
+      adopt(nextInteraction) {
+        assertLiveSetCurrent();
+        if (closePromise) throw new Error("This Live Smith window has closed.");
+        if (bridge!.busy) throw new Error("Live Smith is still working. Finish or Stop the current operation before changing context.");
+        interaction = nextInteraction;
+        activeSessionId = undefined;
+        invocationSessionId = undefined;
+        bindInvocationSelectionToNextSession = Boolean(nextInteraction.selectionContext);
+        invocationSelectionReady = !nextInteraction.selectionContext;
+        // Keep the switch synchronous so an admitted request cannot enter between
+        // checking bridge activity and changing the invocation owner.
+        bridge!.publishGlobalStateInvalidation();
+      },
+      close,
+    };
+  } catch (error) {
+    await close();
+    throw error;
   }
 }
 

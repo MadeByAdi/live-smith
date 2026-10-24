@@ -1,3 +1,4 @@
+import { isInterfaceMode, type InterfaceMode } from "../../model/interface-mode.js";
 import { isSessionTabs, type SessionShortcutId } from "../../model/session-tabs.js";
 import { MAX_AGENT_PLAN_ACTIONS } from "../../agent/actions.js";
 import { isLiveObjectId } from "../../live/object-id.js";
@@ -5,6 +6,7 @@ import type { MidiContinuationCommand } from "../../agent/midi-continuation-cont
 import { isCreativeBrief, MAX_CREATIVE_BRIEF_CODE_POINTS } from "../../agent/creative-brief.js";
 import { MAX_AUDIO_PARAMETER_BYTES } from "../../plugins/builtins/parameter-panel.js";
 import type { MidiArtifactImportCommand } from "../midi-artifact-import.js";
+import { isParameterArtifactCommand, type ParameterArtifactCommand } from "../parameters/contracts.js";
 import { isArtifactRef, isArtifactSelection, type ArtifactRef, type ArtifactSelectionCommand } from "../../agent/artifact-contracts.js";
 import { Buffer } from "node:buffer";
 import type { IncomingMessage } from "node:http";
@@ -136,6 +138,7 @@ export interface RawSkillBodyReadOptions {
 export interface RawPluginBodyReadOptions extends RawAttachmentBodyReadOptions {}
 
 export type ChatBridgeCommandInput =
+  | ParameterArtifactCommand
   | MidiContinuationCommand
   | MidiArtifactImportCommand
   | { kind: "select_artifact"; sessionId: string; selection: ArtifactSelectionCommand }
@@ -176,6 +179,7 @@ export type ChatBridgeCommandInput =
   | {
       kind: "save_global_settings";
       sessionTabs?: never;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior: DefaultFollowUpBehavior;
       integrationConnections?: never;
@@ -186,6 +190,7 @@ export type ChatBridgeCommandInput =
   | {
       kind: "save_global_settings";
       sessionTabs?: never;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage: boolean;
@@ -196,6 +201,7 @@ export type ChatBridgeCommandInput =
   | {
       kind: "save_global_settings";
       sessionTabs?: never;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
@@ -206,6 +212,7 @@ export type ChatBridgeCommandInput =
   | {
       kind: "save_global_settings";
       sessionTabs?: never;
+      interfaceMode?: never;
       uiLanguage: UiLanguage;
       integrationConnections?: never;
       defaultFollowUpBehavior?: never;
@@ -216,7 +223,19 @@ export type ChatBridgeCommandInput =
   | {
       kind: "save_global_settings";
       sessionTabs?: never;
+      uiLanguage?: never;
+      interfaceMode: InterfaceMode;
+      integrationConnections?: never;
+      defaultFollowUpBehavior?: never;
+      showContextUsage?: never;
+      networkProxy?: never;
+      customInstructions?: never;
+    }
+  | {
+      kind: "save_global_settings";
+      sessionTabs?: never;
       integrationConnections: IntegrationConnectionsSettingsPatch;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
@@ -227,6 +246,7 @@ export type ChatBridgeCommandInput =
       kind: "save_global_settings";
       sessionTabs?: never;
       customInstructions: string;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
@@ -237,6 +257,7 @@ export type ChatBridgeCommandInput =
       kind: "save_global_settings";
       sessionTabs: SessionShortcutId[];
       customInstructions?: never;
+      interfaceMode?: never;
       uiLanguage?: never;
       defaultFollowUpBehavior?: never;
       showContextUsage?: never;
@@ -298,10 +319,11 @@ export type ChatBridgeCommandInput =
   | { kind: "archive_session"; sessionId: string }
   | { kind: "unarchive_session"; sessionId: string }
   | { kind: "set_session_skills"; sessionId: string; skillIds: string[] }
+  | { kind: "remove_session_skill"; sessionId: string; skillId: string }
   | { kind: "set_plugin_enabled"; pluginId: string; enabled: boolean }
   | { kind: "set_plugin_user_config"; pluginId: string; sha256: string; revision: string; values: Record<string, unknown>; secretUpdates: Record<string, unknown> }
-  | { kind: "set_plugin_mcp_server_approved"; pluginId: string; serverId: string; approved: boolean }
-  | { kind: "set_plugin_artifact_permission"; pluginId: string; serverId: string; permission: "input" | "output"; approved: boolean }
+  | { kind: "set_plugin_mcp_server_approved"; pluginId: string; sha256: string; serverId: string; approved: boolean }
+  | { kind: "set_plugin_artifact_permission"; pluginId: string; sha256: string; serverId: string; permission: "input" | "output"; approved: boolean }
   | { kind: "delete_plugin"; pluginId: string }
   | { kind: "discover_models"; profile: DraftProfile };
 
@@ -1080,7 +1102,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   if (kind === "save_global_settings") {
     assertOnlyInputKeys(
       input,
-      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "uiLanguage", "integrationConnections", "customInstructions", "sessionTabs"],
+      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "interfaceMode", "uiLanguage", "integrationConnections", "customInstructions", "sessionTabs"],
       `${kind} command`,
     );
     const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
@@ -1091,6 +1113,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       input,
       "showContextUsage",
     );
+    const hasInterfaceMode = Object.prototype.hasOwnProperty.call(input, "interfaceMode");
     const hasUiLanguage = Object.prototype.hasOwnProperty.call(input, "uiLanguage");
     const hasSessionTabs = Object.prototype.hasOwnProperty.call(input, "sessionTabs");
     const hasAudioService = Object.prototype.hasOwnProperty.call(input, "integrationConnections");
@@ -1103,7 +1126,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       Number(hasFollowUpBehavior) +
         Number(hasContextUsage) +
         Number(hasNetworkProxy) +
-        Number(hasUiLanguage) + Number(hasAudioService) + Number(hasCustomInstructions) + Number(hasSessionTabs) !== 1
+        Number(hasInterfaceMode) + Number(hasUiLanguage) + Number(hasAudioService) + Number(hasCustomInstructions) + Number(hasSessionTabs) !== 1
     ) {
       throw new ChatBridgeRequestValidationError(
         "save_global_settings must contain exactly one setting.",
@@ -1114,6 +1137,10 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
         throw new ChatBridgeRequestValidationError("sessionTabs must contain unique supported tab IDs.");
       }
       return { kind, sessionTabs: input.sessionTabs };
+    }
+    if (hasInterfaceMode) {
+      if (!isInterfaceMode(input.interfaceMode)) throw new ChatBridgeRequestValidationError("interfaceMode must be modal or browser.");
+      return { kind, interfaceMode: input.interfaceMode };
     }
     if (hasUiLanguage) {
       if (!isUiLanguage(input.uiLanguage)) {
@@ -1189,7 +1216,7 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   }
   if (kind === "export_artifact" || kind === "attach_artifact") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "artifact"], `${kind} command`);
-    if (!isSafeStorageId(input.sessionId) || !isArtifactRef(input.artifact)) {
+    if (!isSafeStorageId(input.sessionId) || !isArtifactRef(input.artifact) || input.artifact.kind === "device-parameters") {
       throw new ChatBridgeRequestValidationError("Choose a saved artifact in this Session.");
     }
     return { kind, sessionId: input.sessionId, artifact: input.artifact };
@@ -1431,6 +1458,10 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       startBeat: input.startBeat,
       ...(input.name === undefined ? {} : { name: input.name as string }) };
   }
+  if (kind === "capture_device_parameters" || kind === "apply_device_parameters" || kind === "restore_device_parameters" || kind === "keep_device_parameters") {
+    if (!isParameterArtifactCommand(input)) throw new ChatBridgeRequestValidationError("Choose a saved device parameter version or a current device.");
+    return input;
+  }
   if (kind === "select_artifact") {
     assertOnlyInputKeys(input, ["kind", "sessionId", "selection"], `${kind} command`);
     if (!isSafeStorageId(input.sessionId) || !isArtifactSelection(input.selection) || input.selection.action === "prefer") {
@@ -1559,6 +1590,13 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       title,
     };
   }
+  if (kind === "remove_session_skill") {
+    assertOnlyInputKeys(input, ["kind", "sessionId", "skillId"], `${kind} command`);
+    if (!isSafeSkillReferenceId(input.skillId)) {
+      throw new ChatBridgeRequestValidationError("skillId must be a safe Skill ID.");
+    }
+    return { kind, sessionId: inputString(input, "sessionId"), skillId: input.skillId };
+  }
   if (kind === "set_session_skills") {
     assertOnlyInputKeys(
       input,
@@ -1601,21 +1639,23 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
     return { kind, pluginId: input.pluginId, enabled: input.enabled };
   }
   if (kind === "set_plugin_mcp_server_approved") {
-    assertOnlyInputKeys(input, ["kind", "pluginId", "serverId", "approved"], `${kind} command`);
-    if (!isSafePluginId(input.pluginId) || typeof input.serverId !== "string" ||
+    assertOnlyInputKeys(input, ["kind", "pluginId", "sha256", "serverId", "approved"], `${kind} command`);
+    if (!isSafePluginId(input.pluginId) || typeof input.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(input.sha256) ||
+        typeof input.serverId !== "string" ||
         !/^[A-Za-z0-9_-]{1,64}$/u.test(input.serverId) || typeof input.approved !== "boolean") {
       throw new ChatBridgeRequestValidationError("Plugin MCP server approval is invalid.");
     }
-    return { kind, pluginId: input.pluginId, serverId: input.serverId, approved: input.approved };
+    return { kind, pluginId: input.pluginId, sha256: input.sha256, serverId: input.serverId, approved: input.approved };
   }
   if (kind === "set_plugin_artifact_permission") {
-    assertOnlyInputKeys(input, ["kind", "pluginId", "serverId", "permission", "approved"], `${kind} command`);
-    if (!isSafePluginId(input.pluginId) || typeof input.serverId !== "string" ||
+    assertOnlyInputKeys(input, ["kind", "pluginId", "sha256", "serverId", "permission", "approved"], `${kind} command`);
+    if (!isSafePluginId(input.pluginId) || typeof input.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(input.sha256) ||
+        typeof input.serverId !== "string" ||
         !/^[A-Za-z0-9_-]{1,64}$/u.test(input.serverId) ||
         (input.permission !== "input" && input.permission !== "output") || typeof input.approved !== "boolean") {
       throw new ChatBridgeRequestValidationError("Plugin artifact permission is invalid.");
     }
-    return { kind, pluginId: input.pluginId, serverId: input.serverId,
+    return { kind, pluginId: input.pluginId, sha256: input.sha256, serverId: input.serverId,
       permission: input.permission, approved: input.approved };
   }
   if (kind === "delete_plugin") {

@@ -49,6 +49,10 @@ export interface LiveContextPresentation {
   };
 }
 
+export type LiveConversationContext = Omit<LiveInteractionContext, "presentation"> & {
+  presentation?: LiveContextPresentation;
+};
+
 export interface LiveInteractionContext {
   summary: string;
   presentation: LiveContextPresentation;
@@ -56,7 +60,19 @@ export interface LiveInteractionContext {
   scope: ConversationScope;
   /** Selection handles are invocation-scoped and are never persisted with a Session. */
   selectionContext?: {
+    /** Exact invocation selection identity, independent of display labels. */
+    identity?: string;
     refresh(context: Api): LiveInteractionContext | undefined;
+  };
+}
+
+/** Set-level startup has no selected Live target or selection write authority. */
+export function setInteractionContext(context: Api): LiveInteractionContext {
+  return {
+    summary: "Live Smith is ready in this Live Set. No object or Arrangement selection was supplied.",
+    presentation: { origin: "object", objectKind: "other", title: "Live Set", details: [] },
+    target: {},
+    scope: { kind: "object", identity: context.application.song.handle.id.toString(), label: "Live Set" },
   };
 }
 
@@ -222,6 +238,7 @@ export function arrangementSelectionInteractionContext(
     },
     target: makeTarget(track),
     selectionContext: {
+      identity: JSON.stringify([snapshot.selected_lanes.map((handle) => handle.id.toString()), snapshot.time_selection_start, snapshot.time_selection_end]),
       refresh: (currentContext) =>
         arrangementLanesAreCurrent(currentContext, snapshot.selected_lanes)
           ? arrangementSelectionInteractionContext(currentContext, snapshot)
@@ -280,6 +297,7 @@ export function clipSlotSelectionInteractionContext(
     },
     target: makeTarget(track, targetClip ?? undefined),
     selectionContext: {
+      identity: JSON.stringify(snapshot.selected_clip_slots.map((handle) => handle.id.toString())),
       refresh: (currentContext) =>
         clipSlotsAreCurrent(currentContext, snapshot.selected_clip_slots)
           ? clipSlotSelectionInteractionContext(currentContext, snapshot)

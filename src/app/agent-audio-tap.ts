@@ -7,6 +7,7 @@ import { copyAudioFileSafely } from "../live/audio-attachment-source.js";
 import { throwIfAborted } from "../runtime/host.js";
 import { createStorageId, isSafeStorageId, requireSafeStorageId } from "../storage/id.js";
 import { saveAgentAudioTapArtifact } from "../storage/audio-assets.js";
+import { isolatedNativeBuild, isolatedNativeId } from "../runtime/native-isolation.js";
 
 export interface AgentAudioTapCaptureIntent {
   captureId: string;
@@ -45,7 +46,7 @@ export interface AgentAudioTapArrangementWindow {
 
 export const AGENT_AUDIO_TAP_REGISTRY_DIRECTORY_NAME = "a";
 export const AGENT_AUDIO_TAP_COMMAND_FILE_NAME = "tap.json";
-export const AGENT_AUDIO_TAP_REGISTRY_ROOT = path.join(os.tmpdir(), "Ableton Extensions");
+export const AGENT_AUDIO_TAP_REGISTRY_ROOT = path.join(os.tmpdir(), "Ableton Extensions", ...(isolatedNativeBuild ? [isolatedNativeId] : []));
 
 type AgentAudioTapCommand = "start" | "stop" | "arm" | "begin" | "cancel";
 type AgentAudioTapCaptureState = "armed" | "recording" | "stopped" | "failed";
