@@ -1,18 +1,21 @@
 # Live Smith Development Guide
 
 This guide covers installation from source, local execution, verification, and
-packaging. For product usage, see the [README](../README.md). Contributors should
-also read [AGENTS.md](../AGENTS.md), the [architecture](ARCHITECTURE.md), and the
-[model connection reference](MODEL_PROVIDERS.md).
+packaging. For release-package installation, see
+[Getting started](../README.md#getting-started). See the [README](../README.md)
+for an overview and the [user guide](USER_GUIDE.md) for product workflows.
+Contributors should also read [AGENTS.md](../AGENTS.md), the
+[architecture](ARCHITECTURE.md), and the [model connection reference](MODEL_PROVIDERS.md).
 
 ## Prerequisites
 
 - Node.js 24.16.0 or newer.
 - Ableton Live 12 Suite Beta 12.4.15b5 or a later build with Extensions support.
-- Authorized access to the Ableton Extensions SDK `1.0.0-beta.1`.
+- Ableton Extensions SDK `1.0.0-beta.1` and its Extensions CLI.
+- `unzip` on `PATH` for package verification.
 
-The SDK is not distributed with this repository. Obtain it through Ableton's
-developer channel and put these archives in `extensions-sdk-1/`:
+Download the SDK through [Ableton's official SDK page](https://ableton.github.io/extensions-sdk/)
+and put these archives in `extensions-sdk-1/`:
 
 - `ableton-extensions-sdk-1.0.0-beta.1.tgz`
 - `ableton-extensions-cli-1.0.0-beta.1.tgz`
@@ -43,20 +46,19 @@ then attach; right-click a supported object to bind its context. Native installe
 Extension activation at Live launch has been observed in Ableton Live 12 Beta;
 other Live versions and shutdown of in-flight work require host verification.
 
-Rebuilding `dist/extension.js` does not replace code already loaded by a running
-Extension Host. Before testing changed code in Live, close the Live Smith dialog,
-stop its Extensions CLI with Ctrl+C, and start it again with the same storage
-directory. The Live Set can remain open; do not discard private development data
-to refresh the extension.
+The Extension Host loads `dist/extension.js` when it starts. To test a new build
+in Live, close the Live Smith dialog, stop its Extensions CLI with Ctrl+C, and
+start it again with the same storage directory. The Live Set can remain open,
+and the existing development data carries over to the restarted host.
 
 Configure a Profile under **Inspector → Agent** to use model features.
-Subscription Profiles complete OAuth in the browser and require no provider CLI installation.
+Subscription Profiles complete OAuth in the browser using the built-in clients.
 Building and running tests do not require a model connection.
 
 Instead of passing `--live`, copy [.env.example](../.env.example) to `.env` and
 set `EXTENSION_HOST_PATH` to your Live application. This variable is for host
-discovery only. Model endpoints, keys, and parameters are configured through
-saved Profiles in Live Smith Inspector, not environment variables.
+discovery only. Configure model endpoints, keys, and parameters through saved
+Profiles in Live Smith Inspector.
 
 For a production build without starting Live:
 
@@ -70,16 +72,31 @@ before writing the bundle to `dist/extension.js`. The compiled styles are
 embedded into the generated dialog HTML; the WebView does not load Tailwind, a CDN,
 or a separate stylesheet at runtime.
 
-The Suno verification helper is our own macOS AppKit/WebKit application, not a
-browser extension. Its universal arm64/x86_64 capsule is embedded in the bundle;
-installation does not require a compiler or a source checkout. Both builds
-validate its source/content receipt. A changed native source or build recipe
-recompiles and ad-hoc signs the capsule with the separately installed macOS
-Command Line Tools. Builds on other platforms require a current capsule produced
-on macOS. Only this helper requires macOS 14 or later; no-challenge generation
-does not start it. The capsule contains no Ableton SDK or account data.
+Suno's in-app verification uses a macOS AppKit/WebKit helper. The extension
+bundle includes its prebuilt universal arm64/x86_64 application. Both builds
+verify its contents against the native source and build recipe. When those
+inputs change, a macOS build recompiles and ad-hoc signs the helper using the
+separately installed macOS Command Line Tools. Builds on other platforms require
+a current helper built on macOS. The helper requires macOS 14 or later and starts
+only when Suno requests human verification.
 
 ## Verification
+
+### MCP 服务验证
+
+对外 MCP 使用官方 Server 2.3.1 与 Node Adapter 2.1.1；已有 Client 2.2.0 用于互操作
+验证。`tests/app/mcp/` 覆盖真实 HTTP 工具发现、调用、凭据撤销、审批后的状态变化、
+共享写入队列及 Session 文件隔离。`tests/runtime/mcp-host.test.ts` 在受限 VM 中加载
+bundle，再通过真实 MCP Client 完成鉴权请求和工具调用。
+
+`tests/ui/inspector/chat-dialog.mcp-service.test.ts` 通过实际对话脚本的 DOM 事件
+验证服务配置、客户端创建、凭据清理和外部 Apply。真实宿主验证使用独立 Live Set：
+启用服务、创建客户端、读取上下文、观察目标，然后提交一次可撤销的小幅修改，
+确认界面审批和实际 Live 结果。宿主停止后确认监听端口释放。
+
+私有文件 `live-smith-mcp-server-clients.json` 保存 Session 绑定、客户端名称、凭据
+代次与摘要。客户端原始凭据由创建命令的一次性结果交付。操作状态和作者信息
+存放于已有 Session 事件目录，输出音频复用 Session 附件存储。
 
 Test modules live under `tests/`, mirroring their source module directories.
 Test-only helpers and harnesses live in each test module's `support/` directory;
@@ -155,8 +172,8 @@ ordinary interaction states. Keep native CSS when it expresses a browser or
 layout contract more clearly: custom properties, exact grid or flex formulas,
 container queries, keyframes and transforms, pseudo-element content, native or
 WebKit appearance, SVG paint, data-URL assets, precise focus outlines, and
-state-specific translucent values. The goal is one tokenized design system,
-not zero handwritten declarations.
+state-specific translucent values. Use shared tokens consistently across both
+Tailwind utilities and native CSS.
 
 The entries disable source scanning because client fragments contain runtime
 strings and use semantic DOM hooks; compose shared rules with complete Tailwind
@@ -171,7 +188,7 @@ open and hidden states, narrow container boundaries, Composer child focus versus
 its outer focus boundary, floating panels, Agent and App settings, the
 collapsed/open Session audio shelf, Inspector drawer focus, and long translated
 labels. Browser-native controls can paint non-deterministically; verify their
-geometry and surrounding surface separately from native-chrome pixel noise. The
+geometry and surrounding layout when their appearance varies between runs. The
 Suno version picker can be tested with a read-only catalog load; selecting,
 saving or discarding a version must not generate audio or implicitly enable a
 connection.
@@ -192,7 +209,7 @@ stdio entries use an executable token, optional arguments, and an optional
 working directory contained in `${PLUGIN_ROOT}` or `${PLUGIN_DATA}`. Live Smith
 starts no process during inspection or installation. The user must enable the
 Plugin and approve each MCP server; local commands then execute without a shell
-as the current operating-system user, not in an OS sandbox. Do not put API keys,
+with the current operating-system user's permissions. Do not put API keys,
 tokens, authorization headers, or other credentials in a package or fixture.
 For host-managed credentials, declare `${NAME}` or `${NAME:-default}` only in
 stdio `env` values or Streamable HTTP `headers` values. Plugin settings expose
@@ -262,8 +279,9 @@ MCP App offer the custom interface first and keep **Standard parameter form**
 as an expandable alternative. Completed results share the same host actions:
 **Use in chat** appends a reference to the composer without sending it, and
 saved MIDI exposes **Add to Live** through the shared import dialog described in
-the [README](../README.md). Import does not require a model connection and uses
-the ordinary Session Edit Scope, approval, and recovery boundaries.
+the [user guide](USER_GUIDE.md#importing-saved-midi). Import uses the ordinary
+Session Edit Scope, approval, and recovery boundaries and can run independently
+of a model connection.
 
 #### Persistent Plugin configuration
 
@@ -281,8 +299,8 @@ Each field declares `type`, `title`, and `description`. Supported types are
 `multiple` applies to strings. `options` applies to a non-sensitive, single
 string and requires a matching default or a required selection. Limits are 64
 fields, 64 list entries or choices, 8,192 characters per value, and 64 KiB per
-configuration. File and directory fields accept path text and grant no file
-access by themselves.
+configuration. String limits use UTF-16 code units. File and directory fields
+accept path text and grant no file access by themselves.
 
 ```json
 {
@@ -307,8 +325,8 @@ Plugin storage, separately from the immutable package and mutable `PLUGIN_DATA`.
 They survive restarts and package replacement; deleting the Plugin removes
 them. A replacement revalidates values against its new declaration. Invalid
 values remain visible for repair. Missing required values or values that fail
-validation prevent enabling the Plugin. Configuration edits take effect on subsequent
-requests; they are not Session overrides or live automation controls.
+validation prevent enabling the Plugin. Configuration edits take effect on
+subsequent requests.
 
 Selected Plugin Skill bodies can reference `${user_config.style}`. MCP launch
 and connection fields can reference the same values, for example
@@ -318,8 +336,8 @@ Lists expand as JSON arrays, and numbers/Booleans retain their JSON text form.
 Sensitive references in Skills become `[sensitive value]`; actual sensitive
 values are available only to authorized MCP configuration. Bare `${NAME}`
 credential placeholders and package-path placeholders retain their existing
-MCP meaning. OpenAI hosts do not expand Claude `user_config` references; reading
-this declaration in a Codex-compatible package is a Live Smith capability.
+MCP meaning. Live Smith supports these `user_config` references in portable,
+Codex-compatible, and Claude-compatible packages.
 
 #### MCP Apps
 
@@ -378,9 +396,10 @@ npx tsx scripts/build-plugin-app-example.ts /private/tmp/live-smith-mcp-app.zip
 ```
 
 Install the ZIP, enable the Plugin, approve its `fixture` MCP server and its
-**MIDI output** permission, then open its interface. The authored fixture includes matching portable, Codex, and
-Claude manifests; its UI exercises mode selection, parameter controls, scoped
-App-only tools, and saved MIDI results without a model or external service.
+**MIDI output** permission, then open its interface. The fixture includes matching
+portable, Codex, and Claude manifests. Its interface exercises mode selection,
+parameter controls, scoped App-only tools, and saved MIDI results with a local
+generator.
 
 ## Packaging
 
@@ -389,10 +408,11 @@ npm run package
 npm run verify:package
 ```
 
-`package` builds, packages, and verifies the `.ablx` against the current bundle.
-`verify:package` can check an existing package and rejects a stale bundle or an
-unsafe Plugin compatibility fixture. Keep generated bundles and packages out of
-source control. Package notices are maintained in
+`package` builds the extension, creates `Live-Smith-<version>.ablx`, and verifies
+it against the current `dist/extension.js`. `verify:package` checks an existing
+package against that bundle and runs the Plugin fixture checks. It requires
+`unzip` on `PATH`. Keep generated bundles and packages out of source control.
+Package notices are maintained in
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md). Build and package verification
 check declared dependency versions against `package-lock.json` so notices must
 be updated with dependency upgrades.
@@ -407,68 +427,74 @@ persistent directory, pass it after the npm argument separator:
 npm start -- --storage-directory /absolute/path/to/live-smith-data
 ```
 
-The later CLI option overrides the development default. Outside this command,
-Live Smith uses the storage directory supplied by the Ableton host; it does not
-hard-code a production path. Without a host-provided directory, data falls back
-to process memory and does not survive a host restart.
+The later CLI option overrides the development default. Other launch methods
+use the storage directory supplied by the Ableton host. When the host supplies
+no directory, settings and Session metadata remain in process memory until the
+host exits. OAuth credentials, installed Plugins, MIDI/audio artifacts, and
+device parameter snapshots require persistent storage.
 
-The data directory is private, not disposable build output. It contains saved
-Profiles, Integration Connections, Session metadata and events, attachments,
-imported Skills, installed Plugin archives, private Plugin data, and model
-metadata. `live-smith-settings.json` contains Direct API and built-in Plugin
-connection keys as plain text;
-`oauth/credentials.json` contains private provider OAuth credentials.
-Audio-processing jobs and input/output assets are stored under
-`live-smith-audio/<sessionId>/`. Device parameter snapshots and their application
-baselines, progress and results live under `live-smith-device-parameters/<sessionId>/`;
-preserve the complete Session directory when copying this data. Immutable installed archives, their catalog,
-materialized runtime files, and mutable per-Plugin data live under
-`live-smith-plugins/`; do not edit or partially copy that directory.
-Processing tests use injected services and local audio fixtures; they do not
-upload user audio or consume generation credits or processing minutes.
-Real-service validation requires an explicitly configured account. Verify
-separated-stem timing, Warp settings, playback, Stop, and import behavior
-separately in the Ableton host.
-Suno Platform tests use synthetic API keys and captured `/v0/audio` requests;
-they do not establish live Platform access. Mureka tests likewise use synthetic
-keys and captured song/instrumental task requests; they do not establish live
-account access, model entitlement, credits, regional availability, or provider
-media delivery. Google Lyria tests use captured Interactions responses and
-scripted Live Music WebSocket messages, including PCM-to-WAV validation; they do
-not establish live Gemini key access, billing, quota, model entitlement,
-regional availability, safety acceptance, or provider media delivery. Suno.com
-Cookie tests use synthetic credentials, captured HTTP requests, injected
-default-browser handlers, native process replay and real verification-client
-DOM events. They do not read browser profiles or log into real accounts. Initial
-sign-in opens the OS default browser without discovery,
-extensions or automation flags. Generation verification uses the owned native
-helper and the requested official component on an actual HTTPS Suno document.
-No fixture establishes official challenge acceptance: verify native launch in
-the real Extension Host, let the user complete the challenge, then check one
-accepted generation receipt and a valid locally downloaded file. Callback
-success alone does not establish account-bound generation or file delivery.
-Explicitly imported Cookies are reduced to required Suno/Clerk fields and stored
-in private `suno-session-<serviceId>.json`
-files in the extension storage directory, separately per audio connection, and must
-never enter source, fixtures, logs, screenshots or shared artifacts. See the
-[Cookie connection workflow](MODEL_PROVIDERS.md#sunocom-website-sign-in) for
-import, validation, expiry and disconnect semantics. Real-provider verification
-requires the owner to enter a Cookie in the local form; passing fixture tests
-does not establish live authentication, subscription generation or download support.
-Suno result verification must distinguish remote generation, online preview,
-explicit download authorization and local Live import. Use the actual Live
-dialog to check the embedded player and download confirmation: JSDOM does not
-establish WebView playback, network policy or native file-export behavior.
+The private data directory holds saved Profiles, Integration Connections,
+Session metadata and events, attachments, imported Skills, installed Plugins,
+and model metadata. Important locations include:
+
+| Path | Contents |
+| --- | --- |
+| `live-smith-settings.json` | Profiles, Integration Connections, and Direct API, built-in Plugin, and MCP connection keys in plain text |
+| `oauth/credentials.json` | Model provider OAuth credentials |
+| `live-smith-mcp-oauth.json` | MCP OAuth client registrations and tokens |
+| `suno-session-<serviceId>.json` | Suno/Clerk Cookie fields saved separately for each audio connection |
+| `live-smith-audio/<sessionId>/` | Built-in audio jobs and their input/output assets |
+| `live-smith-audio-artifacts/<sessionId>/` | Audio results from external Plugins |
+| `live-smith-midi/<sessionId>/` | MIDI artifacts and continuation state |
+| `live-smith-device-parameters/<sessionId>/` | Device parameter snapshots, application baselines, progress, and results |
+| `live-smith-plugins/` | Installed archives, catalog, runtime files, configuration, and mutable Plugin data |
+
+Preserve complete Session directories when copying media and parameter data.
+Copy `live-smith-plugins/` as a whole and leave its contents under host management.
+Built-in Skills are bundled. Enabled Plugin Skills are read from their immutable
+packages with `<plugin-id>:<skill-id>` identities. Imported User Skills have
+their own private storage.
+
+Suno Cookies belong only in private storage and the local connection form.
+Keep them out of source, fixtures, logs, screenshots, and shared artifacts.
+See the [Cookie connection workflow](MODEL_PROVIDERS.md#sunocom-website-sign-in)
+for import, validation, expiry, and disconnect behavior.
 Legacy `suno-browser/<serviceId>/` directories may contain private browser data;
 the current runtime leaves them untouched. Close any old managed browser window
 before manually cleaning up a known legacy directory. Never delete or migrate
 these directories automatically.
-Built-in Skills are bundled and do not create imported Skill files. Enabled
-Plugin Skills are read from their Plugin's immutable package and use
-`<plugin-id>:<skill-id>` identities; they do not become standalone User Skills.
 
 Do not commit, share, cloud-sync, or delete private development data without the
 owner's approval. Preserve it when removing a worktree or changing run locations.
 See [credential storage](MODEL_PROVIDERS.md#credential-storage) for the connection
 boundary and [architecture](ARCHITECTURE.md#configuration-boundaries) for
 persistence ownership.
+
+### Audio service verification
+
+Audio tests use injected services, synthetic credentials, and local media. They
+run without uploading user audio or spending generation credits or processing
+minutes. Provider-specific coverage includes:
+
+| Provider | Automated coverage |
+| --- | --- |
+| Suno Platform | Captured `/v0/audio` requests and responses |
+| Mureka | Captured music and lyric requests, task polling, and result validation |
+| Google Lyria | Captured Interactions responses, scripted Live Music WebSocket messages, and PCM-to-WAV conversion |
+| Suno.com | Captured HTTP requests, injected default-browser handlers, native process replay, and verification-client DOM events |
+
+Real-service checks require a configured test account. Verify account access,
+model entitlement, billing or quota, regional availability, safety acceptance,
+and media delivery with that account. In Ableton Live, also check separated-stem
+timing, Warp settings, playback, Stop, and import behavior.
+
+Suno.com checks use the local Cookie form. Initial sign-in opens the OS default
+browser. When generation requests human verification, the native helper loads
+the requested official component on an HTTPS Suno page. In the Extension Host,
+check that the helper launches, let the account owner complete the challenge,
+and confirm both an accepted generation receipt and a valid downloaded file.
+
+Check remote generation, online preview, download authorization, and Live import
+as separate steps. Use the Live dialog for the embedded player and download
+confirmation. JSDOM covers their interactions; the host check covers WebView
+playback, network policy, and native file export.

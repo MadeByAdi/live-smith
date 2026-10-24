@@ -10,6 +10,7 @@ const mockModules: Record<string, string> = {
   "./app/agent-flow.js": "export const showAgentError = () => { throw new Error('Unexpected dialog'); };",
   "./app/agent-audio-tap.js": "export const ensureAgentAudioTapRegistryDirectory = async () => {};",
   "./app/live-mutation-queue.js": "export class LiveMutationQueue {}",
+  "./app/mcp/service.js": "export const createMcpService = () => ({ start: async () => {} });",
   "./live/context.js": `export const objectInteractionContext = (_context, value) => ({ kind: 'object', value });
     export const arrangementSelectionInteractionContext = (_context, value) => ({ kind: 'arrangement', value });
     export const clipSlotSelectionInteractionContext = (_context, value) => ({ kind: 'slots', value });`,

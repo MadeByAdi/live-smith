@@ -1,6 +1,6 @@
       window.LiveSmithFactories = window.LiveSmithFactories || {};
       window.LiveSmithFactories.createToolsInspector = function createToolsInspector({
-        getState, getCatalogOwner, loadCatalog, humanizeToolName, runCommand, pluginApps, resultActions, audioParameters,
+        getState, getCatalogOwner, loadCatalog, humanizeToolName, runCommand, pluginApps, resultActions, audioParameters, sameJsonData,
       }) {
         const t = (source, params) => window.LiveSmithI18n.t(source, params);
         const descriptors = Object.assign(Object.create(null), __BUILT_IN_INTEGRATION_CONNECTION_DESCRIPTORS__);
@@ -198,10 +198,12 @@
           const loading = Boolean(activeLoad);
           const catalog = state.sessionToolCatalog?.sessionId === state.activeSessionId ? state.sessionToolCatalog : null;
           const loadFailed = failedOwner === getCatalogOwner();
-          const key = JSON.stringify([window.LiveSmithI18n.locale, state.activeSessionId, catalog?.loadedAt,
+          const key = JSON.stringify([window.LiveSmithI18n.locale, state.activeSessionId, catalog,
             state.plugins, state.integrationConnections, loading, loadFailed]);
           updateButton();
-          if (!force && key === renderedKey) { loadIfNeeded(); return; }
+          parameterPanels.refreshResults(document.getElementById("sessionToolCatalog"));
+          if (!force && (key === renderedKey || renderedKey &&
+              sameJsonData(JSON.parse(key), JSON.parse(renderedKey)))) { loadIfNeeded(); return; }
           renderedKey = key;
           renderSources(state);
           const status = document.getElementById("sessionToolsStatus");

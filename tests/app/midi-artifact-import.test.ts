@@ -168,6 +168,10 @@ test("explicit MIDI import materializes saved notes and records the applied resu
   assert.equal(events.at(-1)?.kind, "apply_result");
   assert.equal(events.at(-1)?.applyOperation?.status, "applied");
   assert.equal(events[0]?.applyOperation?.status, "proposed");
+  assert.equal(events[0]?.applyOperation?.plan?.actions.at(-1)?.type, "create_midi_clip");
+  const action = events[0]?.applyOperation?.plan?.actions.at(-1);
+  assert.ok(action?.type === "create_midi_clip");
+  assert.deepEqual(action.notes, h.clip.notes);
   assert.equal(events[0]?.applyOperation?.id, events.at(-1)?.applyOperation?.id);
   assert.match(events.at(-1)!.content, /^Applied:\n- /u);
 });
@@ -226,6 +230,7 @@ test("import approval follows Low Risk and Accept Everything policies", async (t
     const events = await loadSessionEvents(h.directory, h.session.id);
     assert.equal(events.at(-1)?.applyOperation?.status, "applied");
     assert.equal(events.some((event) => event.applyOperation?.status === "approved"), approvalMode === "everything");
+    assert.equal(events[0]?.applyOperation?.plan?.actions.at(-1)?.type, "create_midi_clip");
   }
 });
 

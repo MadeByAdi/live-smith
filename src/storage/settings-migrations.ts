@@ -1,4 +1,5 @@
 import { isInterfaceMode } from "../model/interface-mode.js";
+import { normalizeMcpServerSettings } from "../model/mcp-server.js";
 import {
   LEGACY_AUDIO_SERVICE_ID,
   type AudioServicesSettings,
@@ -648,6 +649,7 @@ function validateSettingsV10(value: unknown): AgentSettings {
   const record = settingsRecord(value);
   if (settingsSchemaVersion(record) !== 10) throw unsupportedSchemaVersion();
   const {
+    mcpServer,
     interfaceMode = "modal",
     interfaceModeRevision = "0",
     integrationConnections,
@@ -667,6 +669,7 @@ function validateSettingsV10(value: unknown): AgentSettings {
   return {
     ...validated,
     schemaVersion: 10,
+    ...(mcpServer === undefined ? {} : { mcpServer: normalizeMcpServerSettings(mcpServer) }),
     interfaceMode,
     interfaceModeRevision,
     sessionTabs: sessionShortcutIds.filter((tab) => sessionTabs.includes(tab)),

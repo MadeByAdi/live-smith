@@ -1,3 +1,4 @@
+import { isWireMcpServerSettings } from "./mcp-server.js";
 import { isInterfaceMode } from "../../../model/interface-mode.js";
 import { isSessionTabs } from "../../../model/session-tabs.js";
 import { isUiLanguage } from "../../../i18n/languages.js";
@@ -432,6 +433,7 @@ export function isWireAgentSettings(value: unknown): value is AgentSettings {
   if (
     !isWireRecord(value) ||
     !hasOnlyWireKeys<NonNullable<AgentSettings>>(value, [
+      "mcpServer",
       "schemaVersion",
       "activeProfileId",
       "profiles",
@@ -451,6 +453,7 @@ export function isWireAgentSettings(value: unknown): value is AgentSettings {
       "customInstructions",
       "customInstructionsRevision",
     ]) ||
+    (value.mcpServer !== undefined && !isWireMcpServerSettings(value.mcpServer)) ||
     value.schemaVersion !== WIRE_CURRENT_AGENT_SETTINGS_SCHEMA_VERSION ||
     !isWireArray(value.profiles) ||
     !value.profiles.every(isWireSavedProfile) ||

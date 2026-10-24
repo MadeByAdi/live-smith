@@ -623,6 +623,8 @@ function sampleSourceText(source: import("./action-schema.js").SampleSource): st
   switch (source.kind) {
     case "selected":
       return "the selected Live sample source";
+    case "session_audio_attachment":
+      return `Session audio attachment "${source.attachmentId}"`;
     case "request_audio_attachment":
       return `current request audio input ${source.audioIndex + 1}`;
     case "audio_asset":

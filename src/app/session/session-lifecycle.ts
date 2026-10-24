@@ -14,6 +14,7 @@ import {
 import { isStorageCommitOutcomeUnknownError } from "../../storage/persistence.js";
 import { deleteSession, listSessions } from "../../storage/sessions.js";
 import { ChatBridgeCommandOutcomeUnknownError } from "../chat/chat-bridge.js";
+import type { SessionStateInvalidation } from "./session-state-events.js";
 
 interface SessionLifecycleOptions {
   storageDirectory: string | undefined;
@@ -22,7 +23,7 @@ interface SessionLifecycleOptions {
     signal: AbortSignal | undefined,
     operation: () => Promise<T>,
   ): Promise<T>;
-  notifySessionStateChanged(sessionId: string): void;
+  notifySessionStateChanged(sessionId: string, change?: Pick<SessionStateInvalidation, "target">): void;
   deleteSession?: typeof deleteSession;
 }
 
@@ -60,7 +61,7 @@ export function createSessionLifecycle(dependencies: SessionLifecycleOptions) {
         } catch (cause) {
           if (isStorageCommitOutcomeUnknownError(cause)) {
             pendingSessionCleanup.add(sessionId);
-            notifySessionStateChanged(sessionId);
+            notifySessionStateChanged(sessionId, { target: "all" });
             throw new ChatBridgeCommandOutcomeUnknownError(
               "Session deletion storage could not be confirmed.",
               { cause },
@@ -75,13 +76,13 @@ export function createSessionLifecycle(dependencies: SessionLifecycleOptions) {
         pendingSessionCleanup.delete(sessionId);
       } catch (cause) {
         pendingSessionCleanup.add(sessionId);
-        notifySessionStateChanged(sessionId);
+        notifySessionStateChanged(sessionId, { target: "all" });
         throw new ChatBridgeCommandOutcomeUnknownError(
           "The Session was deleted, but associated data cleanup could not be confirmed.",
           { cause },
         );
       }
-      notifySessionStateChanged(sessionId);
+      notifySessionStateChanged(sessionId, { target: "all" });
     });
     return existed;
   };

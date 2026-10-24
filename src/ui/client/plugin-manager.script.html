@@ -49,49 +49,44 @@
         }[issue] || issue;
       }
 
-      function localServerReview(server) {
-        return [
-          t("Local process"),
-          `command=${JSON.stringify(server.target)}`,
-          `args=${JSON.stringify(server.args || [])}`,
-          `cwd=${JSON.stringify(server.cwd || "${PLUGIN_ROOT}")}`,
-          `envNames=${JSON.stringify(server.envNames || [])}`,
-        ].join(" · ");
+      function serverReviewFields(server) {
+        return server.type === "stdio" ? [
+          ["Command", server.target],
+          ["Arguments", JSON.stringify(server.args || [])],
+          ["Working directory", server.cwd || "${PLUGIN_ROOT}"],
+          ["Environment variables", JSON.stringify(server.envNames || [])],
+        ] : [["Server URL", server.target]];
+      }
+
+      function serverReviewGroup(server) {
+        return {
+          title: () => `${server.id} · ${t(server.type === "stdio" ? "Launch details" : "Connection details")}`,
+          rows: serverReviewFields(server).map(([label, value]) => () => `${t(label)}: ${value}`),
+        };
       }
 
       function installReview(preview, replacing) {
         const identity = [preview.id, preview.version].filter(Boolean).join(" ");
-        const servers = preview.mcpServers.length
-          ? preview.mcpServers.map((server) =>
-              `• ${server.id} — ${server.type === "stdio" ? localServerReview(server) : `${t("Remote MCP")} · ${server.target}`}`
-            ).join("\n")
-          : t("No MCP servers declared.");
-        const warnings = preview.issues.length
-          ? `\n${t("Compatibility warnings: {warnings}", {
-              warnings: preview.issues.map(issueLabel).join(" "),
-            })}`
-          : "";
-        const unsupported = preview.unsupportedComponents.length
-          ? `\n${t("Not used by Live Smith: {components}", {
-              components: preview.unsupportedComponents.join(", "),
-            })}`
-          : "";
-        return [
-          t(replacing ? "Replace {identity}" : "Install {identity}", { identity }),
-          t("Format: {format}", { format: sourceLabel(preview.sourceFormat) }),
-          t("Contents: {skillCount} Skills · {serverCount} MCP servers", {
+        const rows = [
+          () => t("Format: {format}", { format: sourceLabel(preview.sourceFormat) }),
+          () => t("Contents: {skillCount} Skills · {serverCount} MCP servers", {
             skillCount: preview.skillCount,
             serverCount: preview.mcpServers.length,
           }),
-          t("SHA-256: {sha256}", { sha256: preview.sha256 }),
-          "",
-          t("MCP servers"),
-          servers,
-          warnings,
-          unsupported,
-          "",
-          t("Installing does not enable the Plugin, approve any MCP server, or grant artifact access."),
-        ].filter((line, index, values) => line !== "" || values[index - 1] !== "").join("\n");
+          () => t("SHA-256: {sha256}", { sha256: preview.sha256 }),
+        ];
+        if (!preview.mcpServers.length) rows.push(() => t("No MCP servers declared."));
+        if (preview.issues.length) rows.push(() => t("Compatibility warnings: {warnings}", {
+          warnings: preview.issues.map(issueLabel).join(" "),
+        }));
+        if (preview.unsupportedComponents.length) rows.push(() => t("Not used by Live Smith: {components}", {
+          components: preview.unsupportedComponents.join(", "),
+        }));
+        return {
+          message: window.LiveSmithI18n.message("Installing does not enable the Plugin, approve any MCP server, or grant artifact access."),
+          groups: [{ title: () => t(replacing ? "Replace {identity}" : "Install {identity}", { identity }), rows },
+            ...preview.mcpServers.map(serverReviewGroup)],
+        };
       }
 
       function makeButton(label, className, action) {
@@ -116,6 +111,7 @@
         title.setAttribute("translate", "no");
         const detail = document.createElement("span");
         detail.textContent = server.type === "stdio" ? `${t("Local process")} · ${server.target}` : `${t("Remote MCP")} · ${server.target}`;
+        detail.title = detail.textContent;
         copy.append(title, detail);
         const controls = document.createElement("div");
         controls.className = "plugin-server-controls";
@@ -154,15 +150,14 @@
         const summary = document.createElement("summary");
         summary.textContent = t(server.type === "stdio" ? "Launch details" : "Connection details");
         const fields = document.createElement("dl");
-        for (const [label, value] of server.type === "stdio" ? [
-          ["Command", server.target],
-          ["Arguments", JSON.stringify(server.args || [])],
-          ["Working directory", server.cwd || "${PLUGIN_ROOT}"],
-          ["Environment variables", JSON.stringify(server.envNames || [])],
-        ] : [["Server URL", server.target]]) {
+        for (const [label, value] of serverReviewFields(server)) {
           const name = document.createElement("dt");
           name.textContent = t(label);
           const content = document.createElement("dd");
+          content.className = "detail-scroll-region";
+          content.tabIndex = 0;
+          content.setAttribute("role", "region");
+          content.setAttribute("aria-label", `${server.id} · ${t(label)}`);
           content.setAttribute("translate", "no");
           content.textContent = value;
           fields.append(name, content);
@@ -355,26 +350,35 @@
         if (!force && key === renderedKey) return;
         const focusedContainer = document.activeElement?.closest?.(".plugin-card, .plugin-mcp-source");
         const focusedControlIndex = focusedContainer
-          ? [...focusedContainer.querySelectorAll("input, textarea, select, button, summary")].indexOf(document.activeElement) : -1;
+          ? [...focusedContainer.querySelectorAll('input, textarea, select, button, summary, [tabindex="0"]')].indexOf(document.activeElement) : -1;
         const focusTarget = focusedContainer
           ? focusedControlIndex === -1 && retainedControlFocus?.containerId === focusedContainer.id
             ? retainedControlFocus : { containerId: focusedContainer.id, index: focusedControlIndex }
           : null;
         retainedControlFocus = busy ? focusTarget : null;
-        const expanded = new Set([...mcpList.querySelectorAll(".plugin-server-details[open]")].map((detail) =>
-          `${detail.closest(".plugin-mcp-source").dataset.pluginId}/${detail.dataset.serverId}`));
+        const detailsState = new Map([...mcpList.querySelectorAll(".plugin-server-details")].map((detail) => [
+          `${detail.closest(".plugin-mcp-source").dataset.pluginId}/${detail.dataset.serverId}`,
+          { open: detail.open, fields: [...detail.querySelectorAll("dd")].map((field) => ({
+            top: field.scrollTop, left: field.scrollLeft,
+          })) },
+        ]));
         list.replaceChildren(...plugins.map(renderPlugin));
         const mcpPlugins = plugins.filter((plugin) => plugin.mcpServers.length);
         mcpList.replaceChildren(...mcpPlugins.map(renderMcpSource));
         document.getElementById("pluginMcpSection").hidden = mcpPlugins.length === 0;
         for (const detail of mcpList.querySelectorAll(".plugin-server-details")) {
-          detail.open = expanded.has(`${detail.closest(".plugin-mcp-source").dataset.pluginId}/${detail.dataset.serverId}`);
+          const previous = detailsState.get(`${detail.closest(".plugin-mcp-source").dataset.pluginId}/${detail.dataset.serverId}`);
+          detail.open = previous?.open ?? false;
+          for (const [index, field] of [...detail.querySelectorAll("dd")].entries()) {
+            const position = previous?.fields[index];
+            if (position) { field.scrollTop = position.top; field.scrollLeft = position.left; }
+          }
         }
         drop.hidden = plugins.length !== 0;
         renderedKey = key;
         if (focusTarget) {
           const container = document.getElementById(focusTarget.containerId);
-          const target = container?.querySelectorAll("input, textarea, select, button, summary")[focusTarget.index];
+          const target = container?.querySelectorAll('input, textarea, select, button, summary, [tabindex="0"]')[focusTarget.index];
           (target && !target.disabled ? target : container)?.focus({ preventScroll: true });
         }
       }
@@ -399,8 +403,9 @@
           if (!(await confirmAction({
             title: window.LiveSmithI18n.message(local ? "Allow local Plugin process?" : "Allow remote Plugin connection?"),
             message: local
-              ? `${t("Plugin {pluginId} will start local MCP server {serverId} as your operating-system user. This process is not sandboxed by Live Smith.", { pluginId: plugin.id, serverId: server.id })}\n${localServerReview(server)}`
-              : window.LiveSmithI18n.message("Plugin {pluginId} will connect to MCP server {serverId} at {target}. Header values and URL details remain hidden.", { pluginId: plugin.id, serverId: server.id, target: server.target }),
+              ? window.LiveSmithI18n.message("Plugin {pluginId} will start local MCP server {serverId} as your operating-system user. This process is not sandboxed by Live Smith.", { pluginId: plugin.id, serverId: server.id })
+              : window.LiveSmithI18n.message("Plugin {pluginId} will connect to MCP server {serverId}. Header values and URL details remain hidden.", { pluginId: plugin.id, serverId: server.id }),
+            groups: [serverReviewGroup(server)],
             acceptLabel: window.LiveSmithI18n.message("Approve"),
           }))) return;
         }
@@ -464,7 +469,7 @@
           const replacing = Boolean(existing);
           if (!(await confirmAction({
             title: window.LiveSmithI18n.message(replacing ? "Replace installed Plugin?" : "Install Plugin?"),
-            message: () => installReview(preview, replacing),
+            ...installReview(preview, replacing),
             acceptLabel: window.LiveSmithI18n.message(replacing ? "Replace" : "Install"),
           }))) return;
           const receipt = await installPlugin(file, replacing, reportPluginStatus);

@@ -5,6 +5,7 @@ import type { ExtensionContext } from "@ableton-extensions/sdk";
 
 import {
   readSessionAttachmentBytes,
+  readSessionAttachment,
   type AudioSessionAttachmentRef,
 } from "../../storage/attachments.js";
 import { createStorageId } from "../../storage/id.js";
@@ -35,6 +36,20 @@ export function createRequestAudioSampleSources(input: {
     requestAudioSampleSourceKey(input.requestId, audioIndex),
     requestAudioSampleSource(input, ref, audioIndex),
   ]));
+}
+
+export async function addSessionAudioSampleSources(input: {
+  context: Api; storageDirectory: string | undefined; sessionId: string; signal: AbortSignal;
+}, sources: Map<string, ManagedSampleSource>, attachmentIds: readonly string[]): Promise<void> {
+  for (const attachmentId of new Set(attachmentIds)) {
+    const { attachment: ref } = await readSessionAttachment(input.storageDirectory, input.sessionId, attachmentId, { signal: input.signal });
+    if (ref.kind !== "audio") throw new Error("The selected Session attachment is not audio.");
+    const prepared = createManagedSampleImport({ ...input, mediaType: ref.mediaType,
+      readBytes: () => readSessionAttachmentBytes(input.storageDirectory, input.sessionId, ref.id, { expectedRef: ref, signal: input.signal }),
+      failureMessage: importFailureMessage });
+    sources.set(`session-attachment:${ref.id}`, { kind: "session_audio_attachment", attachmentId: ref.id,
+      label: ref.fileName, identity: `session-attachment:${ref.id}`, get filePath() { return prepared.filePath; }, prepare: prepared.prepare });
+  }
 }
 
 export function requestAudioSampleSourceInstructions(
@@ -121,11 +136,13 @@ export async function prepareRequestAudioSampleSources(
       results.push(
         source.kind === "request_audio_attachment"
           ? `Imported current request audio input ${source.audioIndex + 1} into the Live project.`
+          : source.kind === "session_audio_attachment" ? `Imported Session audio attachment "${source.attachmentId}" into the Live project.`
           : `Imported audio asset "${source.assetRef}" into the Live project.`,
       );
       keys.push(
         source.kind === "request_audio_attachment"
           ? `live-action-step:request-audio-import:${source.requestId}:${source.audioIndex}`
+          : source.kind === "session_audio_attachment" ? `live-action-step:session-audio-import:${source.attachmentId}`
           : `live-action-step:audio-asset-import:${source.assetRef}`,
       );
       throwIfAborted(signal);

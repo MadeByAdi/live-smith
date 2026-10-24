@@ -79,6 +79,10 @@ export interface SessionToolCatalog {
 }
 
 export interface ChatDialogState {
+  mcpServer?: Awaited<ReturnType<import("../app/mcp/service.js").McpService["state"]>>;
+  mcpApprovals?: ReturnType<import("../app/mcp/service.js").McpService["approvals"]>;
+  mcpOperations?: import("../agent/tool-operation.js").ToolOperationSnapshot[];
+  mcpCredential?: { clientId: string; token: string; url: string };
   mcpOAuthStates?: import("../plugins/mcp/oauth-contract.js").McpOAuthState[];
   contextSummary: string;
   liveContext: ChatLiveContext;

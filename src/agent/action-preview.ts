@@ -1,4 +1,5 @@
 import { MAX_DEVICE_PARAMETERS } from "./device-parameter-contracts.js";
+import { validateAgentPlan, type AgentPlan } from "./actions.js";
 
 /** Matches the existing Live observer's default parameter value-item page. */
 export const MAX_PARAMETER_PREVIEW_VALUE_ITEMS = 12;
@@ -126,14 +127,20 @@ export interface AgentApplyOperation {
   id: string;
   status: "proposed" | "approved" | "applied" | "partial" | "cancelled" | "failed";
   previews?: AgentActionPreview[];
+  plan?: AgentPlan;
 }
 
 export function isAgentApplyOperation(value: unknown, eventKind: unknown): value is AgentApplyOperation {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "status", "previews"]) ||
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "status", "previews", "plan"]) ||
     typeof value.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value.id)) return false;
-  if (eventKind === "apply_requested") return value.status === "proposed" &&
-    (value.previews === undefined || isAgentActionPreviews(value.previews));
-  if (value.previews !== undefined) return false;
+  if (eventKind === "apply_requested") {
+    if (value.status !== "proposed" || value.previews !== undefined && !isAgentActionPreviews(value.previews)) return false;
+    if (value.plan !== undefined) {
+      try { validateAgentPlan(value.plan); } catch { return false; }
+    }
+    return true;
+  }
+  if (value.previews !== undefined || value.plan !== undefined) return false;
   if (eventKind === "apply_auto_approved") return value.status === "approved";
   return eventKind === "apply_result" &&
     typeof value.status === "string" && ["applied", "partial", "cancelled", "failed"].includes(value.status);

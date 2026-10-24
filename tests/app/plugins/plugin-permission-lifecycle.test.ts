@@ -22,6 +22,46 @@ function packageBytes(command: string): Uint8Array {
   });
 }
 
+for (const hasMcp of [false, true]) test(`Plugin catalog invalidation follows enabled MCP components (${hasMcp})`, async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-plugin-availability-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const targets: string[] = [];
+  const lifecycle = createPluginLifecycle({ storageDirectory: directory,
+    withRequestConfiguration: async (_signal, action) => action(),
+    notifyGlobalStateChanged: change => { targets.push(change?.target ?? "state"); }, notifySessionStateChanged() {},
+  });
+  const bytes = zipSync({
+    ".claude-plugin/plugin.json": strToU8(JSON.stringify({ name: "availability-fixture", userConfig: {
+      style: { type: "string", title: "Style", description: "Musical style", default: "quiet" },
+    } })),
+    "skills/music/SKILL.md": strToU8("---\nname: music\ndescription: Musical guidance\n---\nCreate music.\n"),
+    ...(hasMcp ? { ".mcp.json": strToU8(JSON.stringify({ mcpServers: { server: { command: "node", args: [] } } })) } : {}),
+  });
+  const signal = createHostAbortController().signal;
+  const plugin = await lifecycle.install({ bytes, replace: false }, signal);
+  assert.deepEqual(targets.splice(0), ["state"], "installation leaves the plugin disabled");
+  const configure = (revision: string) => lifecycle.saveConfiguration({ kind: "set_plugin_user_config", pluginId: plugin.id,
+    sha256: plugin.sha256, revision, values: { style: "bright" }, secretUpdates: {} }, signal);
+  await configure("0");
+  assert.deepEqual(targets.splice(0), ["state"]);
+  if (hasMcp) {
+    await lifecycle.change({ kind: "set_plugin_mcp_server_approved", pluginId: plugin.id, sha256: plugin.sha256, serverId: "server", approved: true }, signal);
+    assert.deepEqual(targets.splice(0), ["state"]);
+  }
+  await lifecycle.change({ kind: "set_plugin_enabled", pluginId: plugin.id, enabled: true }, signal);
+  assert.deepEqual(targets.splice(0), [hasMcp ? "all" : "state"]);
+  await configure("1");
+  assert.deepEqual(targets.splice(0), [hasMcp ? "all" : "state"]);
+  if (hasMcp) {
+    await lifecycle.change({ kind: "set_plugin_mcp_server_approved", pluginId: plugin.id, sha256: plugin.sha256, serverId: "server", approved: false }, signal);
+    assert.deepEqual(targets.splice(0), ["all"]);
+  }
+  await lifecycle.change({ kind: "set_plugin_enabled", pluginId: plugin.id, enabled: false }, signal);
+  assert.deepEqual(targets.splice(0), [hasMcp ? "all" : "state"]);
+  await lifecycle.change({ kind: "delete_plugin", pluginId: plugin.id }, signal);
+  assert.deepEqual(targets.splice(0), ["state"]);
+});
+
 for (const permission of ["server", "input", "output"] as const) {
   test(`a held ${permission} grant rejects a replaced package before changing permission`, async (t) => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "live-smith-permission-race-"));

@@ -2,6 +2,16 @@ declare module "undici/lib/web/fetch/index.js" {
   export const fetch: typeof globalThis.fetch;
 }
 
+declare module "undici/lib/web/fetch/request.js" {
+  export const Request: typeof globalThis.Request;
+}
+declare module "undici/lib/web/fetch/response.js" {
+  export const Response: typeof globalThis.Response;
+}
+declare module "undici/lib/web/fetch/headers.js" {
+  export const Headers: typeof globalThis.Headers;
+}
+
 declare module "undici/lib/dispatcher/agent.js" {
   import type { Dispatcher } from "undici";
 

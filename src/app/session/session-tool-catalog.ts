@@ -1,41 +1,50 @@
-import { midiArtifactAuthoringTool } from "../midi/midi-artifact-tools.js";
-import { parameterArtifactTools } from "../parameters/parameter-artifact-tools.js";
-import { sessionArtifactTools } from "./session-artifact-tools.js";
-import { creativeBriefProposalTool } from "../context/creative-brief.js";
-import { liveSmithTools } from "../../agent/tool-definitions.js";
 import { Buffer } from "node:buffer";
-import type { PluginParameterPanel } from "../../plugins/parameter-panel.js";
-import type { PluginAppDescriptor } from "../../plugins/mcp/apps.js";
 import { inputTransportSupport } from "../../model/input-support.js";
-import type { AudioParameterPanel } from "../../plugins/builtins/parameter-panel.js";
-import { loadAudioParameterGroups } from "../audio/audio-parameter-tool.js";
+import { cloneJsonValue } from "../../model/json-clone.js";
 import { sessionMediaTools } from "../../plugins/builtins/audio-toolsets.js";
+import type { AudioParameterPanel } from "../../plugins/builtins/parameter-panel.js";
+import type { PluginAppDescriptor } from "../../plugins/mcp/apps.js";
+import type { PluginParameterPanel } from "../../plugins/parameter-panel.js";
 import { throwIfAborted } from "../../runtime/host.js";
-import type { ChatDialogState, SessionToolCatalog } from "../../ui/chat-state.js";
+import type { ChatDialogState,SessionToolCatalog } from "../../ui/chat-state.js";
 import {
-  MAX_SESSION_TOOL_CATALOG_DESCRIPTION_LENGTH,
-  MAX_SESSION_TOOL_CATALOG_ISSUES,
-  MAX_SESSION_TOOL_CATALOG_TOOLS,
+MAX_SESSION_TOOL_CATALOG_DESCRIPTION_LENGTH,
+MAX_SESSION_TOOL_CATALOG_ISSUES,
+MAX_SESSION_TOOL_CATALOG_TOOLS,
 } from "../../ui/chat-state.js";
+import { loadAudioParameterGroups } from "../audio/audio-parameter-tool.js";
 import {
-  createRequestPluginTools,
-  type PluginExecutionAuthorization,
+createRequestPluginTools,
+type PluginExecutionAuthorization,
 } from "../plugins/request-plugin-tools.js";
+import { sessionNativeTools } from "../tools/tool-runtime.js";
 
 type ToolGroup = SessionToolCatalog["groups"][number];
+const maxPanelBytes = 256 * 1024;
+export { sessionToolCatalogOwner } from "../../ui/tool-catalog-owner.js";
 
-export function sessionToolCatalogOwner(state: ChatDialogState): string {
-  return JSON.stringify([
-    state.activeSessionId,
-    state.activeProfileRevision,
-    state.runtimeProfile,
-    state.integrationConnections?.revision ?? "0",
-    state.plugins,
-    state.sunoAccounts ?? [],
-    state.mcpOAuthStates ?? [],
-    (state.audioJobs ?? []).map(({ id, status, outputs }) => [id, status, outputs.map(({ id: assetId }) => assetId)]),
-    state.events.at(-1)?.id,
-  ]);
+/** Updates local parameter suggestions while retaining discovered tool definitions and their admission signatures. */
+export async function refreshSessionToolCatalogSuggestions(
+  storageDirectory: string | undefined,
+  catalog: SessionToolCatalog,
+): Promise<SessionToolCatalog> {
+  if (!catalog.groups.some(group => group.tools.some(tool => tool.audioPanel?.suggestions))) return catalog;
+  const local = await loadAudioParameterGroups(storageDirectory, catalog.sessionId);
+  const panels = new Map(local.groups.flatMap(group => group.tools.flatMap(tool => tool.audioPanel ? [[tool.audioPanel.signature, tool.audioPanel] as const] : [])));
+  const refreshed = cloneJsonValue(catalog);
+  let panelBytes = 0;
+  for (const group of refreshed.groups) for (const tool of group.tools) {
+    if (tool.audioPanel?.suggestions) {
+      const current = panels.get(tool.audioPanel.signature);
+      if (current?.suggestions) tool.audioPanel.suggestions = cloneJsonValue(current.suggestions);
+    }
+    for (const field of ["panel", "audioPanel"] as const) {
+      if (!tool[field]) continue;
+      panelBytes += Buffer.byteLength(JSON.stringify(tool[field]), "utf8");
+      if (panelBytes > maxPanelBytes) { delete tool[field]; refreshed.truncated = true; }
+    }
+  }
+  return refreshed;
 }
 
 /** Reads local definitions and explicitly discovers MCP tools; never invokes a tool. */
@@ -67,11 +76,11 @@ export async function loadSessionToolCatalog(input: {
     const shortened = description.length > MAX_SESSION_TOOL_CATALOG_DESCRIPTION_LENGTH;
     if (panel) {
       panelBytes += Buffer.byteLength(JSON.stringify(panel), "utf8");
-      if (panelBytes > 256 * 1024) { panel = undefined; truncated = true; }
+      if (panelBytes > maxPanelBytes) { panel = undefined; truncated = true; }
     }
     if (audioPanel) {
       panelBytes += Buffer.byteLength(JSON.stringify(audioPanel), "utf8");
-      if (panelBytes > 256 * 1024) { audioPanel = undefined; truncated = true; }
+      if (panelBytes > maxPanelBytes) { audioPanel = undefined; truncated = true; }
     }
     group.tools.push({
       name,
@@ -85,13 +94,8 @@ export async function loadSessionToolCatalog(input: {
     projectedTools += 1;
   };
   const liveGroup: ToolGroup = { kind: "live", tools: [] };
-  for (const tool of [...liveSmithTools({ readArrangementAudio: audioInputSupported }), creativeBriefProposalTool]) {
+  for (const tool of sessionNativeTools(Boolean(input.storageDirectory), audioInputSupported)) {
     addTool(liveGroup, tool.function.name, tool.function.description);
-  }
-  if (input.storageDirectory) {
-    for (const tool of [...sessionArtifactTools, midiArtifactAuthoringTool, ...parameterArtifactTools]) {
-      addTool(liveGroup, tool.function.name, tool.function.description);
-    }
   }
   groups.push(liveGroup);
 

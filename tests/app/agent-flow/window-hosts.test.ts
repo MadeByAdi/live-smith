@@ -133,6 +133,23 @@ test('a failed startup handoff closes its bridge and leaves later context openin
   }
 });
 
+test('a failed external Session handoff closes its newly created bridge', async () => {
+  const { createWindowHostController } = await import('../../../src/app/window-hosts.js');
+  const { createSession } = await import('../../../src/storage/sessions.js');
+  const directory = await mkdtemp(join(tmpdir(), 'window-external-handoff-'));
+  const context = { application: { song: { handle: { id: 1n }, tracks: [], scenes: [] } }, environment: { storageDirectory: directory } };
+  const session = await createSession(directory, { title: 'External', projectKey: projectKeyForContext(context as never), scope: interaction.scope });
+  let launched = '';
+  const controller = createWindowHostController(context as never, {
+    renderHtml: () => '<html></html>',
+    openVst3: async url => { launched = url; throw new Error('handoff unavailable'); },
+  });
+  try {
+    await assert.rejects(controller.openSession(session.id), /handoff unavailable/);
+    await assert.rejects(fetch(launched));
+  } finally { await controller.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
 test('browser host reuses its invocation Session, isolates different selections, and sanitizes launch failures', async () => {
   const hosts = await import('../../../src/app/window-hosts.js').catch(() => undefined);
   assert.equal(typeof hosts?.createWindowHostController, 'function');

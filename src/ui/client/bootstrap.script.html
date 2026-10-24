@@ -154,7 +154,7 @@
 
         function renderAppConfirmation() {
           if (!activeAppConfirmation) return;
-          const { title, message, acceptLabel, danger, groups, previews } = activeAppConfirmation;
+          const { title, message, acceptLabel, danger, groups, previews, plan } = activeAppConfirmation;
           document.getElementById("appConfirmationTitle").textContent = i18n.text(title);
           document.getElementById("appConfirmationMessage").textContent = i18n.text(message);
           const acceptButton = document.getElementById("appConfirmationAccept");
@@ -162,9 +162,11 @@
           acceptButton.classList.toggle("stop", danger);
           document.getElementById("appConfirmationCancel").textContent = t("Cancel");
           const details = document.getElementById("appConfirmationDetails");
-          details.replaceChildren();
-          for (const preview of previews || []) details.append(actionPreview.render(preview));
-          for (const group of groups || []) {
+          const actions = plan ? activeAppConfirmation.actions ??= factories.createActionDetails() : null;
+          for (const child of [...details.children]) if (child !== actions?.element) child.remove();
+          for (const preview of previews || []) details.insertBefore(actionPreview.render(preview), actions?.element.parentNode === details ? actions.element : null);
+          if (actions) { actions.render(plan); if (actions.element.parentNode !== details) details.append(actions.element); }
+          for (const group of plan ? [] : groups || []) {
             const heading = document.createElement("h3");
             heading.textContent = i18n.text(group.title);
             const list = document.createElement("ul");
@@ -185,6 +187,7 @@
           danger = false,
           groups,
           previews,
+          plan,
           signal,
         }) {
           if (activeAppConfirmation || signal?.aborted) return Promise.resolve(false);
@@ -194,9 +197,11 @@
           layer.hidden = false;
           return new Promise((resolve) => {
             const cancel = () => finishAppConfirmation(false);
-            activeAppConfirmation = { resolve, returnFocus, title, message, acceptLabel, danger, groups, previews, signal, cancel };
+            activeAppConfirmation = { resolve, returnFocus, title, message, acceptLabel, danger, groups, previews, plan, signal, cancel };
             signal?.addEventListener("abort", cancel, { once: true });
             renderAppConfirmation();
+            const body = document.getElementById("appConfirmationBody");
+            body.scrollTop = 0; body.scrollLeft = 0;
             document.getElementById("appConfirmationCancel").focus({ preventScroll: true });
           });
         }
@@ -215,10 +220,9 @@
               return;
             }
             if (event.key !== "Tab") return;
-            const controls = [
-              document.getElementById("appConfirmationCancel"),
-              document.getElementById("appConfirmationAccept"),
-            ];
+            const controls = [...document.getElementById("appConfirmation").querySelectorAll(
+              ':is(button, input, select, textarea, [tabindex="0"]):not(:disabled)',
+            )].filter((element) => !element.closest("[hidden]"));
             const first = controls[0];
             const last = controls[controls.length - 1];
             if (!controls.includes(document.activeElement)) {
@@ -456,12 +460,14 @@
           isCommandInProgress: bridgeClient.isCommandInProgress,
           isConfirmationLocked: bridgeClient.isConfirmationLocked,
           resolveConfirm: bridgeClient.resolveConfirm,
+          onExternalApproval: () => setInspectorOpen(false),
           runCommand: bridgeClient.runCommand,
           showStatus: bridgeClient.showStatus,
           onInspectorTabChange: (tab) => artifactLibrary.setVisible(tab === "artifacts" && !document.getElementById("inspectorPane").hidden),
         });
 
         const toolsInspector = factories.createToolsInspector({
+          sameJsonData: bridgeClient.sameJsonData,
           pluginApps,
           audioParameters,
           resultActions: pluginResults,
@@ -2084,7 +2090,7 @@
           profileEditor.renderSettingsForm();
           renderApplication();
           setSessionsPaneCollapsed(false);
-          setInspectorOpen(Boolean(getState().openSettingsOnLoad || !activeProfile()));
+          setInspectorOpen(!getState().mcpApprovals?.length && Boolean(getState().openSettingsOnLoad || !activeProfile()));
           sessionTimeline.switchInspectorGroup(getState().openSettingsOnLoad || !activeProfile() ? "settings" : "session");
           window.addEventListener("languagechange", () => {
             if (i18n.preference === "system") renderApplication({ preserveStatus: true });

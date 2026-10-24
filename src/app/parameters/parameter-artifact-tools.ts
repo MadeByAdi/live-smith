@@ -1,7 +1,8 @@
+import type { ToolActor } from "../../agent/tool-actor.js";
 import { agentActionJsonSchemas } from "../../agent/action-schema.js";
 import { isArtifactLabel } from "../../agent/artifact-contracts.js";
 import { isDeviceParameterWrites, sameParameterNumber } from "../../agent/device-parameter-contracts.js";
-import type { ModelTool, RuntimeProfile } from "../../model/provider.js";
+import type { ModelTool } from "../../model/provider.js";
 import { cloneJsonValue } from "../../model/json-clone.js";
 import type { Toolset } from "../../plugins/registry.js";
 import { captureParameterDevice, parameterDeviceTargets, parameterHandleId } from "../../live/device-parameters.js";
@@ -33,7 +34,7 @@ export const parameterArtifactTools = [{ type: "function", function: {
     required: ["label", "values"], additionalProperties: false },
 } }] satisfies ModelTool[];
 
-export function createParameterArtifactToolset(input: ParameterArtifactContext & { target: LiveTarget; runtimeProfile: RuntimeProfile; revisionOf?: string }): Toolset {
+export function createParameterArtifactToolset(input: ParameterArtifactContext & { target: LiveTarget; actor: ToolActor; revisionOf?: string }): Toolset {
   return { id: "live-smith.device-parameters", tools: () => parameterArtifactTools,
     async callTool(call) {
       let saving = false;
@@ -89,7 +90,7 @@ export function createParameterArtifactToolset(input: ParameterArtifactContext &
         if (!changed) throw new Error("The proposed parameter values already match the source version.");
         saving = true;
         const artifact = await saveDeviceParameterArtifact(input.storageDirectory, input.sessionId, { target: source.target, parameters, label: args.label,
-          source: { kind: "model", profileId: input.runtimeProfile.profile.id, model: input.runtimeProfile.model.model }, revisionOf: source.id, signal: input.signal });
+          source: input.actor, revisionOf: source.id, signal: input.signal });
         return { content: JSON.stringify({ artifacts: [parameterArtifactView(artifact)] }), artifacts: [{ kind: "device-parameters", id: artifact.id }] };
       } catch (error) {
         if (saving) return { content: "Parameter artifact storage could not be confirmed. Check saved artifacts before retrying.", failed: true, stop: true,

@@ -13,6 +13,7 @@ import {
 } from "./music-tools.js";
 
 export type AudioProcessingSource =
+  | { kind: "session_audio_attachment"; attachmentId: string }
   | { kind: "request_audio_attachment"; requestId: string; audioIndex: number }
   | { kind: "audio_asset"; assetRef: string }
   | {
@@ -145,6 +146,10 @@ function parseSource(input: unknown): AudioProcessingSource {
   if (source.kind === "audio_asset") {
     only(source, ["kind", "assetRef"]);
     return { kind: source.kind, assetRef: id(source.assetRef) };
+  }
+  if (source.kind === "session_audio_attachment") {
+    only(source, ["kind", "attachmentId"]);
+    return { kind: source.kind, attachmentId: id(source.attachmentId) };
   }
   if (source.kind === "request_audio_attachment") {
     only(source, ["kind", "requestId", "audioIndex"]);

@@ -1,4 +1,5 @@
 import { isInterfaceMode, type InterfaceMode } from "../model/interface-mode.js";
+import { normalizeMcpServerConfig, normalizeMcpServerSettings, type McpServerConfig } from "../model/mcp-server.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
@@ -90,6 +91,7 @@ export interface SaveSavedProfileOptions {
 
 export type GlobalSettingsPatch =
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -100,6 +102,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -110,6 +113,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -120,6 +124,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage: UiLanguage;
@@ -130,6 +135,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       uiLanguage?: never;
       interfaceMode: InterfaceMode;
@@ -140,6 +146,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -150,6 +157,7 @@ export type GlobalSettingsPatch =
       customInstructions?: never;
     }
   | {
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -160,6 +168,7 @@ export type GlobalSettingsPatch =
       customInstructions: string;
     }
   | {
+      mcpServer?: never;
       sessionTabs: SessionShortcutId[];
       interfaceMode?: never;
       uiLanguage?: never;
@@ -168,7 +177,8 @@ export type GlobalSettingsPatch =
       networkProxy?: never;
       integrationConnections?: never;
       customInstructions?: never;
-    };
+    }
+  | { mcpServer: McpServerConfig; sessionTabs?: never; interfaceMode?: never; uiLanguage?: never; defaultFollowUpBehavior?: never; showContextUsage?: never; networkProxy?: never; integrationConnections?: never; customInstructions?: never };
 
 export type { IntegrationConnectionsSettingsPatch } from "../plugins/integration-connections.js";
 
@@ -336,6 +346,7 @@ export async function saveGlobalSettings(
   storageDirectory: string | undefined,
   input: GlobalSettingsPatch,
 ): Promise<AgentSettings> {
+  const hasMcpServer = Object.prototype.hasOwnProperty.call(input, "mcpServer");
   const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
     input,
     "defaultFollowUpBehavior",
@@ -360,7 +371,7 @@ export async function saveGlobalSettings(
     Number(hasFollowUpBehavior) +
       Number(hasContextUsage) +
       Number(hasNetworkProxy) + Number(hasInterfaceMode) + Number(hasUiLanguage) + Number(hasIntegrationConnections) +
-      Number(hasCustomInstructions) + Number(hasSessionTabs) !== 1 ||
+      Number(hasCustomInstructions) + Number(hasSessionTabs) + Number(hasMcpServer) !== 1 ||
     Object.keys(input).length !== 1
   ) {
     throw new Error("Global settings update must contain exactly one setting.");
@@ -375,6 +386,7 @@ export async function saveGlobalSettings(
     throw new Error("Show context usage must be a boolean.");
   }
   if (hasInterfaceMode && !isInterfaceMode(input.interfaceMode)) throw new Error("Interface mode must be modal or browser.");
+  const mcpServer = hasMcpServer ? normalizeMcpServerConfig(input.mcpServer) : undefined;
   if (hasUiLanguage && !isUiLanguage(input.uiLanguage)) {
     throw new Error("UI language must be system, en, or zh-CN.");
   }
@@ -479,7 +491,9 @@ export async function saveGlobalSettings(
     }
     return persistSettings(storageDirectory, {
       ...settings,
-      ...(hasFollowUpBehavior
+      ...(hasMcpServer
+        ? { mcpServer: { ...mcpServer!, revision: (BigInt(normalizeMcpServerSettings(settings.mcpServer).revision) + 1n).toString() } }
+        : hasFollowUpBehavior
         ? {
             defaultFollowUpBehavior: input.defaultFollowUpBehavior!,
             defaultFollowUpBehaviorRevision:

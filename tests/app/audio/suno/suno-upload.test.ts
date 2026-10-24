@@ -12,6 +12,9 @@ import { bindAudioDirectory, listAudioJobs, loadAudioJob, updateAudioJob } from 
 import { waveBytes } from "../../../storage/support/audio-storage-test-helpers.js";
 import { audioJobViews, resumeAudioJob } from "../../../../src/app/audio/audio-processing.js";
 import { createHostAbortController } from "../../../../src/runtime/host.js";
+import { loadAgentSettings, saveGlobalSettings } from "../../../../src/storage/settings.js";
+import { subscribeSessionStateInvalidations } from "../../../../src/app/session/session-state-events.js";
+import { loadAudioParameterGroups } from "../../../../src/app/audio/audio-parameter-tool.js";
 
 const uploadId = "aaaaaaaa-1111-4111-8111-111111111111";
 const clipId = "bbbbbbbb-2222-4222-8222-222222222222";
@@ -61,6 +64,23 @@ test("Suno upload preserves one source and the two distinct remote IDs in the or
   assert.doesNotMatch(JSON.stringify(job), /synthetic-secret-policy|s3\.amazonaws|private signed/);
   assert.equal((await listAudioAssets(h.directory, h.session.id, job.id))[0]!.role, "source");
   assert.equal((await listAudioJobs(h.directory, h.session.id)).length, 1);
+});
+
+test("first upload job restores media availability after its connection disappears during limits lookup", async t => {
+  const h = await fixture(t);
+  const targets: string[] = [];
+  t.after(subscribeSessionStateInvalidations(h.directory, change => { targets.push(change.target ?? "state"); }));
+  h.adapter.limits = async () => {
+    const settings = await loadAgentSettings(h.directory);
+    await saveGlobalSettings(h.directory, { integrationConnections: { action: "remove",
+      expectedRevision: settings.integrationConnections!.revision, connectionId: connection.id } });
+    assert.deepEqual((await loadAudioParameterGroups(h.directory, h.session.id)).groups, []);
+    return { minimumSeconds: 6, maximumSeconds: 60 };
+  };
+  await h.run();
+  assert.deepEqual(targets, ["tools"]);
+  assert((await loadAudioParameterGroups(h.directory, h.session.id)).groups.some(group => group.pluginId === "live-smith.media"));
+  assert.equal(h.calls.includes("create"), false, "removed authorization must still block the remote upload");
 });
 
 for (const step of ["create", "upload", "finish", "initialize"]) test(`lost ${step} reply stays unknown and Resume never repeats that mutation`, async (t) => {

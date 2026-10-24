@@ -1,3 +1,4 @@
+import { normalizeMcpServerConfig, type McpServerConfig } from "../../model/mcp-server.js";
 import { isInterfaceMode, type InterfaceMode } from "../../model/interface-mode.js";
 import { isSessionTabs, type SessionShortcutId } from "../../model/session-tabs.js";
 import { MAX_AGENT_PLAN_ACTIONS } from "../../agent/actions.js";
@@ -178,6 +179,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -189,6 +191,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -200,6 +203,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage?: never;
@@ -211,6 +215,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       interfaceMode?: never;
       uiLanguage: UiLanguage;
@@ -222,6 +227,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       uiLanguage?: never;
       interfaceMode: InterfaceMode;
@@ -233,6 +239,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       integrationConnections: IntegrationConnectionsSettingsPatch;
       interfaceMode?: never;
@@ -244,6 +251,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs?: never;
       customInstructions: string;
       interfaceMode?: never;
@@ -255,6 +263,7 @@ export type ChatBridgeCommandInput =
     }
   | {
       kind: "save_global_settings";
+      mcpServer?: never;
       sessionTabs: SessionShortcutId[];
       customInstructions?: never;
       interfaceMode?: never;
@@ -264,6 +273,12 @@ export type ChatBridgeCommandInput =
       networkProxy?: never;
       integrationConnections?: never;
     }
+  | { kind: "save_global_settings"; mcpServer: McpServerConfig; sessionTabs?: never; customInstructions?: never; interfaceMode?: never; uiLanguage?: never; defaultFollowUpBehavior?: never; showContextUsage?: never; networkProxy?: never; integrationConnections?: never }
+  | { kind: "create_mcp_client"; name: string; sessionId?: string }
+  | { kind: "rotate_mcp_client"; clientId: string; generation: string }
+  | { kind: "revoke_mcp_client"; clientId: string; generation: string }
+  | { kind: "resolve_mcp_approval"; sessionId: string; operationId: string; approve: boolean }
+  | { kind: "cancel_mcp_operation"; sessionId: string; operationId: string }
   | { kind: "resume_audio_job"; sessionId: string; jobId: string }
   | { kind: "download_audio_output"; sessionId: string; jobId: string; outputKey: string }
   | { kind: "export_artifact"; sessionId: string; artifact: ArtifactRef }
@@ -1099,10 +1114,26 @@ export function parseSteeringInput(value: unknown): ChatBridgeSteeringInput {
 export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
   const input = inputRecord(value);
   const kind = inputString(input, "kind");
+  if (kind === "create_mcp_client") {
+    assertOnlyInputKeys(input, ["kind", "name", "sessionId"], kind);
+    if (typeof input.name !== "string" || !input.name.trim() || input.name.length > 120 || /[\u0000-\u001f\u007f]/u.test(input.name) ||
+      input.sessionId !== undefined && !isProfileId(input.sessionId)) throw new ChatBridgeRequestValidationError("Choose a client name and an active Session.");
+    return { kind, name: input.name.trim(), ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId as string }) };
+  }
+  if (kind === "rotate_mcp_client" || kind === "revoke_mcp_client") {
+    assertOnlyInputKeys(input, ["kind", "clientId", "generation"], kind);
+    if (!isProfileId(input.clientId) || !isProfileId(input.generation)) throw new ChatBridgeRequestValidationError("Invalid MCP client reference.");
+    return { kind, clientId: input.clientId, generation: input.generation };
+  }
+  if (kind === "resolve_mcp_approval" || kind === "cancel_mcp_operation") {
+    assertOnlyInputKeys(input, kind === "resolve_mcp_approval" ? ["kind", "sessionId", "operationId", "approve"] : ["kind", "sessionId", "operationId"], kind);
+    if (!isProfileId(input.sessionId) || !isProfileId(input.operationId) || kind === "resolve_mcp_approval" && typeof input.approve !== "boolean") throw new ChatBridgeRequestValidationError("Invalid external operation reference.");
+    return kind === "resolve_mcp_approval" ? { kind, sessionId: input.sessionId, operationId: input.operationId, approve: input.approve as boolean } : { kind, sessionId: input.sessionId, operationId: input.operationId };
+  }
   if (kind === "save_global_settings") {
     assertOnlyInputKeys(
       input,
-      ["kind", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "interfaceMode", "uiLanguage", "integrationConnections", "customInstructions", "sessionTabs"],
+      ["kind", "mcpServer", "defaultFollowUpBehavior", "showContextUsage", "networkProxy", "interfaceMode", "uiLanguage", "integrationConnections", "customInstructions", "sessionTabs"],
       `${kind} command`,
     );
     const hasFollowUpBehavior = Object.prototype.hasOwnProperty.call(
@@ -1126,11 +1157,15 @@ export function parseCommandInput(value: unknown): ChatBridgeCommandInput {
       Number(hasFollowUpBehavior) +
         Number(hasContextUsage) +
         Number(hasNetworkProxy) +
-        Number(hasInterfaceMode) + Number(hasUiLanguage) + Number(hasAudioService) + Number(hasCustomInstructions) + Number(hasSessionTabs) !== 1
+        Number(hasInterfaceMode) + Number(hasUiLanguage) + Number(hasAudioService) + Number(hasCustomInstructions) + Number(hasSessionTabs) + Number(Object.hasOwn(input, "mcpServer")) !== 1
     ) {
       throw new ChatBridgeRequestValidationError(
         "save_global_settings must contain exactly one setting.",
       );
+    }
+    if (Object.hasOwn(input, "mcpServer")) {
+      try { return { kind, mcpServer: normalizeMcpServerConfig(input.mcpServer) }; }
+      catch { throw new ChatBridgeRequestValidationError("Choose an MCP port from 1024 to 65535 and an enabled state."); }
     }
     if (hasSessionTabs) {
       if (!isSessionTabs(input.sessionTabs)) {

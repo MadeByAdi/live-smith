@@ -1,3 +1,4 @@
+import { isWireMcpService, isWireMcpCredential, isWireMcpOperations, isWireMcpApprovals } from "./mcp-server.js";
 import type { ChatBridgeState } from "../../chat-state.js";
 import { maximumDiscoveredModelCount, maximumProfileModelCount } from "./contracts.js";
 import {
@@ -43,6 +44,7 @@ export function createStateValidators({ isWireIntegrationConnections, isWireSuno
       !hasOnlyWireKeys<NonNullable<ChatBridgeState>>(value, [
         "contextSummary",
         "integrationConnections",
+        "mcpServer", "mcpCredential", "mcpOperations", "mcpApprovals",
         "mcpOAuthStates",
         "sunoAccounts",
         "sunoModelCatalog",
@@ -83,6 +85,10 @@ export function createStateValidators({ isWireIntegrationConnections, isWireSuno
         "bridgeStateCoveredThroughRevision",
       ]) ||
       typeof value.contextSummary !== "string" ||
+      (value.mcpServer !== undefined && !isWireMcpService(value.mcpServer)) ||
+      (value.mcpCredential !== undefined && !isWireMcpCredential(value.mcpCredential)) ||
+      (value.mcpOperations !== undefined && !isWireMcpOperations(value.mcpOperations)) ||
+      (value.mcpApprovals !== undefined && !isWireMcpApprovals(value.mcpApprovals)) ||
       (value.integrationConnections !== undefined && !isWireIntegrationConnections(value.integrationConnections)) ||
       (value.mcpOAuthStates !== undefined && (!isWireArray(value.mcpOAuthStates) || value.mcpOAuthStates.length > 20 ||
         !value.mcpOAuthStates.every((entry) => isWireRecord(entry) &&

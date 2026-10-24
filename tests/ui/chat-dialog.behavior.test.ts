@@ -617,6 +617,9 @@ test("closing a dirty Profile uses an in-page confirmation instead of native con
     const accept = confirmation?.querySelector<HTMLButtonElement>(
       "#appConfirmationAccept",
     );
+    const body = confirmation?.querySelector<HTMLElement>(
+      "#appConfirmationBody",
+    );
     assert.equal(harness.document.activeElement, cancel);
     assert.equal(
       harness.document.querySelector(".app")?.hasAttribute("inert"),
@@ -624,7 +627,16 @@ test("closing a dirty Profile uses an in-page confirmation instead of native con
     );
     assert.deepEqual(harness.hostMessages, []);
 
-    cancel?.dispatchEvent(new harness.window.KeyboardEvent("keydown", {
+    const previousFromCancel = new harness.window.KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: "Tab",
+      shiftKey: true,
+    });
+    cancel?.dispatchEvent(previousFromCancel);
+    assert.equal(previousFromCancel.defaultPrevented, false);
+    body?.focus();
+    body?.dispatchEvent(new harness.window.KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,
       key: "Tab",
@@ -636,14 +648,14 @@ test("closing a dirty Profile uses an in-page confirmation instead of native con
       cancelable: true,
       key: "Tab",
     }));
-    assert.equal(harness.document.activeElement, cancel);
+    assert.equal(harness.document.activeElement, body);
     closeButton?.focus();
     closeButton?.dispatchEvent(new harness.window.KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,
       key: "Tab",
     }));
-    assert.equal(harness.document.activeElement, cancel);
+    assert.equal(harness.document.activeElement, body);
     cancel?.dispatchEvent(new harness.window.KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,

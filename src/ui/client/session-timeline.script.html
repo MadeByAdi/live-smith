@@ -21,12 +21,14 @@
         readSessionSearch,
         readSessionPreview,
         showStatus,
+        onExternalApproval,
         onInspectorTabChange = () => {},
       }) {
       const t = (message, params) => window.LiveSmithI18n.t(message, params);
       const { message } = window.LiveSmithI18n;
       const sessionActivityAt = window.LiveSmithFactories.sessionActivityAt;
       const isWireSessionPreview = window.LiveSmithFactories.isWireSessionPreview;
+      const createActionDetails = window.LiveSmithFactories.createActionDetails;
       const builtInAudioToolNames = __BUILT_IN_AUDIO_TOOL_NAMES__;
       const sessionActionLabels = new WeakMap();
       const maximumSessionTitleCodePoints = __MAX_SESSION_TITLE_CODE_POINTS__;
@@ -44,6 +46,7 @@
       const selectedInspectorTabs = { session: "context", settings: "agent" };
       let activeInspectorGroup = "settings";
       let focusedConfirmationId = null;
+      let focusedExternalApprovalId = null;
       let confirmationReturnFocus = null;
       const selectedSessionIds = new Set();
       let sessionSelectionAnchorId = null;
@@ -1190,6 +1193,9 @@
             !(getState().previousSessions || []).some((session) => session.id === previewSessionId))) closeHistoryPreview();
         retainActiveSessionForWindow();
         const state = getState();
+        const externalApprovalId = state.mcpApprovals?.[0]?.operationId || null;
+        if (externalApprovalId && externalApprovalId !== focusedExternalApprovalId) onExternalApproval?.();
+        focusedExternalApprovalId = externalApprovalId;
         sessionSearch.syncState(state);
         const currentSessions = state.sessions.filter((session) => isSessionVisible(session));
         const previousSessions = (state.previousSessions || []).filter(
@@ -1660,7 +1666,18 @@
       function messageItemForRender(existing, key, snapshot, build, animate) {
         const previous = existing.get(key);
         if (previous && messageRenderSnapshots.get(previous) === snapshot && previous.dataset.locale === window.LiveSmithI18n.locale) return previous;
-        const item = build();
+        let item = build();
+        const previousContent = previous?.querySelector(":scope > .detail-scroll-region");
+        const nextContent = item.querySelector(":scope > .detail-scroll-region");
+        if (previousContent && nextContent) {
+          const open = previous.open;
+          previousContent.replaceChildren(...nextContent.childNodes);
+          for (const attribute of nextContent.attributes) previousContent.setAttribute(attribute.name, attribute.value);
+          reconcileChildNodes(previous, [...item.childNodes].map((child) => child === nextContent ? previousContent : child));
+          for (const attribute of item.attributes) previous.setAttribute(attribute.name, attribute.value);
+          previous.open = open;
+          item = previous;
+        }
         item.dataset.messageKey = key;
         item.dataset.locale = window.LiveSmithI18n.locale;
         messageRenderSnapshots.set(item, snapshot);
@@ -1710,6 +1727,7 @@
         renderReasoningSummary(summary, content, streaming);
         const body = document.createElement("div");
         body.className = "timeline-content";
+        makeDetailScrollable(body, t("Thinking"));
         renderMarkdown(body, content);
         item.append(summary, body);
         return item;
@@ -1808,6 +1826,8 @@
         let reasoningItem = timeline.querySelector(
           ".timeline-item.reasoning.streaming",
         );
+        const reasoningBody = reasoningItem?.querySelector(".timeline-content");
+        const followReasoning = !reasoningBody || reasoningBody.scrollTop + reasoningBody.clientHeight >= reasoningBody.scrollHeight - 48;
         if (reasoningDraft === null) {
           rememberReasoningSummaryFocus(reasoningItem, timeline);
           reasoningItem?.remove();
@@ -1837,6 +1857,10 @@
             );
             messageRenderSnapshots.set(reasoningItem, reasoningDraft);
           }
+        }
+        if (followReasoning && reasoningItem?.isConnected) {
+          const body = reasoningItem.querySelector(".timeline-content");
+          if (body) body.scrollTop = body.scrollHeight;
         }
 
         let assistantItem = timeline.querySelector(
@@ -2087,6 +2111,7 @@
           queuedFollowUps,
           webSearchUpdates,
           pendingConfirmation,
+          mcpApprovals: state.mcpApprovals, mcpOperations: state.mcpOperations,
           pendingUserMessage,
         });
         if (renderKey === renderedTimelineKey) {
@@ -2117,6 +2142,8 @@
         const desiredNodes = [];
         const focusBeforeRender = document.activeElement;
         const existingReasoningDetails = existingMessages.get("reasoning-streaming");
+        const existingReasoningBody = existingReasoningDetails?.querySelector(".timeline-content");
+        const followReasoning = !existingReasoningBody || existingReasoningBody.scrollTop + existingReasoningBody.clientHeight >= existingReasoningBody.scrollHeight - 48;
         const reasoningDetailsOpen = existingReasoningDetails instanceof HTMLDetailsElement
           ? existingReasoningDetails.open
           : undefined;
@@ -2181,8 +2208,11 @@
           focusedActivityStep?.dataset.activityStepId || null;
         const nearBottom =
           timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 48;
+        const operationViews = new Map((state.mcpOperations || []).map(operation => [operation.id, operation]));
+        const latestOperationEvents = new Map((state.events || []).filter(event => event.operation).map(event => [event.operation.id, event.id]));
+        const externalApprovals = (state.mcpApprovals || []).map(entry => ({ ...entry.request, id: `mcp:${entry.operationId}`, externalOperationId: entry.operationId, clientName: entry.actor.clientName }));
         const events = (state.events || []).filter((event) =>
-          event.kind !== "candidate" && (event.kind !== "reasoning" || event.content.trim().length > 0)
+          (event.kind !== "operation" || latestOperationEvents.get(event.operation.id) === event.id) && event.kind !== "candidate" && (event.kind !== "reasoning" || event.content.trim().length > 0)
         );
 
         if (
@@ -2199,10 +2229,12 @@
 
         let confirmation = null;
         const visibleActivityIds = new Set();
+        for (const approval of externalApprovals.filter(entry => entry.kind === "resolve_recovery")) desiredNodes.push(buildConfirmCard(approval));
         for (const entry of timelineActivityEntries(events)) {
           if (entry.activitySteps) {
             const steps = entry.activitySteps;
-            const pendingStep = steps.find((step) => step.operationId && step.operationId === pendingConfirmation?.operationId);
+            const pendingForStep = step => step.operationId && (step.operationId === pendingConfirmation?.operationId ? pendingConfirmation : externalApprovals.find(approval => approval.operationId === step.operationId));
+            const pendingStep = steps.find(pendingForStep);
             const group = steps.length > 1 ? buildTimelineActivityGroup(steps) : null;
             group?.toggleAttribute("data-confirmation-block", Boolean(pendingStep));
             const groupId = group?.dataset.activityGroupId;
@@ -2226,7 +2258,7 @@
             const stepNodes = [];
             for (const step of steps) {
               visibleActivityIds.add(step.id);
-              const pending = pendingStep === step ? pendingConfirmation : null;
+              const pending = pendingForStep(step) || null;
               const item = buildTimelineActivityStep(step, pending);
               item.toggleAttribute("data-confirmation-block", !group && Boolean(pending));
               restoreTimelineActivityStepDetails(
@@ -2250,15 +2282,19 @@
               attachments: entry.attachments || [],
             });
           const replacesStreaming = entry.kind === "assistant" && existingMessages.has("streaming");
-          const item = ["user", "assistant"].includes(entry.kind)
-            ? messageItemForRender(
+          const eventKey = `event:${entry.id}`;
+          if (entry.kind === "web_search" && !detailsState.has(entry.id)) {
+            const liveKey = `search:${entry.webSearch.id}`;
+            const liveItem = existingMessages.get(liveKey);
+            if (liveItem) { existingMessages.set(eventKey, liveItem); existingMessages.delete(liveKey); }
+          }
+          const item = messageItemForRender(
                 existingMessages,
-                `event:${entry.id}`,
-                JSON.stringify(entry),
-                () => buildTimelineItem(entry),
-                sameSession && !replacesPending && !replacesStreaming,
-              )
-            : buildTimelineItem(entry);
+                eventKey,
+                JSON.stringify([entry, entry.operation && operationViews.get(entry.operation.id)]),
+                () => buildTimelineItem(entry.operation && operationViews.has(entry.operation.id) ? { ...entry, operation: operationViews.get(entry.operation.id) } : entry),
+                ["user", "assistant"].includes(entry.kind) && sameSession && !replacesPending && !replacesStreaming,
+              );
           restoreTimelineItemDetails(
             item,
             entry,
@@ -2279,11 +2315,8 @@
         }
 
         for (const search of webSearchUpdates) {
-          const item = buildWebSearchItem({
-            eventId: "",
-            search,
-            live: true,
-          });
+          const item = messageItemForRender(existingMessages, `search:${search.id}`, JSON.stringify(search),
+            () => buildWebSearchItem({ eventId: "", search, live: true }), false);
           if (
             item.dataset.webSearchId &&
             webSearchDetailsState.has(item.dataset.webSearchId)
@@ -2341,7 +2374,12 @@
         }
         for (const id of activityItems.keys()) if (!visibleActivityIds.has(id)) activityItems.delete(id);
         reconcileChildNodes(timeline, desiredNodes);
-        if (sameSession && focusBeforeRender?.isConnected && timeline.contains(focusBeforeRender) && focusBeforeRender !== document.activeElement) {
+        if (followReasoning && reasoningDraft !== null) {
+          const body = timeline.querySelector(".reasoning.streaming .timeline-content");
+          if (body) body.scrollTop = body.scrollHeight;
+        }
+        const retainedTimelineFocus = sameSession && focusBeforeRender?.isConnected && timeline.contains(focusBeforeRender);
+        if (retainedTimelineFocus && focusBeforeRender !== document.activeElement) {
           focusBeforeRender.focus({ preventScroll: true });
         }
         syncMessageActions();
@@ -2395,7 +2433,7 @@
             );
             (focusedDetails ?? focusedStep)?.querySelector("summary")
               ?.focus({ preventScroll: true });
-          } else if (focusedActivityStepId) {
+          } else if (focusedActivityStepId && !retainedTimelineFocus) {
             const focusedStep = [...timeline.querySelectorAll(
               "details.timeline-activity-step[data-activity-step-id]",
             )].find((details) =>
@@ -2403,7 +2441,7 @@
             );
             focusedStep?.querySelector(":scope > summary")
               ?.focus({ preventScroll: true });
-          } else if (focusedActivityGroupId) {
+          } else if (focusedActivityGroupId && !retainedTimelineFocus) {
             const focusedGroup = [...timeline.querySelectorAll(
               "details.timeline-activity-group[data-activity-group-id]",
             )].find((details) =>
@@ -2507,6 +2545,17 @@
         return group;
       }
 
+      function makeDetailScrollable(content, label, role = "region") {
+        content.classList.add("detail-scroll-region");
+        content.tabIndex = 0;
+        content.setAttribute("role", role);
+        content.setAttribute("aria-label", label);
+      }
+
+      function isActivityInput(event) {
+        return event.kind === "tool_call" || event.kind === "apply_requested" || event.kind === "apply_auto_approved";
+      }
+
       function buildTimelineActivityStep(step, confirm = null) {
         const status = activityStepStatus(step);
         let view = activityItems.get(step.id);
@@ -2530,16 +2579,41 @@
               for (const ref of savedRefs) { const preview = artifactPreviews.render(ref); if (preview) content.push(preview); }
             }
             const eventDetails = [];
-            for (const event of step.events) {
-              const section = document.createElement("section"); section.className = "timeline-activity-detail-section"; section.dataset.eventId = event.id;
-              const label = document.createElement("div"); label.className = "timeline-activity-detail-label"; label.textContent = activityEventLabel(event);
-              const body = document.createElement("div"); body.className = "timeline-activity-detail-content"; body.textContent = event.content || "";
-              section.append(label, body); eventDetails.push(section);
+            const previousSections = new Map([...view.detail.querySelectorAll(".timeline-activity-detail-section[data-event-id]")]
+              .map((section) => [section.dataset.eventId, section]));
+            const resultEvents = step.events.filter((event) => !isActivityInput(event));
+            const inputEvents = step.events.filter(isActivityInput);
+            for (const event of [...resultEvents, ...inputEvents]) {
+              const isInput = isActivityInput(event);
+              let section = previousSections.get(event.id);
+              if (!section) {
+                section = document.createElement(isInput ? "details" : "section");
+                section.className = "timeline-activity-detail-section";
+                section.classList.toggle("timeline-activity-input", isInput);
+                section.dataset.eventId = event.id;
+                const label = document.createElement(isInput ? "summary" : "div");
+                label.className = "timeline-activity-detail-label";
+                const body = document.createElement("div");
+                body.className = "timeline-activity-detail-content";
+                section.append(label, body);
+              }
+              const labelText = event.kind === "tool_call" ? t("Input parameters") : activityEventLabel(event);
+              section.firstElementChild.textContent = labelText;
+              const body = section.lastElementChild;
+              makeDetailScrollable(body, labelText);
+              if (body.textContent !== (event.content || "")) body.textContent = event.content || "";
+              eventDetails.push(section);
             }
             if (savedRefs.length && eventDetails.length) {
-              const details = document.createElement("details");
-              const summary = document.createElement("summary"); summary.textContent = t("Tool details");
-              details.append(summary, ...eventDetails); content.push(details);
+              let details = view.detail.querySelector(":scope > .timeline-activity-tool-details");
+              if (!details) {
+                details = document.createElement("details");
+                details.open = eventDetails.some((section) => section.open || section.contains(document.activeElement));
+              }
+              details.className = "timeline-activity-tool-details";
+              const summary = details.querySelector(":scope > summary") || document.createElement("summary");
+              summary.textContent = t("Tool details");
+              reconcileChildNodes(details, [summary, ...eventDetails]); content.push(details);
             } else {
               content.push(...eventDetails);
             }
@@ -2551,7 +2625,8 @@
 
       function buildTimelineActivitySummary(step, className) {
         const status = activityStepStatus(step);
-        const titleText = activityStepTitle(step, status);
+        const actor = step.events.find(event => event.toolActor)?.toolActor;
+        const titleText = [actor?.clientName, activityStepTitle(step, status)].filter(Boolean).join(" · ");
         const excerptText = activityStepExcerpt(step);
         const summary = document.createElement("summary");
         summary.className = `timeline-activity-summary ${className}`;
@@ -2582,7 +2657,10 @@
 
       function activityStepStatus(step) {
         if (step.operationId) {
-          if (getPendingConfirmation()?.operationId === step.operationId) return "waiting";
+          if (
+            getPendingConfirmation()?.operationId === step.operationId ||
+            getState().mcpApprovals?.some(entry => entry.request.operationId === step.operationId)
+          ) return "waiting";
           const operation = [...step.events].reverse().find((event) => event.applyOperation)?.applyOperation;
           return ({ applied: "complete", partial: "partial", failed: "failed", cancelled: "stopped", approved: "approved" })[operation?.status] || "unconfirmed";
         }
@@ -2765,11 +2843,27 @@
           "inspect_mixer": t("Inspect mixer"),
           "inspect_clip": t("Inspect clip"),
           "inspect_midi_clip": t("Inspect midi clip"),
+          "inspect_midi_evidence": t("Inspect MIDI evidence"),
+          "inspect_guitar_playability": t("Inspect guitar playability"),
           "analyze_audio_clip": t("Analyze audio clip"),
           "read_arrangement_audio": t("Read arrangement audio"),
+          "stage_arrangement_audio_artifact": t("Stage arrangement audio artifact"),
+          "capture_agent_audio_tap": t("Capture AgentAudioTap audio"),
           "inspect_song_info": t("Inspect song info"),
           "apply_live_actions": t("Apply live actions"),
           "resolve_live_recovery": t("Resolve live recovery"),
+          "propose_creative_brief": t("Propose creative brief"),
+          "list_session_artifacts": t("List Session artifacts"),
+          "inspect_midi_artifact": t("Inspect MIDI artifact"),
+          "save_midi_artifact": t("Save MIDI artifact"),
+          "capture_device_parameter_artifact": t("Capture device parameter artifact"),
+          "inspect_device_parameter_artifact": t("Inspect device parameter artifact"),
+          "save_device_parameter_artifact": t("Save device parameter artifact"),
+          "listen_to_audio_asset": t("Listen to audio asset"),
+          "livesmith_get_context": t("Read external tool context"),
+          "livesmith_get_operation": t("Read external operation"),
+          "livesmith_cancel_operation": t("Cancel external operation"),
+          "upload_attachment": t("Upload attachment"),
         };
         if (labels[localName]) return labels[localName];
         const words = localName.split("_").filter(Boolean).join(" ");
@@ -2797,6 +2891,11 @@
         return event.kind;
       }
 
+      function resolveConfirmation(confirm, approve) {
+        if (confirm.externalOperationId) return runCommand("resolve_mcp_approval", { sessionId: getState().activeSessionId, operationId: confirm.externalOperationId, approve });
+        return resolveConfirm(confirm.id, approve);
+      }
+
       function renderOperationReview(id, events, confirm) {
         let view = operationReviews.get(id);
         if (!view) {
@@ -2804,14 +2903,20 @@
           const previews = document.createElement("div");
           const description = document.createElement("p"); description.className = "timeline-activity-detail-content";
           const groups = document.createElement("div");
+          const actions = createActionDetails();
+          const plan = document.createElement("details"); plan.className = "timeline-activity-input";
+          const planSummary = document.createElement("summary"); planSummary.className = "timeline-activity-detail-label";
+          const planContent = document.createElement("div"); planContent.append(description, groups, actions.element);
+          plan.append(planSummary, planContent);
           const outcome = document.createElement("div"); outcome.className = "timeline-activity-detail-content"; outcome.setAttribute("role", "status");
           const buttons = document.createElement("div"); buttons.className = "confirm-buttons";
           const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary"; cancel.dataset.confirmCancel = "";
           const apply = document.createElement("button"); apply.type = "button"; apply.className = "primary";
-          buttons.append(cancel, apply); root.append(previews, description, groups, outcome, buttons);
-          view = { root, previews, description, groups, outcome, buttons, cancel, apply, previewKey: "" }; operationReviews.set(id, view);
+          buttons.append(cancel, apply); root.append(outcome, previews, plan, buttons);
+          view = { root, previews, description, groups, actions, plan, planSummary, planContent, outcome, buttons, cancel, apply, previewKey: "" }; operationReviews.set(id, view);
         }
         const proposed = events.find((event) => event.applyOperation?.status === "proposed");
+        const actionPlan = proposed?.applyOperation?.plan || confirm?.plan;
         const latest = [...events].reverse().find((event) => event.applyOperation);
         const previews = proposed?.applyOperation?.previews || confirm?.previews || [];
         const previewKey = JSON.stringify(previews);
@@ -2819,23 +2924,32 @@
         view.previews.hidden = previews.length === 0;
         refreshActionPreviews?.(view.previews);
         view.description.textContent = proposed?.content || confirm?.message || "";
-        view.description.hidden = !view.description.textContent || Boolean(confirm?.groups?.length);
+        view.description.hidden = Boolean(actionPlan) || !view.description.textContent || Boolean(confirm?.groups?.length);
         view.groups.replaceChildren();
-        for (const group of confirm?.groups || []) {
+        for (const group of actionPlan ? [] : confirm?.groups || []) {
           const heading = document.createElement("div"); heading.className = "confirm-group-title"; heading.textContent = window.LiveSmithI18n.format(group.title);
           const list = document.createElement("ul"); list.className = "confirm-rows";
           for (const row of group.rows) { const item = document.createElement("li"); item.textContent = window.LiveSmithI18n.format(row); list.append(item); }
           view.groups.append(heading, list);
         }
         view.groups.hidden = view.groups.childElementCount === 0;
+        view.actions.element.hidden = !actionPlan;
+        if (actionPlan) view.actions.render(actionPlan);
+        view.planSummary.textContent = t("Action details");
+        makeDetailScrollable(view.planContent, t("Action details"));
+        view.plan.hidden = view.description.hidden && view.groups.hidden && view.actions.element.hidden;
+        const wasPending = view.root.hasAttribute("data-pending-confirmation");
+        if (confirm && !wasPending) view.plan.open = true;
+        else if (!confirm && wasPending) view.plan.open = false;
         view.outcome.textContent = latest?.kind === "apply_result" ? latest.content : "";
         view.outcome.hidden = !view.outcome.textContent;
+        makeDetailScrollable(view.outcome, t("Apply result"), "status");
         view.cancel.textContent = t("Cancel"); view.apply.textContent = t("Apply"); view.buttons.hidden = !confirm;
-        view.cancel.disabled = view.apply.disabled = Boolean(confirm && isConfirmationLocked?.());
+        view.cancel.disabled = view.apply.disabled = Boolean(confirm && (confirm.externalOperationId ? isCommandInProgress?.() : isConfirmationLocked?.()));
         view.root.toggleAttribute("data-pending-confirmation", Boolean(confirm));
         if (confirm) {
           view.root.setAttribute("role", "alertdialog"); view.root.setAttribute("aria-label", confirm.message);
-          view.cancel.onclick = () => resolveConfirm(confirm.id, false); view.apply.onclick = () => resolveConfirm(confirm.id, true);
+          view.cancel.onclick = () => resolveConfirmation(confirm, false); view.apply.onclick = () => resolveConfirmation(confirm, true);
         } else {
           view.root.removeAttribute("role"); view.root.removeAttribute("aria-label"); view.root.removeAttribute("aria-busy");
           view.cancel.onclick = view.apply.onclick = null;
@@ -2869,8 +2983,11 @@
         message.textContent = confirm.message || "";
         card.setAttribute("aria-describedby", message.id);
 
-        card.append(title, message);
+        card.append(title);
         for (const preview of confirm.previews || []) card.append(renderActionPreview(preview));
+        const review = document.createElement("div");
+        makeDetailScrollable(review, t("Proposed changes"));
+        review.append(message);
 
         for (const group of groups) {
           const heading = document.createElement("div");
@@ -2883,8 +3000,9 @@
             item.textContent = window.LiveSmithI18n.format(row);
             list.append(item);
           }
-          card.append(heading, list);
+          review.append(heading, list);
         }
+        card.append(review);
 
         const buttons = document.createElement("div");
         buttons.className = "confirm-buttons";
@@ -2893,12 +3011,12 @@
         cancel.type = "button";
         cancel.dataset.confirmCancel = "";
         cancel.textContent = resolvesRecovery ? t("Keep unfinished") : t("Cancel");
-        cancel.onclick = () => resolveConfirm(confirm.id, false);
+        cancel.onclick = () => resolveConfirmation(confirm, false);
         const apply = document.createElement("button");
         apply.className = "primary";
         apply.type = "button";
         apply.textContent = resolvesRecovery ? t("Keep changes and close") : t("Apply");
-        apply.onclick = () => resolveConfirm(confirm.id, true);
+        apply.onclick = () => resolveConfirmation(confirm, true);
         buttons.append(cancel, apply);
         card.append(buttons);
 
@@ -2910,6 +3028,22 @@
       }
 
       function buildTimelineItem(event) {
+        if (event.operation) {
+          const operation = event.operation;
+          const item = document.createElement("details"); item.className = "timeline-item"; item.dataset.eventId = event.id; item.dataset.externalOperationId = operation.id;
+          const summary = document.createElement("summary"); summary.className = "timeline-label";
+          const states = { running: "In progress", awaiting_approval: "Waiting for approval", completed: "Completed", failed: "Failed", cancelled: "Stopped", interrupted: "Interrupted" };
+          summary.textContent = `${operation.actor.clientName} · ${humanizeToolName(operation.toolName)} · ${t(states[operation.status])}`;
+          const content = document.createElement("div"); content.className = "timeline-content";
+          content.textContent = operation.progress === operation.status ? t(states[operation.status]) : window.LiveSmithI18n.format(operation.progress);
+          makeDetailScrollable(content, t("External tool operation"));
+          item.append(summary, content);
+          if (["running", "awaiting_approval"].includes(operation.status)) {
+            const stop = document.createElement("button"); stop.type = "button"; stop.className = "secondary"; stop.textContent = t("Stop");
+            stop.addEventListener("click", () => { void runCommand("cancel_mcp_operation", { sessionId: getState().activeSessionId, operationId: operation.id }); }); item.append(stop);
+          }
+          return item;
+        }
         const eventContent = event.content || "";
         if (event.kind === "reasoning") {
           return buildReasoningItem(eventContent, { eventId: event.id });
@@ -2927,6 +3061,7 @@
         const summaryLimit = 96;
         const content = document.createElement("div");
         content.className = "timeline-content";
+        if (collapsed) makeDetailScrollable(content, eventLabel(event));
         const detailLines = contentLines.slice(1);
         const visibleContent = collapsed &&
             contentLines.length > 1 &&
@@ -3011,6 +3146,7 @@
 
         const contentElement = document.createElement("div");
         contentElement.className = "timeline-content";
+        makeDetailScrollable(contentElement, item.getAttribute("aria-label"));
         appendWebSearchQueries(contentElement, queries);
         appendWebSearchSources(
           contentElement,

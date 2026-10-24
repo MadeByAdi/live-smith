@@ -1,3 +1,5 @@
+import { isToolOperationSnapshot } from "../../../agent/tool-operation.js";
+import { isMcpToolActor } from "../../../agent/tool-actor.js";
 import { isToolResultOutcome } from "../../../agent/tool-outcome.js";
 import { isCreativeBrief } from "../../../agent/creative-brief.js";
 import { isAttachmentProvenance } from "../../../attachments/provenance.js";
@@ -8,6 +10,7 @@ import type { ConversationScope, ModelCitation, ModelContextUsage, ModelHostedWe
 import type { AvailableSkillSummary } from "../../../skills/builtins.js";
 import type { PersistedSessionAttachmentRef, SessionAttachmentRef } from "../../../storage/attachments.js";
 import type { ActionDiffGroup } from "../../action-diff.js";
+import { validateAgentPlan, type AgentPlan } from "../../../agent/actions.js";
 import type { ChatLiveContext, ChatSessionActivity, ChatSessionEvent, ChatSessionSummary } from "../../chat-state.js";
 import {
   WIRE_MAX_ACTIVE_SKILL_COUNT,
@@ -74,6 +77,12 @@ export function isWireActionDiffGroups(value: unknown): value is ActionDiffGroup
 
 export function wireActionDiffGroupsEqual(left: unknown, right: unknown): boolean {
   return sameJsonData(left, right);
+}
+
+export function isWireActionPlan(plan: unknown, kind: unknown): plan is AgentPlan | undefined {
+  if (plan === undefined) return true;
+  if (kind !== "apply") return false;
+  try { validateAgentPlan(plan); return true; } catch { return false; }
 }
 
 export function isWireCitation(value: unknown): value is ModelCitation {
@@ -290,6 +299,7 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
   if (
     !isWireRecord(value) ||
     !hasOnlyWireKeys<NonNullable<ChatSessionEvent>>(value, [
+      "operation", "toolActor", "toolOperationId",
       "id",
       "createdAt",
       "kind",
@@ -310,6 +320,7 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
     !isWireStorageId(value.id) ||
     typeof value.createdAt !== "string" ||
     !includes([
+      "operation",
       "user",
       "assistant",
       "reasoning",
@@ -323,6 +334,8 @@ export function isWireSessionEvent(value: unknown, attachmentPolicy = "current")
       "candidate",
       "error",
     ], value.kind) ||
+    (value.kind === "operation" ? !isToolOperationSnapshot(value.operation) : value.operation !== undefined) ||
+    (value.toolActor === undefined ? value.toolOperationId !== undefined : !isMcpToolActor(value.toolActor) || !isWireStorageId(value.toolOperationId)) ||
     typeof value.content !== "string" ||
     (value.kind === "candidate" ? !isArtifactSelection(value.candidateSelection) : value.candidateSelection !== undefined) ||
     (value.parentCandidate !== undefined && ((value.kind !== "user" && value.kind !== "tool_call") || !isArtifactRef(value.parentCandidate))) ||

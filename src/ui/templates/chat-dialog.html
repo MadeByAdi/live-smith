@@ -751,6 +751,28 @@
                 </div>
               </section>
               <section id="mcpSettings" class="settings-section extension-page" data-extension-page="mcp" role="tabpanel" aria-labelledby="mcpExtensionTab" tabindex="-1" hidden>
+                <section id="mcpOutwardService" aria-labelledby="mcpOutwardHeading" hidden>
+                  <h3 id="mcpOutwardHeading" data-i18n="External tool access">External tool access</h3>
+                  <p class="field-hint" data-i18n="Connect an external AI client to this Live Smith Session. Live edits use the Session's Scope and approval policy.">Connect an external AI client to this Live Smith Session. Live edits use the Session's Scope and approval policy.</p>
+                  <label class="checkbox-row"><input id="mcpServerEnabled" type="checkbox" /><span data-i18n="Enable local MCP service">Enable local MCP service</span></label>
+                  <div class="field"><label for="mcpServerPort" data-i18n="Port">Port</label><input id="mcpServerPort" type="number" min="1024" max="65535" value="17853" /></div>
+                  <button id="saveMcpServer" type="button" class="secondary" data-i18n="Save service settings">Save service settings</button>
+                  <p id="mcpServerStatus" class="field-hint" role="status" aria-live="polite"></p>
+                  <label for="mcpServerUrl" data-i18n="MCP address">MCP address</label><input id="mcpServerUrl" type="text" readonly />
+                  <details id="mcpClientCreator"><summary data-i18n="Add external client">Add external client</summary>
+                    <div class="field"><label for="mcpClientName" data-i18n="Client name">Client name</label><input id="mcpClientName" type="text" maxlength="120" autocomplete="off" /></div>
+                    <div class="field"><label for="mcpClientSession" data-i18n="Session">Session</label><select id="mcpClientSession"></select></div>
+                    <p id="mcpClientScope" class="field-hint"></p>
+                    <button id="createMcpClient" type="button" class="primary" data-i18n="Create access credential">Create access credential</button>
+                  </details>
+                  <div id="mcpClientCredential" hidden>
+                    <p class="field-hint" data-i18n="Copy this configuration now. The access credential is shown once.">Copy this configuration now. The access credential is shown once.</p>
+                    <label for="mcpClientConfig" data-i18n="Client configuration">Client configuration</label><textarea id="mcpClientConfig" rows="8" readonly spellcheck="false"></textarea>
+                    <button id="dismissMcpCredential" type="button" class="secondary" data-i18n="Done">Done</button>
+                  </div>
+                  <div id="mcpClientList" class="connection-list" role="list" aria-label="External clients" data-i18n-aria-label="External clients"></div>
+                  <p id="mcpClientFeedback" class="plugin-status" role="status" aria-live="polite" hidden></p>
+                </section>
                 <div id="connectionsManager" class="connections-manager" aria-labelledby="connectionsHeading" aria-busy="false" tabindex="-1">
                   <div class="plugin-section-heading">
                     <h3 id="connectionsHeading" data-i18n="MCP servers">MCP servers</h3>
@@ -922,8 +944,10 @@
     <div id="appConfirmation" class="app-confirmation-layer" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmationTitle" aria-describedby="appConfirmationMessage" hidden>
       <section class="app-confirmation-card">
         <h2 id="appConfirmationTitle" data-i18n="Confirm action">Confirm action</h2>
-        <p id="appConfirmationMessage"></p>
-        <div id="appConfirmationDetails" class="app-confirmation-details" hidden></div>
+        <div id="appConfirmationBody" class="detail-scroll-region" tabindex="0" role="region" aria-labelledby="appConfirmationTitle">
+          <p id="appConfirmationMessage"></p>
+          <div id="appConfirmationDetails" class="app-confirmation-details" hidden></div>
+        </div>
         <div class="app-confirmation-actions">
           <button id="appConfirmationCancel" class="secondary" type="button" data-i18n="Cancel">Cancel</button>
           <button id="appConfirmationAccept" class="primary" type="button" data-i18n="Continue">Continue</button>

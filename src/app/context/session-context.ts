@@ -169,10 +169,20 @@ export function recoveryContextFromEvents(events: SessionEvent[]): string {
 export function activeRecoveryLedgerFromEvents(
   events: SessionEvent[],
 ): AgentLoopInitialRecoveryState | undefined {
+  const unconfirmed = new Set<string>();
+  for (const event of events) {
+    if (event.kind === "apply_requested" && event.applyOperation) unconfirmed.add(event.applyOperation.id);
+    if (event.kind === "apply_result" && event.applyOperation) unconfirmed.delete(event.applyOperation.id);
+    if (event.kind === "apply_result" && event.recovery?.active === false && !event.applyOperation) unconfirmed.clear();
+  }
+  const uncertain = unconfirmed.size > 0 ? {
+    unconfirmedMutation: true as const,
+    unresolvedFailure: "A prior Live operation has no confirmed final result. Inspect the current Set and reconcile its effects with the user before further Live changes.",
+  } : undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.kind !== "apply_result" || !event.recovery) continue;
-    if (!event.recovery.active) return undefined;
+    if (!event.recovery.active) return uncertain ? { completedActionDigests: [], ...uncertain } : undefined;
     let unresolvedFailure = event.content;
     for (let priorIndex = index - 1; priorIndex >= 0; priorIndex -= 1) {
       const prior = events[priorIndex];
@@ -183,9 +193,10 @@ export function activeRecoveryLedgerFromEvents(
     return {
       completedActionDigests: [...event.recovery.completedActionDigests],
       unresolvedFailure,
+      ...(uncertain ?? {}),
     };
   }
-  return undefined;
+  return uncertain ? { completedActionDigests: [], ...uncertain } : undefined;
 }
 
 function isRejectedToolInput(event: SessionEvent): boolean {

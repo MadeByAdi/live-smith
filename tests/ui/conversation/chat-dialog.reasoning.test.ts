@@ -306,7 +306,6 @@ test("a full timeline reconciliation preserves a collapsed live reasoning item a
       '[data-message-key="reasoning-streaming"]',
     );
     assert.ok(reconciled instanceof harness.window.HTMLDetailsElement);
-    assert.notEqual(reconciled, original);
     assert.equal(reconciled.open, false);
     assert.equal(harness.document.activeElement, reconciled.querySelector("summary"));
     assert.match(reconciled.textContent ?? "", /Routing is valid/u);

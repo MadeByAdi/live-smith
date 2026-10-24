@@ -22,6 +22,7 @@ import {
 } from "../../storage/plugins.js";
 import { listSessionsInTransaction, updateSessionInTransaction } from "../../storage/sessions.js";
 import { loadAgentSettings } from "../../storage/settings.js";
+import type { GlobalStateInvalidation } from "../session/session-state-events.js";
 import { ChatBridgeRequestValidationError } from "../chat/chat-bridge-http.js";
 import {
   ChatBridgeCommandOutcomeUnknownError,
@@ -32,7 +33,7 @@ import {
   type ChatBridgePluginInspectResult,
   type ChatBridgePluginInstallInput,
 } from "../chat/chat-bridge.js";
-import { closeActivePluginConnections } from "./request-plugin-tools.js";
+import { closeActivePluginConnections, pluginToolsEnabled } from "./request-plugin-tools.js";
 
 export type PluginLifecycleCommand = Extract<ChatBridgeCommandInput, {
   kind: "set_plugin_enabled" | "set_plugin_mcp_server_approved" | "set_plugin_artifact_permission" | "delete_plugin";
@@ -44,7 +45,7 @@ interface PluginLifecycleOptions {
     signal: AbortSignal | undefined,
     operation: () => Promise<T>,
   ): Promise<T>;
-  notifyGlobalStateChanged(): void;
+  notifyGlobalStateChanged(change?: Pick<GlobalStateInvalidation, "target">): void;
   notifySessionStateChanged(sessionId: string): void;
   updateSessionInTransaction?: typeof updateSessionInTransaction;
 }
@@ -143,25 +144,30 @@ export function createPluginLifecycle(dependencies: PluginLifecycleOptions) {
     commandInput: Extract<ChatBridgeCommandInput, { kind: "set_plugin_user_config" }>,
     signal: AbortSignal,
   ): Promise<void> => {
+    let toolCatalogChanged = false;
     try {
       await withRequestConfiguration(signal, async () => {
-        await withStorageTransaction(storageDirectory, (transaction) =>
-          savePluginConfigInTransaction(transaction, storageDirectory, commandInput));
+        await withStorageTransaction(storageDirectory, async (transaction) => {
+          const plugin = (await listInstalledPluginsInTransaction(transaction, storageDirectory)).find(entry => entry.id === commandInput.pluginId);
+          toolCatalogChanged = plugin !== undefined && pluginToolsEnabled(plugin);
+          await savePluginConfigInTransaction(transaction, storageDirectory, commandInput);
+        });
         await closeActivePluginConnections(storageDirectory, commandInput.pluginId);
       });
     } catch (error) {
       if (error instanceof PluginConfigConflictError) throw new ChatBridgeConflictError(error.message);
       if (error instanceof PluginConfigError) throw new ChatBridgeRequestValidationError(error.message);
-      if (isStorageCommitOutcomeUnknownError(error)) notifyGlobalStateChanged();
+      if (isStorageCommitOutcomeUnknownError(error)) notifyGlobalStateChanged(toolCatalogChanged ? { target: "all" } : undefined);
       throw error;
     }
-    notifyGlobalStateChanged();
+    notifyGlobalStateChanged(toolCatalogChanged ? { target: "all" } : undefined);
   };
   const change = async (
     commandInput: PluginLifecycleCommand,
     signal: AbortSignal,
   ): Promise<UiMessage> => {
     let changed = false;
+    let toolCatalogChanged = false;
     let sessionCleanupPending = false;
     let privateCleanupPending = false;
     try {
@@ -175,6 +181,8 @@ export function createPluginLifecycle(dependencies: PluginLifecycleOptions) {
               const plugins = await listInstalledPluginsInTransaction(transaction, storageDirectory);
               const plugin = plugins.find((candidate) => candidate.id === commandInput.pluginId);
               if (!plugin) throw new ChatBridgeResourceNotFoundError("That Plugin is not installed.");
+              toolCatalogChanged = pluginToolsEnabled(plugin) || commandInput.kind === "set_plugin_enabled" &&
+                pluginToolsEnabled({ ...plugin, enabled: commandInput.enabled });
               if (commandInput.kind === "set_plugin_mcp_server_approved" ||
                 commandInput.kind === "set_plugin_artifact_permission") {
                 if (plugin.sha256 !== commandInput.sha256) {
@@ -266,10 +274,10 @@ export function createPluginLifecycle(dependencies: PluginLifecycleOptions) {
       if (error instanceof PluginStorageCorruptionError) {
         throw new ChatBridgePluginValidationError("Installed Plugin storage is invalid and was not changed.");
       }
-      if (isStorageCommitOutcomeUnknownError(error)) notifyGlobalStateChanged();
+      if (isStorageCommitOutcomeUnknownError(error)) notifyGlobalStateChanged(toolCatalogChanged ? { target: "all" } : undefined);
       throw error;
     } finally {
-      if (changed) notifyGlobalStateChanged();
+      if (changed) notifyGlobalStateChanged(toolCatalogChanged ? { target: "all" } : undefined);
     }
     return commandInput.kind === "delete_plugin"
       ? privateCleanupPending

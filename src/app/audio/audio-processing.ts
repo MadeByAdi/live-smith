@@ -15,12 +15,12 @@ import {
 } from "../../runtime/host.js";
 import { assertAudioOutputCapacity, saveAudioAsset, readAudioAsset, readAudioSessionState } from "../../storage/audio-assets.js";
 import {
-  createAudioJob, loadAudioJob, updateAudioJob,
+  loadAudioJob, updateAudioJob,
 } from "../../storage/audio-jobs.js";
 import { integrationConnectionFingerprint, availableIntegrationConnections, resolveIntegrationConnection, type RuntimeIntegrationConnection } from "../plugins/integration-connections.js";
 import { builtInAudioPluginById } from "../../plugins/builtins/index.js";
 import { builtInAudioHostRuntime, resumePluginAudioUpload, type AudioPluginOverrides } from "../plugins/built-in-plugin-runtime.js";
-import { acquireAudioJob, audioJobIsActive, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
+import { createSessionAudioJob, acquireAudioJob, audioJobIsActive, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { resumeAudioGeneration } from "./audio-generation.js";
 import { audioPollScheduler } from "./audio-polling.js";
 import { formatUiMessage, type UiMessage } from "../../i18n/ui-message.js";
@@ -111,7 +111,7 @@ export async function separateAudioStems(
   if (!stems.length || new Set(stems).size !== stems.length || stems.some((stem) => !adapter.stems.includes(stem))) {
     throw new Error("The audio service does not support the requested stem combination.");
   }
-  const job = await createAudioJob(context.storageDirectory, context.sessionId, {
+  const job = await createSessionAudioJob(context.storageDirectory, context.sessionId, {
     provider: settings.provider, serviceId: settings.id, operation: "separate_stems",
     connectionFingerprint: integrationConnectionFingerprint(settings), stems,
     ...(context.artifactSource ? { artifactSource: context.artifactSource } : {}),

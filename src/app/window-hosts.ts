@@ -6,6 +6,8 @@ import { createSystemBrowserOpener } from "../runtime/system-browser.js";
 import { projectKeyForContext } from "./context/session-context.js";
 import { setInteractionContext } from "../live/context.js";
 import { createAgentRuntime, runAgentFlow, type AgentFlowDependencies, type AgentRuntime } from "./agent-flow.js";
+import { interactionContextForScope } from "../live/context.js";
+import { listSessions } from "../storage/sessions.js";
 
 type Api = ExtensionContext<"1.0.0">;
 type WindowDependencies = AgentFlowDependencies & {
@@ -30,7 +32,7 @@ export function createWindowHostController(context: Api, dependencies: WindowDep
   };
   return {
     async start(): Promise<void> {
-      if (!dependencies.openVst3) throw new Error("The VST3 handoff is unavailable.");
+      if (!dependencies.openVst3) return;
       await serialize(async () => {
         const assertLiveSetCurrent = createLiveSetGuard(context);
         const projectKey = projectKeyForContext(context);
@@ -48,6 +50,32 @@ export function createWindowHostController(context: Api, dependencies: WindowDep
           await runtime.close();
           throw error;
         }
+      });
+    },
+    async openSession(sessionId: string): Promise<void> {
+      await serialize(async () => {
+        const projectKey = projectKeyForContext(context);
+        const session = (await listSessions(context.environment.storageDirectory, projectKey)).find(entry => entry.id === sessionId && !entry.archivedAt);
+        if (!session) throw new Error("Open the Live Set containing this Session to review its operation.");
+        if (browser && browser.projectKey !== projectKey) {
+          if (browser.runtime.busy) throw new Error("Live Smith is still working in the previous Set.");
+          await closeBrowser();
+        }
+        if (!browser) {
+          const interaction = interactionContextForScope(context, session.scope) ?? {
+            scope: session.scope, target: {}, summary: "External tools are bound to this Live Set. Observe explicit targets before editing.",
+            presentation: { origin: "object" as const, objectKind: "other" as const, title: session.title || "Live Set", details: [] },
+          };
+          browser = { key: `external:${sessionId}`, projectKey,
+            runtime: await createAgentRuntime(context, interaction, { ...dependencies, initialSessionId: sessionId }, "browser") };
+          try {
+            if (dependencies.openVst3) await dependencies.openVst3(browser.runtime.browserUrl);
+          } catch (error) {
+            await closeBrowser();
+            throw error;
+          }
+        } else await browser.runtime.reopen(sessionId);
+        await openBrowser(browser.runtime.url);
       });
     },
     async open(interaction: LiveInteractionContext): Promise<void> {
@@ -69,7 +97,10 @@ export function createWindowHostController(context: Api, dependencies: WindowDep
         const key = JSON.stringify([projectKey, interaction.scope.kind, interaction.scope.identity,
           interaction.selectionContext?.identity ?? null]);
         let adopted = false;
-        if (browser && browser.projectKey !== projectKey) await closeBrowser();
+        if (browser && browser.projectKey !== projectKey) {
+          if (browser.runtime.busy) throw new Error("Live Smith is still working in the previous Set.");
+          await closeBrowser();
+        }
         if (browser && browser.key !== key) {
           if (browser.runtime.busy) throw new Error("Live Smith is still working in the browser. Return to that tab and finish or Stop the current operation before asking about another selection.");
           browser.runtime.adopt(interaction);

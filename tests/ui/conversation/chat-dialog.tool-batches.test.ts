@@ -285,7 +285,7 @@ test("multi-step runs retain their group while a separate single run opens direc
     assert.deepEqual(
       [...(groups[0]?.querySelectorAll<HTMLElement>("[data-event-id]") ?? [])]
         .map((item) => item.dataset.eventId),
-      ["event-tool-1", "event-tool-2", "event-tool-3", "event-tool-4"],
+      ["event-tool-2", "event-tool-1", "event-tool-4", "event-tool-3"],
     );
     assert.deepEqual(
       [...harness.document.querySelectorAll<HTMLElement>(

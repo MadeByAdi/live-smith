@@ -32,7 +32,12 @@ export interface AudioAssetSampleSource extends ManagedSampleImport {
   readonly assetRef: string;
 }
 
-export type ManagedSampleSource = RequestAudioSampleSource | AudioAssetSampleSource;
+export interface SessionAudioSampleSource extends ManagedSampleImport {
+  readonly kind: "session_audio_attachment";
+  readonly attachmentId: string;
+}
+
+export type ManagedSampleSource = RequestAudioSampleSource | AudioAssetSampleSource | SessionAudioSampleSource;
 export type ManagedSampleSources = ReadonlyMap<string, ManagedSampleSource>;
 /** Compatibility name for the send-scoped managed audio registry. */
 export type RequestAudioSampleSources = ManagedSampleSources;
@@ -82,6 +87,11 @@ export function resolveSampleSource(
   switch (source.kind) {
     case "selected":
       return resolveSelectedSource(target);
+    case "session_audio_attachment": {
+      const resolved = requestAudioSources?.get(`session-attachment:${source.attachmentId}`);
+      if (resolved?.kind !== "session_audio_attachment" || resolved.attachmentId !== source.attachmentId) throw new Error("Audio attachment is unavailable in this Session.");
+      return resolved;
+    }
     case "request_audio_attachment": {
       const resolved = requestAudioSources?.get(
         requestAudioSampleSourceKey(source.requestId, source.audioIndex),

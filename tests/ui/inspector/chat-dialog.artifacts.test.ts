@@ -308,6 +308,57 @@ test("previewing one MIDI part carries that part into import without changing ex
   } finally { h.close(); }
 });
 
+test("all MIDI source parts remain in a named keyboard region across refresh and language changes", async () => {
+  const parts = Array.from({ length: 512 }, (_, index) => ({
+    id: `track-${Math.floor(index / 16)}-channel-${index % 16 + 1}`, sourceTrackIndex: Math.floor(index / 16),
+    channel: index % 16 + 1, sourceTrackName: `Track ${Math.floor(index / 16) + 1}`, noteCount: 1, durationBeats: 8,
+  }));
+  const notes = parts.map((part) => ({ partId: part.id, pitch: 60, startTime: 0, duration: 1 }));
+  const midi: SessionArtifact = { ...artifacts[0]!, midi: { durationBeats: 8, noteCount: notes.length,
+    parts, notes: notes.slice(0, 256), omittedNoteCount: notes.length - 256 } };
+  const s = await setup(false, [midi]); const { h } = s;
+  const originalFetch = h.window.fetch;
+  Object.defineProperty(h.window, "fetch", { configurable: true, value: async (input: string, init?: RequestInit) => {
+    if (new URL(String(input)).pathname === "/session-artifact") return { ok: true, json: async () => ({
+      sessionId: s.state.activeSessionId, artifact: { ...midi, midi: { ...midi.midi!, notes, omittedNoteCount: 0 } },
+    }) };
+    return originalFetch(input, init);
+  } });
+  try {
+    await s.open(); h.click('.artifact-open');
+    await waitForCondition(() => Boolean(h.document.querySelector('.artifact-card')), "Expected complete MIDI artifact");
+    const summary = [...h.document.querySelectorAll('summary')].find((node) => node.textContent === "Source parts")!;
+    const disclosure = summary.closest('details')!;
+    const region = disclosure.querySelector<HTMLElement>('[role="region"][aria-label="Source parts"]');
+    assert.ok(region, "Source parts need a named keyboard scroll region");
+    assert.equal(disclosure.open, false);
+    summary.click();
+    assert.equal(disclosure.open, true);
+    assert.equal(region.tabIndex, 0);
+    region.focus(); assert.equal(h.document.activeElement, region);
+    const partRows = [...region.querySelectorAll('p')];
+    assert.deepEqual(partRows.map((row) => row.textContent), parts.map((part) =>
+      `${part.sourceTrackIndex + 1} · ${part.sourceTrackName} · Channel ${part.channel} · ${part.noteCount} · ${part.durationBeats}`));
+    const preview = h.document.querySelector<HTMLSelectElement>('.artifact-preview-part select')!;
+    assert.equal(preview.options.length, parts.length + 1);
+    const reads = s.readCount; action(h, "Refresh artifacts");
+    await waitForCondition(() => s.readCount > reads, "Expected refreshed artifacts"); await h.settle();
+    assert.equal(disclosure.querySelector('[role="region"]'), region);
+    assert.equal(disclosure.open, true); assert.equal(h.document.activeElement, region);
+    h.emitServerEvent({ type: 'global_settings_changed', defaultFollowUpBehavior: s.state.settings.defaultFollowUpBehavior,
+      defaultFollowUpBehaviorRevision: s.state.settings.defaultFollowUpBehaviorRevision, showContextUsage: s.state.settings.showContextUsage,
+      contextUsageVisibilityRevision: s.state.settings.contextUsageVisibilityRevision, uiLanguage: 'zh-CN', uiLanguageRevision: '1', commandId: 'source-parts-language' });
+    await h.settle();
+    assert.equal(region.getAttribute('aria-label'), "源声部"); assert.equal(summary.textContent, "源声部");
+    assert.equal(disclosure.open, true); assert.equal(h.document.activeElement, region);
+    assert.deepEqual([...region.querySelectorAll('p')], partRows);
+    assert.match(partRows.at(-1)!.textContent!, /32 · Track 32 · 通道 16 · 1 · 8/);
+    assert.equal(h.document.querySelector('.artifact-preview-part select'), preview);
+    assert.ok([...h.document.querySelectorAll<HTMLButtonElement>('.artifact-card button')].some((button) => button.textContent === "添加到 Live" && !button.disabled));
+    assert.deepEqual(commandCalls(h), []); assert.deepEqual(h.errors, []);
+  } finally { h.close(); }
+});
+
 test("audio artifacts export and attach the exact saved audio without starting a model request", async () => {
   const s = await setup(); const { h } = s;
   try {

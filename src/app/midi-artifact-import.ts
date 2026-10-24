@@ -82,7 +82,8 @@ export async function importMidiArtifact(input: MidiArtifactImportCommand & {
   const record = (kind: "apply_requested" | "apply_result" | "apply_auto_approved" | "error", content: string,
     status?: AgentApplyOperation["status"], previews?: AgentApplyOperation["previews"]) =>
     appendSessionEvent(input.storageDirectory, input.sessionId, { kind, content,
-      ...(operationId && status ? { applyOperation: { id: operationId, status, ...(previews ? { previews } : {}) } } : {}),
+      ...(operationId && status ? { applyOperation: { id: operationId, status,
+        ...(status === "proposed" && plan ? { plan } : {}), ...(previews ? { previews } : {}) } } : {}),
     });
   try {
     input.assertLiveSetCurrent?.();

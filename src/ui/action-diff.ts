@@ -20,9 +20,12 @@ interface TrackRefLabel {
   index?: number;
 }
 
+type ActionRowPresentation = "details" | "summary";
+
 export function actionDiffGroups(
   actions: AgentAction[],
   targets: Record<string, AgentPlanTarget> = {},
+  presentation: ActionRowPresentation = "details",
 ): ActionDiffGroup[] {
   const groups: ActionDiffGroup[] = [];
   const refLabels = new Map(
@@ -30,7 +33,7 @@ export function actionDiffGroups(
   );
 
   for (const [index, action] of actions.entries()) {
-    const diff = actionDiffRow(action, refLabels);
+    const diff = actionDiffRow(action, refLabels, presentation);
     const numberedRow = m("{number}. {description}", { number: index + 1, description: diff.row });
     const currentGroup = groups.at(-1);
     if (currentGroup && typeof currentGroup.title !== "string" && currentGroup.title.source === diff.title) {
@@ -75,7 +78,14 @@ function planTargetLabel(target: AgentPlanTarget): TrackRefLabel {
 function actionDiffRow(
   action: AgentAction,
   refLabels: ReadonlyMap<string, TrackRefLabel>,
+  presentation: ActionRowPresentation,
 ): { title: keyof typeof actionMessages; row: UiMessage } {
+  if (presentation === "summary" && (action.type === "set_device_parameter" || action.type === "set_device_parameters")) {
+    return { title: "Set Parameters", row: m("Set parameters · {track}.{deviceName}{path} · Parameters: {count}", {
+      track: trackLabel(action, refLabels), deviceName: action.deviceName,
+      path: pathSuffix(action.devicePath, action.deviceIndex), count: action.type === "set_device_parameters" ? action.values.length : 1,
+    }) };
+  }
   switch (action.type) {
     case "create_midi_track":
       return { title: "Create", row: m('+ MIDI track "{name}"{ref}', {
@@ -308,6 +318,8 @@ function sourceLabel(source: import("../agent/action-schema.js").SampleSource): 
   switch (source.kind) {
     case "selected":
       return m("selected Live object");
+    case "session_audio_attachment":
+      return m("Session audio attachment {attachmentId}", { attachmentId: source.attachmentId });
     case "request_audio_attachment":
       return m("current request audio input {number}", { number: source.audioIndex + 1 });
     case "audio_asset":

@@ -30,6 +30,7 @@
         wireUtf8ByteLength,
         isWireUiMessage,
         isWireActionDiffGroups,
+        isWireActionPlan,
         wireActionDiffGroupsEqual,
         isWireWebSearch,
         isWireSessionEvent,
@@ -51,6 +52,7 @@
         isDecimalRevision,
         compareDecimalRevisions,
         sameJsonValue,
+        sessionToolCatalogOwner,
         sameJsonData
       } = window.LiveSmithFactories.createWireValidators({ isPluginParameterPanel, isPluginConfigView });
       if (
@@ -133,6 +135,7 @@
         "archivedSessions",
       ];
       const sessionCommandKinds = new Set([
+        "resolve_mcp_approval", "cancel_mcp_operation",
         "new_session",
         "select_session",
         "restore_session",
@@ -1084,20 +1087,6 @@
         ) <= 0;
       }
 
-      function sessionToolCatalogOwner(state) {
-        return JSON.stringify([
-          state.activeSessionId,
-          state.activeProfileRevision,
-          state.runtimeProfile,
-          state.integrationConnections?.revision ?? "0",
-          state.plugins,
-          state.sunoAccounts ?? [],
-          state.mcpOAuthStates ?? [],
-          (state.audioJobs ?? []).map(({ id, status, outputs }) => [id, status, outputs.map(({ id: assetId }) => assetId)]),
-          state.events.at(-1)?.id,
-        ]);
-      }
-
       function preserveNewerCausalState(state, attempt) {
         const baseline = attempt.causalStateSnapshot;
         const current = getState();
@@ -1283,6 +1272,7 @@
           merged.agentAudioTapListeners = state.agentAudioTapListeners;
           merged.midiContinuation = state.midiContinuation;
           merged.events = state.events;
+          merged.mcpApprovals = state.mcpApprovals; merged.mcpOperations = state.mcpOperations;
           merged.pendingAttachments = state.pendingAttachments;
           const contextState = state.activeSessionId !== current.activeSessionId || incomingContextIsCurrent
             ? state : current;
@@ -1295,6 +1285,7 @@
           merged.agentAudioTapListeners = current.agentAudioTapListeners;
           merged.midiContinuation = current.midiContinuation;
           merged.events = current.events;
+          merged.mcpApprovals = current.mcpApprovals; merged.mcpOperations = current.mcpOperations;
           merged.pendingAttachments = current.pendingAttachments;
           merged.contextSummary = current.contextSummary;
           merged.liveContext = current.liveContext;
@@ -1387,7 +1378,11 @@
         merged.activeSkillIds = [...(activeSession?.activeSkillIds || [])];
         const catalogUnchanged = current.sessionToolCatalog === baseline.sessionToolCatalog ||
           sameJsonValue(current.sessionToolCatalog, baseline.sessionToolCatalog);
-        const catalogSource = catalogUnchanged ? state : current;
+        const incomingSuggestionsAreCurrent = current.sessionToolCatalog &&
+          current.sessionToolCatalog.loadedAt === state.sessionToolCatalog?.loadedAt &&
+          sessionToolCatalogOwner(current) === sessionToolCatalogOwner(state) &&
+          (contextCutOrder > 0 || contextCutOrder === 0 && incomingCurrentRevisionOrder >= 0);
+        const catalogSource = catalogUnchanged || incomingSuggestionsAreCurrent ? state : current;
         if (catalogSource.sessionToolCatalog?.sessionId === merged.activeSessionId &&
           sessionToolCatalogOwner(catalogSource) === sessionToolCatalogOwner(merged)) {
           merged.sessionToolCatalog = catalogSource.sessionToolCatalog;
@@ -2586,6 +2581,7 @@
         return Boolean(
           kind &&
           kind !== "save_global_settings" &&
+          !["create_mcp_client", "rotate_mcp_client", "revoke_mcp_client"].includes(kind) &&
           !sessionCommandKinds.has(kind)
         );
       }
@@ -2786,11 +2782,12 @@
         const deferred = pendingPeerCommand?.command?.id === payload.commandId
           ? pendingPeerCommand : null;
         const attempt = deferred?.command ?? activeCommandAttempt;
-        if (!hasOnlyWireKeys(payload, ["type", "commandId", "sessionId", "id", "kind", "message", "groups", "previews", "operationId"]) ||
+        if (!hasOnlyWireKeys(payload, ["type", "commandId", "sessionId", "id", "kind", "message", "groups", "previews", "operationId", "plan"]) ||
             !attempt || attempt.stopRequested || attempt.stopping || attempt.id !== payload.commandId || attempt.sessionId !== payload.sessionId ||
             (!deferred && !attempt.remote && activeSessionId() !== payload.sessionId) || !isWireCorrelationId(payload.id) || payload.kind !== "apply" ||
             typeof payload.message !== "string" || !payload.message || !isWireActionDiffGroups(payload.groups) ||
             !isWireActionPreviews(payload.previews, payload.kind, payload.groups) ||
+            !isWireActionPlan(payload.plan, payload.kind) ||
             (payload.operationId !== undefined && !isWireStorageId(payload.operationId)) || attempt.confirmation?.id === payload.id) return;
         if (deferred) {
           deferred.confirmation = payload;
@@ -2801,7 +2798,7 @@
         attempt.confirmation = { id: payload.id, controller };
         void (async () => {
           const apply = await confirmAction({ title: window.LiveSmithI18n.message("Confirm action"),
-            message: payload.message, groups: payload.groups, previews: payload.previews,
+            message: payload.message, groups: payload.groups, previews: payload.previews, plan: payload.plan,
             acceptLabel: window.LiveSmithI18n.message("Apply"), signal: controller.signal });
           if (controller.signal.aborted || activeCommandAttempt !== attempt) return;
           try {
@@ -3442,9 +3439,12 @@
         adoptIntegrationConnections(state.integrationConnections);
         adoptSunoAccountsFromState(state);
         adoptGlobalSettingsFromState(state);
-        const reconciledState = causalAttempt
-          ? preserveNewerCausalState(state, causalAttempt)
-          : state;
+        let reconciledState = causalAttempt ? preserveNewerCausalState(state, causalAttempt) : state;
+        if (state.mcpCredential) reconciledState = { ...reconciledState, mcpCredential: state.mcpCredential };
+        if (compareDecimalRevisions(state.bridgeStateRevision, getState().bridgeStateRevision) >= 0 && state.mcpServer) {
+          reconciledState = { ...reconciledState, mcpServer: state.mcpServer,
+            settings: { ...reconciledState.settings, mcpServer: state.mcpServer.settings } };
+        }
         const profileSettingsChanged =
           previousSettings.activeProfileId !==
             reconciledState.settings.activeProfileId ||
@@ -7493,6 +7493,7 @@
                 "groups",
                 "previews",
                 "operationId",
+                "plan",
                 "activity",
                 "bridgeStateRevision",
               ]) ||
@@ -7508,6 +7509,7 @@
                 ? !isWireActionDiffGroups(payload.groups)
                 : !Array.isArray(payload.groups) || payload.groups.length !== 0) ||
               !isWireActionPreviews(payload.previews, payload.kind, payload.groups) ||
+              !isWireActionPlan(payload.plan, payload.kind) ||
               (payload.operationId !== undefined && (payload.kind !== "apply" || !isWireStorageId(payload.operationId)))
             ) return;
             const activity = stateChangeActivity(payload, true);
@@ -7558,6 +7560,7 @@
               payload.message !== pending.message ||
               !wireActionDiffGroupsEqual(payload.groups, pending.groups) ||
               !sameJsonData(payload.previews, pending.previews) ||
+              !sameJsonData(payload.plan, pending.plan) ||
               payload.operationId !== pending.operationId
             )) return;
             if (
@@ -7602,6 +7605,7 @@
               message: payload.message,
               groups: payload.groups || [],
               ...(payload.previews === undefined ? {} : { previews: payload.previews }),
+              ...(payload.plan === undefined ? {} : { plan: payload.plan }),
               ...(payload.operationId === undefined ? {} : { operationId: payload.operationId }),
             });
             if (applySendActivity(
@@ -7838,6 +7842,7 @@
         loadSessionModelCapabilities,
         loadSessionTools,
         getSessionToolCatalogOwner: () => sessionToolCatalogOwner(getState()),
+        sameJsonData,
         resolveConfirm,
         renderDefaultFollowUpBehavior,
         renderCustomInstructions,

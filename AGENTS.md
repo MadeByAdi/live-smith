@@ -1,11 +1,11 @@
 # Live Smith Contributor Guide
 
-This file defines durable collaboration rules. It is not a product manual,
-implementation plan, or record of individual changes.
+This guide defines lasting rules for contributing to Live Smith.
 
 ## Documentation responsibilities
 
 - `README.md` introduces the product, user workflow, limits, and privacy.
+- `docs/USER_GUIDE.md` owns detailed interface and production workflows.
 - `docs/DEVELOPMENT.md` owns setup, build, verification, packaging, and local
   development data instructions.
 - `docs/ARCHITECTURE.md` owns module responsibilities, lifecycle, and safety
@@ -57,7 +57,7 @@ cross-module contract.
 
 ## Provider contracts
 
-There are two API families and three supported modes:
+Direct API connections support two API families through three protocol modes:
 
 - OpenAI Responses
 - OpenAI Chat Completions
@@ -171,6 +171,7 @@ Run before handing off a change:
 npm run verify
 ```
 
-This runs the complete test suite, production build, composed-dialog client
-syntax check, and dependency audit. Report what was actually checked; automated
-tests do not establish visual or live-provider behavior in the Ableton host.
+This runs the complete test suite, development and production builds,
+composed-dialog client syntax check, Plugin fixture checks, and dependency audit.
+Report what was actually checked; automated tests do not establish visual or
+live-provider behavior in the Ableton host.

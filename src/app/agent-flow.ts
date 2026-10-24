@@ -1,10 +1,14 @@
+import type { McpService } from "./mcp/service.js";
+import { decidePlanApproval } from "./tools/tool-approvals.js";
+import { sessionMutationFence,attachmentMutationFence,sessionIntentFence,globalSettingsMutationFence,requestConfigurationFence } from "./session/session-fences.js";
 import { createLiveSetGuard } from "../live/set-identity.js";
 import type { InterfaceMode } from "../model/interface-mode.js";
 import { Buffer } from "node:buffer";
 import { readMidiArtifactFile } from "./midi/artifact-file.js";
+export { decidePlanApproval } from "./tools/tool-approvals.js";
 
 import type { MidiContinuationView } from "../agent/midi-continuation-contracts.js";
-import { runMidiContinuationCommand, refreshMidiContinuationView, midiContinuationImportHooks } from "./midi/midi-continuation-command.js";
+import { runMidiContinuationCommand,refreshMidiContinuationView,midiContinuationImportHooks } from "./midi/midi-continuation-command.js";
 import { attachmentQuotaIsWithinLimits } from "../attachments/contracts.js";
 import { selectSavedAttachment } from "./attachments/attachment-selection.js";
 import { ModelInputTooLargeError } from "../model/connection-error.js";
@@ -20,18 +24,18 @@ import {
 import {
   oauthSubscriptionProviders,
 } from "./model/dialog-model-backends.js";
-import { createPluginLifecycle, inspectPluginPackage } from "./plugins/plugin-lifecycle.js";
+import { createPluginLifecycle,inspectPluginPackage } from "./plugins/plugin-lifecycle.js";
 import { createUserSkillLifecycle } from "./plugins/user-skill-lifecycle.js";
 import { createSessionLifecycle } from "./session/session-lifecycle.js";
 import { importMidiArtifact } from "./midi-artifact-import.js";
 import { prepareMidiArtifactImport } from "./midi-artifact-preview.js";
 import { readMidiArtifactDiff } from "./midi/midi-artifact-diff.js";
-import { captureParameterArtifact, readParameterArtifactPreview } from "./parameters/parameter-artifacts.js";
+import { captureParameterArtifact,readParameterArtifactPreview } from "./parameters/parameter-artifacts.js";
 import { runParameterApplication } from "./parameters/parameter-application.js";
-import { listSessionArtifacts, readSessionArtifact, readSessionMidiPartPreview, selectSessionArtifact } from "./session/session-artifacts.js";
+import { listSessionArtifacts,readSessionArtifact,readSessionMidiPartPreview,selectSessionArtifact } from "./session/session-artifacts.js";
 import type { ExtensionContext } from "@ableton-extensions/sdk";
 
-import { audioJobViews, resumeAudioJob } from "./audio/audio-processing.js";
+import { audioJobViews,resumeAudioJob } from "./audio/audio-processing.js";
 import { downloadAudioOutput } from "./audio/audio-generation.js";
 import { audioMessage as m } from "./audio/audio-messages.js";
 import {
@@ -47,25 +51,21 @@ import { SunoModelCatalog } from "./audio/suno/suno-model-catalog.js";
 import type { readSunoMusicService } from "../audio-services/suno/suno-catalog.js";
 import { createSunoSessionVerifier } from "../audio-services/suno/suno-session.js";
 import type { SunoSessionVerifier } from "../audio-services/suno/suno-session-contracts.js";
-import { openSunoPlatform, openSunoWebsite } from "../runtime/suno-website.js";
+import { openSunoPlatform,openSunoWebsite } from "../runtime/suno-website.js";
 import { openMediaDownload as openAudioDownload } from "../runtime/media-download-browser.js";
 import { createAttachmentOpener } from "./attachments/attachment-opener.js";
 import { integrationConnectionsView } from "../storage/settings.js";
-import { AudioArtifactNotFoundError, readSessionAudioArtifact } from "../storage/audio-artifacts.js";
+import { AudioArtifactNotFoundError,readSessionAudioArtifact } from "../storage/audio-artifacts.js";
 import { listAudioJobs } from "../storage/audio-jobs.js";
 import { hasSessionMidiContent } from "../storage/midi-artifacts.js";
 import { searchSessions } from "./session/session-search.js";
 import { readSessionPreview } from "./session/session-preview.js";
 import {
-  type AgentConfirmationDecision,
-} from "../agent/loop.js";
-import {
   createHostAbortController,
   throwIfAborted,
   waitForPromiseWithSignal,
 } from "../runtime/host.js";
-import { requiresExplicitConfirmation, type AgentPlan } from "../agent/actions.js";
-import { EDIT_SCOPES, resolveEditScopes } from "../agent/edit-scopes.js";
+import { EDIT_SCOPES,resolveEditScopes } from "../agent/edit-scopes.js";
 import {
   interactionContextForScope,
   type LiveInteractionContext,
@@ -219,7 +219,7 @@ import {
   type ProfileSettingsChange,
 } from "./model/profile-settings-events.js";
 import {
-  capabilityPreviewForProfile, resolveDiscoveredModels,
+  capabilityPreviewForProfile,resolveDiscoveredModels,
   runtimeProfileForSavedProfile,
 } from "./model/model-request.js";
 import {
@@ -237,17 +237,18 @@ import {
   releaseSessionClaims,
   sessionIsClaimedByAnotherOwner,
 } from "./session/session-claims.js";
-import { resolveSkillContextInTransaction, sessionSkillIdsForEnabledPlugins } from "./context/skill-context.js";
+import { resolveSkillContextInTransaction,sessionSkillIdsForEnabledPlugins } from "./context/skill-context.js";
 import {
   invalidateGlobalState,
   invalidateSessionState,
   subscribeGlobalStateInvalidations,
   subscribeSessionStateInvalidations,
+  type GlobalStateInvalidation,
+  type SessionStateInvalidation,
 } from "./session/session-state-events.js";
 import { LiveMutationQueue } from "./live-mutation-queue.js";
 import {
-  SessionMutationFence,
-  sessionMutationFenceKey,
+  sessionMutationFenceKey
 } from "./session/session-mutation-fence.js";
 import {
   modelAuthSendFenceForStorage,
@@ -263,9 +264,9 @@ import {
   steeringReceiptFor,
 } from "./agent-request.js";
 import { ChatBridgeRequestValidationError } from "./chat/chat-bridge-http.js";
-import { signInMcpOAuth, signOutMcpOAuth, mcpOAuthStates } from "./plugins/mcp-oauth.js";
+import { signInMcpOAuth,signOutMcpOAuth,mcpOAuthStates } from "./plugins/mcp-oauth.js";
 import { closeActiveMcpConnection } from "./plugins/request-plugin-tools.js";
-import { loadSessionToolCatalog, sessionToolCatalogOwner } from "./session/session-tool-catalog.js";
+import { loadSessionToolCatalog,sessionToolCatalogOwner,refreshSessionToolCatalogSuggestions } from "./session/session-tool-catalog.js";
 import { runPluginParameterTool } from "./plugins/plugin-parameter-tool.js";
 import { runAudioParameterTool } from "./audio/audio-parameter-tool.js";
 import { providerFetchForStorage } from "./network.js";
@@ -274,12 +275,9 @@ import { createConversationCheckpoint } from "./context/context-compaction.js";
 import { requestModelWithReconnect } from "./model/model-reconnect.js";
 
 type Api = ExtensionContext<"1.0.0">;
-const sessionMutationFence = new SessionMutationFence();
-const attachmentMutationFence = new SessionMutationFence();
-const sessionIntentFence = new SessionMutationFence();
-const globalSettingsMutationFence = new SessionMutationFence();
-const requestConfigurationFence = new SessionMutationFence();
 export interface AgentFlowDependencies extends DialogModelStateDependencies {
+  mcpService?: McpService;
+  initialSessionId?: string;
   /** Test seams; production uses the OS default browser and a Suno-only verifier. */
   openSunoWebsite?: typeof openSunoWebsite;
   openSunoPlatform?: typeof openSunoPlatform;
@@ -326,7 +324,7 @@ export interface AgentRuntime {
   readonly url: string;
   readonly browserUrl: string;
   readonly busy: boolean;
-  reopen(): Promise<void>;
+  reopen(sessionId?: string): Promise<void>;
   adopt(interaction: LiveInteractionContext): void;
   close(): Promise<void>;
 }
@@ -352,7 +350,7 @@ export async function createAgentRuntime(
   const projectKey = projectKeyForContext(context);
   let status: UiMessage | undefined;
   let openSettingsOnLoad = false;
-  let activeSessionId: string | undefined;
+  let activeSessionId: string | undefined = dependencies.initialSessionId;
   let loadedMidiContinuation: { owner: string; value: MidiContinuationView } | undefined;
   const midiContinuationOwner = (state: Pick<ChatDialogState, "integrationConnections" | "plugins">) =>
     JSON.stringify([state.integrationConnections?.revision ?? "0", state.plugins]);
@@ -427,16 +425,15 @@ export async function createAgentRuntime(
     operation: () => Promise<T>,
   ): Promise<T> => requestConfigurationFence.run(requestConfigurationFenceKey, signal, operation);
   const manualAudioObservations = new Map<string, Map<string, Set<string>>>();
-  const notifySessionStateChanged = (sessionId: string): void => {
+  const notifySessionStateChanged = (sessionId: string, change: Pick<SessionStateInvalidation, "target"> = {}): void => {
     invalidateSessionState(storageDirectory, {
       sessionId,
       source: modalSessionOwner,
+      ...change,
     });
   };
-  const notifyGlobalStateChanged = (sunoAuthServiceId?: string): void => {
-    invalidateGlobalState(storageDirectory, { source: modalSessionOwner,
-      ...(sunoAuthServiceId === undefined ? {} : { sunoAuthServiceId }),
-    });
+  const notifyGlobalStateChanged = (change: Omit<GlobalStateInvalidation, "source"> = {}): void => {
+    invalidateGlobalState(storageDirectory, { source: modalSessionOwner, ...change });
   };
   const sessionLifecycle = createSessionLifecycle({
     storageDirectory, withSessionMutation, notifySessionStateChanged,
@@ -494,14 +491,15 @@ export async function createAgentRuntime(
   const runSessionStateChange = async <T>(
     sessionId: string,
     operation: () => Promise<T>,
+    change: Pick<SessionStateInvalidation, "target"> = {},
   ): Promise<T> => {
     try {
       const result = await operation();
-      notifySessionStateChanged(sessionId);
+      notifySessionStateChanged(sessionId, change);
       return result;
     } catch (error) {
       if (isStorageCommitOutcomeUnknownError(error)) {
-        notifySessionStateChanged(sessionId);
+        notifySessionStateChanged(sessionId, change);
       }
       throw error;
     }
@@ -812,6 +810,9 @@ export async function createAgentRuntime(
         pendingAttachments,
         ...(settings.integrationConnections ? { integrationConnections: integrationConnectionsView(settings.integrationConnections) } : {}),
         mcpOAuthStates: await mcpOAuthStates(storageDirectory),
+        ...(dependencies.mcpService ? { mcpServer: await dependencies.mcpService.state(),
+          mcpApprovals: dependencies.mcpService.approvals(activeSession.id),
+          mcpOperations: await dependencies.mcpService.operations(activeSession.id) } : {}),
         audioJobs,
         agentAudioTapListeners: agentAudioTapListeners.map(({ tapId, trackName, trackType }) => ({
           tapId, trackName, trackType,
@@ -867,7 +868,7 @@ export async function createAgentRuntime(
       if (loadedSessionToolCatalog) {
         const owner = sessionToolCatalogOwner(state);
         if (loadedSessionToolCatalog.owner === owner) {
-          state.sessionToolCatalog = loadedSessionToolCatalog.value;
+          state.sessionToolCatalog = await refreshSessionToolCatalogSuggestions(storageDirectory, loadedSessionToolCatalog.value);
         } else if (options.heldSessionId === undefined) {
           loadedSessionToolCatalog = undefined;
         }
@@ -1014,6 +1015,23 @@ export async function createAgentRuntime(
         });
       },
     );
+    if (commandInput.kind === "create_mcp_client" || commandInput.kind === "rotate_mcp_client" || commandInput.kind === "revoke_mcp_client" || commandInput.kind === "resolve_mcp_approval" || commandInput.kind === "cancel_mcp_operation") {
+      const service = dependencies.mcpService;
+      if (!service) throw new ChatBridgeRequestValidationError("MCP service requires the Extension host and private storage.");
+      let credential: ChatDialogState["mcpCredential"];
+      if (commandInput.kind === "create_mcp_client" || commandInput.kind === "rotate_mcp_client") {
+        const created = commandInput.kind === "create_mcp_client" ? await service.createClient(commandInput.name, commandInput.sessionId)
+          : await service.rotateClient(commandInput.clientId, commandInput.generation);
+        credential = { clientId: created.client.id, token: created.token, url: created.url };
+      } else if (commandInput.kind === "revoke_mcp_client") await service.revokeClient(commandInput.clientId, commandInput.generation);
+      else if (commandInput.kind === "resolve_mcp_approval" || commandInput.kind === "cancel_mcp_operation") {
+        if (commandInput.sessionId !== activeSessionId) throw new ChatBridgeConflictError("Open the operation's Session before reviewing it.");
+        if (commandInput.kind === "resolve_mcp_approval") service.resolveApproval(commandInput.sessionId, commandInput.operationId, commandInput.approve);
+        else await service.cancel(commandInput.sessionId, commandInput.operationId);
+      }
+      const state = await buildStateAfterCommandMutation();
+      return credential ? { ...state, mcpCredential: credential } : state;
+    }
     if (commandInput.kind === "start_mcp_oauth" || commandInput.kind === "logout_mcp_oauth") {
       if (!storageDirectory) throw new ChatBridgeRequestValidationError("MCP sign-in requires private local storage.");
       try {
@@ -1465,7 +1483,7 @@ export async function createAgentRuntime(
           }
           status = undefined;
           return await buildStateAfterCommandMutation();
-        } finally { notifyGlobalStateChanged(commandInput.serviceId); }
+        } finally { notifyGlobalStateChanged({ sunoAuthServiceId: commandInput.serviceId, target: "all" }); }
       });
     }
 
@@ -1479,7 +1497,7 @@ export async function createAgentRuntime(
         async () => {
           throwIfAborted(signal);
           try {
-            const patch = "defaultFollowUpBehavior" in commandInput
+            const patch = "mcpServer" in commandInput ? { mcpServer: commandInput.mcpServer } : "defaultFollowUpBehavior" in commandInput
                 ? {
                     defaultFollowUpBehavior:
                       commandInput.defaultFollowUpBehavior,
@@ -1530,13 +1548,14 @@ export async function createAgentRuntime(
               sessionTabsRevision: settings.sessionTabsRevision,
               commandId: commandContext.commandId,
             });
+            if ("mcpServer" in commandInput) { await dependencies.mcpService?.refresh(); notifyGlobalStateChanged(); }
             status = "Global settings saved.";
-            if ("integrationConnections" in commandInput) notifyGlobalStateChanged();
+            if ("integrationConnections" in commandInput || "networkProxy" in commandInput) notifyGlobalStateChanged({ target: "all" });
             return buildStateAfterCommandMutation();
           } catch (cause) {
             if (!isStorageCommitOutcomeUnknownError(cause)) throw cause;
 
-            if ("integrationConnections" in commandInput) notifyGlobalStateChanged();
+            if ("integrationConnections" in commandInput || "networkProxy" in commandInput) notifyGlobalStateChanged({ target: "all" });
             try {
               const settings = await loadAgentSettings(
                 storageDirectory,
@@ -1740,7 +1759,7 @@ export async function createAgentRuntime(
               confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
                 if (!commandContext.requestConfirmation) throw new Error("Device parameter confirmation is unavailable.");
                 return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
-                  groups: actionDiffGroups(plan.actions, plan.targets), ...(guard.previews ? { previews: guard.previews } : {}) });
+                  groups: actionDiffGroups(plan.actions, plan.targets), plan, ...(guard.previews ? { previews: guard.previews } : {}) });
               }),
             });
             status = uiMessage(result === "applied" ? "Device parameters applied." : result === "restored" ? "Previous device parameters restored."
@@ -1775,7 +1794,7 @@ export async function createAgentRuntime(
             confirm: (plan, guard, operationId) => decidePlanApproval(storageDirectory, session.id, plan, async () => {
               if (!commandContext.requestConfirmation) throw new Error("MIDI import confirmation is unavailable.");
               return commandContext.requestConfirmation({ kind: "apply", operationId, message: plan.message,
-                groups: actionDiffGroups(plan.actions, plan.targets),
+                groups: actionDiffGroups(plan.actions, plan.targets), plan,
                 ...(guard.previews === undefined ? {} : { previews: guard.previews }),
               });
             }),
@@ -1819,7 +1838,6 @@ export async function createAgentRuntime(
           });
           status = uiMessage(result.failed ? "The audio tool reported a failure. Review its result and saved audio jobs before retrying." : "Audio tool completed.");
         } finally {
-          loadedSessionToolCatalog = undefined;
           notifySessionStateChanged(session.id);
         }
         return buildStateAfterCommandMutation(undefined, { heldSessionId: session.id, sessionMutationHeld: true });
@@ -1844,7 +1862,6 @@ export async function createAgentRuntime(
           });
           status = uiMessage(result.failed ? "The Plugin tool reported a failure. Review its result before retrying." : "Plugin tool completed.");
         } finally {
-          loadedSessionToolCatalog = undefined;
           notifySessionStateChanged(session.id);
         }
         return buildStateAfterCommandMutation(undefined, {
@@ -1886,7 +1903,7 @@ export async function createAgentRuntime(
         throw new ChatBridgeConflictError("Session tools changed while loading. Load them again.");
       }
       loadedSessionToolCatalog = { owner, value: catalog };
-      return { ...after, sessionToolCatalog: catalog };
+      return { ...after, sessionToolCatalog: await refreshSessionToolCatalogSuggestions(storageDirectory, catalog) };
     }
 
     if (commandInput.kind === "load_session_model_capabilities") {
@@ -2564,6 +2581,7 @@ export async function createAgentRuntime(
             commandInput.sessionId,
             archived,
           ),
+          { target: "all" },
         );
         return true;
       });
@@ -3221,7 +3239,7 @@ export async function createAgentRuntime(
                   kind: "apply",
                   operationId,
                   message: plan.message,
-                  groups: actionDiffGroups(plan.actions, plan.targets),
+                  groups: actionDiffGroups(plan.actions, plan.targets), plan,
                   ...(guard.previews === undefined ? {} : { previews: guard.previews }),
                 }),
               ),
@@ -3357,17 +3375,17 @@ export async function createAgentRuntime(
   try {
     unsubscribeSessionState = subscribeSessionStateInvalidations(
       storageDirectory,
-      ({ sessionId, source }) => {
-        if (source === modalSessionOwner) return;
+      ({ sessionId, source, target }) => {
+        if (source === modalSessionOwner || target === "tools") return;
         if (bridge) bridge.publishSessionStateInvalidation(sessionId);
         else pendingSessionStateInvalidations.add(sessionId);
       },
     );
     unsubscribeGlobalState = subscribeGlobalStateInvalidations(
       storageDirectory,
-      ({ source, sunoAuthServiceId }) => {
+      ({ source, sunoAuthServiceId, target }) => {
         if (sunoAuthServiceId !== undefined) sunoModelCatalog.clear(sunoAuthServiceId);
-        if (source === modalSessionOwner) return;
+        if (source === modalSessionOwner || target === "tools") return;
         if (bridge) bridge.publishGlobalStateInvalidation();
         else pendingGlobalStateInvalidation = true;
       },
@@ -3396,7 +3414,6 @@ export async function createAgentRuntime(
         return withNamedSessionMutation(sessionId, "send", signal, operation);
       },
       sessionChanged: (sessionId) => {
-        loadedSessionToolCatalog = undefined;
         notifySessionStateChanged(sessionId);
         bridge?.publishSessionStateInvalidation(sessionId);
       },
@@ -3520,10 +3537,10 @@ export async function createAgentRuntime(
       url: bridge.url,
       get browserUrl() { return bridge!.browserUrl; },
       get busy() { return bridge!.busy; },
-      async reopen() {
+      async reopen(sessionId?: string) {
         assertLiveSetCurrent();
         if (closePromise) throw new Error("This Live Smith window has closed.");
-        activeSessionId = invocationSessionId;
+        activeSessionId = sessionId ?? invocationSessionId;
         invocationSessionId = (await resolveActiveSession()).id;
         assertLiveSetCurrent();
         bridge!.publishGlobalStateInvalidation();
@@ -3549,38 +3566,6 @@ export async function createAgentRuntime(
   }
 }
 
-export async function decidePlanApproval(
-  storageDirectory: string | undefined,
-  sessionId: string,
-  plan: AgentPlan,
-  requestConfirmation: () => Promise<boolean>,
-): Promise<AgentConfirmationDecision> {
-  const approvalMode = await withStorageTransaction(
-    storageDirectory,
-    async (transaction) => {
-      const session = (await listSessionsInTransaction(
-        transaction,
-        storageDirectory,
-      )).find((candidate) => candidate.id === sessionId);
-      if (!session) throw new Error(`Session ${sessionId} does not exist.`);
-      return session.approvalMode ?? "manual";
-    },
-  );
-  if (
-    approvalMode === "everything" ||
-    (approvalMode === "low-risk" && !requiresExplicitConfirmation(plan))
-  ) {
-    return {
-      confirmed: true,
-      source: "automatic",
-      mode: approvalMode,
-    };
-  }
-  return {
-    confirmed: await requestConfirmation(),
-    source: "user",
-  };
-}
 
 function assertNeverCommand(commandInput: never): never {
   throw new Error(`Unsupported bridge command: ${JSON.stringify(commandInput)}`);

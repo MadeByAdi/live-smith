@@ -35,6 +35,10 @@ import {
 
 export type RequestPluginToolResult = AgentExternalToolResult;
 
+export function pluginToolsEnabled(plugin: Pick<InstalledPlugin, "enabled" | "components">): boolean {
+  return plugin.enabled && (plugin.components.mcpConfigPath !== undefined || plugin.components.mcpManifestPath !== undefined);
+}
+
 export interface RequestPluginTools extends Toolset {
   assertToolCurrent(name: string): Promise<void>;
   callTool(call: ModelToolCall): Promise<RequestPluginToolResult>;
@@ -183,8 +187,7 @@ export async function createRequestPluginTools(input: {
   try {
     if (registryDirectory) {
       const installed = await listInstalledPlugins(input.storageDirectory);
-      for (const metadata of installed.filter((plugin) => plugin.enabled &&
-        (plugin.components.mcpConfigPath !== undefined || plugin.components.mcpManifestPath !== undefined))) {
+      for (const metadata of installed.filter(pluginToolsEnabled)) {
         throwIfAborted(input.signal);
         const opened: ManagedMcpSource[] = [];
         try {

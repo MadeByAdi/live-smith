@@ -20,6 +20,7 @@ import {
 import { openOAuthAuthorizationUrl } from "./runtime/oauth-browser.js";
 import { openChatInVst3 } from "./runtime/vst3-handoff.js";
 import { assertIsolatedNativeStorage, isolatedNativeBuild } from "./runtime/native-isolation.js";
+import { createMcpService } from "./app/mcp/service.js";
 
 type Api = ExtensionContext<"1.0.0">;
 
@@ -32,10 +33,14 @@ export function activate(activation: ActivationContext) {
     return;
   }
   void ensureAgentAudioTapRegistryDirectory();
-  const windowHost = createWindowHostController(context, {
-    liveMutationQueue: new LiveMutationQueue(), openOAuthAuthorizationUrl, openVst3: openChatInVst3,
-  });
+  const liveMutationQueue = new LiveMutationQueue();
+  const storageDirectory = context.environment.storageDirectory;
+  const mcpService = storageDirectory ? createMcpService({ context, storageDirectory, liveMutationQueue,
+    openSession: sessionId => windowHost.openSession(sessionId) }) : undefined;
+  const windowHost = createWindowHostController(context, { liveMutationQueue, openOAuthAuthorizationUrl,
+    openVst3: openChatInVst3, ...(mcpService ? { mcpService } : {}) });
   void windowHost.start().catch(() => logError("Live Smith bridge startup failed."));
+  if (mcpService) void mcpService.start().catch(error => showAgentError(context, error));
 
   const commandBase = isolatedNativeBuild ? "t7-live-smith-native-dev" : "live-smith";
   const actionLabel = isolatedNativeBuild ? "Ask T7 Live Smith Native Dev" : "Ask Live Smith";

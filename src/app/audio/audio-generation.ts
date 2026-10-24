@@ -13,9 +13,9 @@ import { isGeneratedAudioOutputRole } from "../../audio-services/audio-output.js
 import { exceedsAudioPromptLimit } from "../../audio-services/prompt.js";
 import { AttachmentProcessingError } from "../../attachments/contracts.js";
 import { createHostAbortController, throwIfAborted, waitForPromiseWithSignal } from "../../runtime/host.js";
-import { createAudioJob, listAudioJobs, loadAudioJob, updateAudioJob } from "../../storage/audio-jobs.js";
+import { listAudioJobs, loadAudioJob, updateAudioJob } from "../../storage/audio-jobs.js";
 import { assertAudioOutputCapacity, saveAudioAsset } from "../../storage/audio-assets.js";
-import { acquireAudioJob, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
+import { createSessionAudioJob, acquireAudioJob, boundedAudioMessage, reconcileLocalAudioJob, safeAudioFailure } from "./audio-job-runtime.js";
 import { integrationConnectionFingerprint, integrationConnectionSecret, resolveIntegrationConnection, type RuntimeIntegrationConnection } from "../plugins/integration-connections.js";
 import type { AudioProcessingContext } from "./audio-processing.js";
 import { audioMessage as m } from "./audio-messages.js";
@@ -71,7 +71,7 @@ export async function generateAudio(
     request.operation === "get_whole_song" || request.operation === "finish_music_replacement" ? 1 : capability.generationOutputCount);
   const modelId = plugin.generationModelId ? plugin.generationModelId(settings, request)
     : request.operation !== "generate_sound_effect" ? settings.modelId : undefined;
-  const job = await createAudioJob(context.storageDirectory, context.sessionId, {
+  const job = await createSessionAudioJob(context.storageDirectory, context.sessionId, {
     provider: settings.provider, serviceId: settings.id, operation: request.operation,
     ...(modelId ? { modelId } : {}),
     ...(musicOptions?.title?.trim()
@@ -105,7 +105,7 @@ export async function retrieveMusic(
     if (!job && matching.length) throw new Error("This audio job belongs to a different service connection. Restore that connection to retrieve it.");
     if (!job) {
       throwIfAborted(context.signal);
-      job = await createAudioJob(context.storageDirectory, context.sessionId, {
+      job = await createSessionAudioJob(context.storageDirectory, context.sessionId, {
         provider: settings.provider, serviceId, operation: "retrieve_music", connectionFingerprint: fingerprint, stems: [],
       }, { remoteTaskId: ids[0]!, expectedOutputs });
     }
